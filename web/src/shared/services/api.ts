@@ -47,7 +47,7 @@ export function useApps() {
   });
 }
 
-export function useApp(id: number) {
+export function useApp(id: string) {
   return useQuery<App>({
     queryKey: ['app', id],
     queryFn: async () => {
@@ -89,7 +89,7 @@ export function useCreateApp() {
   });
 }
 
-export function useUpdateApp(id: number) {
+export function useUpdateApp(id: string) {
   const queryClient = useQueryClient();
   
   return useMutation({
@@ -117,7 +117,7 @@ export function useDeleteApp() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async (id: number) => {
+    mutationFn: async (id: string) => {
       const response = await fetch(`/api/apps/${id}`, {
         method: 'DELETE',
         credentials: 'include',
@@ -129,7 +129,7 @@ export function useDeleteApp() {
       return response.json();
     },
     // Optimistic update - remove from cache immediately
-    onMutate: async (id: number) => {
+    onMutate: async (id: string) => {
       // Cancel any outgoing refetches
       await queryClient.cancelQueries({ queryKey: ['apps'] });
       
@@ -160,7 +160,7 @@ export function useStartApp() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async (id: number) => {
+    mutationFn: async (id: string) => {
       const response = await fetch(`/api/apps/${id}/start`, {
         method: 'POST',
         credentials: 'include',
@@ -171,7 +171,7 @@ export function useStartApp() {
       }
       return response.json();
     },
-    onMutate: async (id: number) => {
+    onMutate: async (id: string) => {
       // Cancel any outgoing refetches
       await queryClient.cancelQueries({ queryKey: ['apps'] });
       await queryClient.cancelQueries({ queryKey: ['app', id] });
@@ -218,7 +218,7 @@ export function useStopApp() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async (id: number) => {
+    mutationFn: async (id: string) => {
       const response = await fetch(`/api/apps/${id}/stop`, {
         method: 'POST',
         credentials: 'include',
@@ -229,7 +229,7 @@ export function useStopApp() {
       }
       return response.json();
     },
-    onMutate: async (id: number) => {
+    onMutate: async (id: string) => {
       // Cancel any outgoing refetches
       await queryClient.cancelQueries({ queryKey: ['apps'] });
       await queryClient.cancelQueries({ queryKey: ['app', id] });
@@ -280,7 +280,7 @@ export function useUpdateAppContainers() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async (id: number) => {
+    mutationFn: async (id: string) => {
       const response = await fetch(`/api/apps/${id}/update`, {
         method: 'POST',
         credentials: 'include',
@@ -291,7 +291,7 @@ export function useUpdateAppContainers() {
       }
       return response.json();
     },
-    onMutate: async (id: number) => {
+    onMutate: async (id: string) => {
       // Cancel any outgoing refetches
       await queryClient.cancelQueries({ queryKey: ['apps'] });
       await queryClient.cancelQueries({ queryKey: ['app', id] });
@@ -427,7 +427,7 @@ export function useCloudflareTunnels() {
   });
 }
 
-export function useCloudflareTunnel(appId: number) {
+export function useCloudflareTunnel(appId: string) {
   return useQuery<CloudflareTunnel>({
     queryKey: ['cloudflare', 'tunnel', appId],
     queryFn: async () => {
@@ -446,9 +446,9 @@ export function useCloudflareTunnel(appId: number) {
 
 export function useSyncCloudflareTunnel() {
   const queryClient = useQueryClient();
-
+  
   return useMutation({
-    mutationFn: async (appId: number) => {
+    mutationFn: async (appId: string) => {
       const response = await fetch(`/api/cloudflare/apps/${appId}/tunnel/sync`, {
         method: 'POST',
         credentials: 'include',
@@ -470,7 +470,7 @@ export function useDeleteCloudflareTunnel() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (appId: number) => {
+    mutationFn: async (appId: string) => {
       const response = await fetch(`/api/cloudflare/apps/${appId}/tunnel`, {
         method: 'DELETE',
         credentials: 'include',
@@ -492,7 +492,7 @@ export function useUpdateTunnelIngress() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ appId, ingressRules, hostname, targetDomain }: { appId: number; ingressRules: IngressRule[]; hostname?: string; targetDomain?: string }) => {
+    mutationFn: async ({ appId, ingressRules, hostname, targetDomain }: { appId: string; ingressRules: IngressRule[]; hostname?: string; targetDomain?: string }) => {
       const body: { ingress_rules: IngressRule[]; hostname?: string; target_domain?: string } = {
         ingress_rules: ingressRules,
       };
@@ -522,7 +522,9 @@ export function useUpdateTunnelIngress() {
       }
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
+      // Invalidate the specific tunnel query to refresh the data
+      queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', variables.appId] });
       queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnels'] });
       queryClient.invalidateQueries({ queryKey: ['apps'] });
     },
@@ -533,7 +535,7 @@ export function useCreateDNSRecord() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ appId, hostname, targetDomain }: { appId: number; hostname: string; targetDomain?: string }) => {
+    mutationFn: async ({ appId, hostname, targetDomain }: { appId: string; hostname: string; targetDomain?: string }) => {
       const body: { hostname: string; target_domain?: string } = { hostname };
       
       if (targetDomain) {

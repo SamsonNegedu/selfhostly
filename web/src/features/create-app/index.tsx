@@ -4,6 +4,7 @@ import { useCreateApp } from '@/shared/services/api'
 import { Button } from '@/shared/components/ui'
 import ComposeEditor from './components/ComposeEditor'
 import PreviewCompose from './components/PreviewCompose'
+import AppBreadcrumb from '@/shared/components/layout/Breadcrumb'
 
 function CreateApp() {
     const navigate = useNavigate()
@@ -26,6 +27,17 @@ function CreateApp() {
 
     return (
         <div>
+            {/* Breadcrumb Navigation */}
+            <div className="mb-6">
+                <AppBreadcrumb
+                    items={[
+                        { label: 'Home', path: '/dashboard' },
+                        { label: 'Apps', path: '/apps' },
+                        { label: 'New App', isCurrentPage: true }
+                    ]}
+                />
+            </div>
+
             <div className="mb-6">
                 <h1 className="text-3xl font-bold">Create New App</h1>
                 <p className="text-muted-foreground mt-2">

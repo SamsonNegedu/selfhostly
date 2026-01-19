@@ -160,25 +160,25 @@ func (m *Manager) CreateTunnel(appName string) (tunnelID, token string, err erro
 func (m *Manager) DeleteDNSRecordsForTunnel(tunnelID string) error {
 	// Get all zones
 	zonesURL := fmt.Sprintf("%s/zones", apiBaseURL)
-	
+
 	req, err := http.NewRequest("GET", zonesURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create zones request: %w", err)
 	}
-	
+
 	req.Header.Set("Authorization", "Bearer "+m.config.APIToken)
-	
+
 	resp, err := m.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to get zones: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("failed to read zones response: %w", err)
 	}
-	
+
 	var zonesData struct {
 		Success bool `json:"success"`
 		Result  []struct {
@@ -190,66 +190,66 @@ func (m *Manager) DeleteDNSRecordsForTunnel(tunnelID string) error {
 			Message string `json:"message"`
 		} `json:"errors"`
 	}
-	
+
 	if err := json.Unmarshal(body, &zonesData); err != nil {
 		return fmt.Errorf("failed to unmarshal zones response: %w", err)
 	}
-	
+
 	if !zonesData.Success {
 		return fmt.Errorf("failed to get zones: %v", zonesData.Errors)
 	}
-	
+
 	// Search for DNS records related to this tunnel across all zones
 	var errors []error
 	for _, zone := range zonesData.Result {
 		recordsURL := fmt.Sprintf("%s/zones/%s/dns_records?type=CNAME", apiBaseURL, zone.ID)
-		
+
 		req, err := http.NewRequest("GET", recordsURL, nil)
 		if err != nil {
 			slog.Warn("Failed to create DNS records request", "zone", zone.Name, "error", err)
 			continue
 		}
-		
+
 		req.Header.Set("Authorization", "Bearer "+m.config.APIToken)
-		
+
 		resp, err := m.client.Do(req)
 		if err != nil {
 			slog.Warn("Failed to get DNS records", "zone", zone.Name, "error", err)
 			continue
 		}
-		
+
 		body, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if err != nil {
 			slog.Warn("Failed to read DNS records response", "zone", zone.Name, "error", err)
 			continue
 		}
-		
+
 		var recordsData ListDNSRecordsResponse
 		if err := json.Unmarshal(body, &recordsData); err != nil {
 			slog.Warn("Failed to unmarshal DNS records response", "zone", zone.Name, "error", err)
 			continue
 		}
-		
+
 		if !recordsData.Success {
 			slog.Warn("Failed to get DNS records", "zone", zone.Name, "errors", recordsData.Errors)
 			continue
 		}
-		
+
 		// Delete records that reference this tunnel
 		for _, record := range recordsData.Result {
 			if strings.Contains(record.Content, fmt.Sprintf("%s.cfargotunnel.com", tunnelID)) {
 				deleteURL := fmt.Sprintf("%s/zones/%s/dns_records/%s", apiBaseURL, zone.ID, record.ID)
-				
+
 				req, err := http.NewRequest("DELETE", deleteURL, nil)
 				if err != nil {
 					slog.Warn("Failed to create DNS record delete request", "zone", zone.Name, "record", record.Name, "error", err)
 					errors = append(errors, err)
 					continue
 				}
-				
+
 				req.Header.Set("Authorization", "Bearer "+m.config.APIToken)
-				
+
 				resp, err := m.client.Do(req)
 				if err != nil {
 					slog.Warn("Failed to delete DNS record", "zone", zone.Name, "record", record.Name, "error", err)
@@ -257,22 +257,22 @@ func (m *Manager) DeleteDNSRecordsForTunnel(tunnelID string) error {
 					continue
 				}
 				resp.Body.Close()
-				
+
 				if resp.StatusCode != http.StatusOK {
 					slog.Warn("Failed to delete DNS record, non-200 status", "zone", zone.Name, "record", record.Name, "status", resp.StatusCode)
 					errors = append(errors, fmt.Errorf("failed to delete DNS record %s, status: %d", record.Name, resp.StatusCode))
 					continue
 				}
-				
+
 				slog.Info("DNS record deleted successfully", "zone", zone.Name, "record", record.Name, "recordID", record.ID)
 			}
 		}
 	}
-	
+
 	if len(errors) > 0 {
 		return fmt.Errorf("encountered %d errors while deleting DNS records, but deletion continued", len(errors))
 	}
-	
+
 	return nil
 }
 
@@ -282,7 +282,7 @@ func (m *Manager) DeleteTunnel(tunnelID string) error {
 	if err := m.DeleteDNSRecordsForTunnel(tunnelID); err != nil {
 		slog.Warn("Failed to clean up DNS records for tunnel, continuing with tunnel deletion", "tunnelID", tunnelID, "error", err)
 	}
-	
+
 	// Then delete the tunnel itself
 	url := fmt.Sprintf("%s/accounts/%s/cfd_tunnel/%s", apiBaseURL, m.config.AccountID, tunnelID)
 
@@ -479,7 +479,7 @@ func (m *Manager) UpdateDNSRecord(zoneID, recordID, hostname, tunnelID string) e
 // CreateDNSRecord creates a DNS record for a tunnel (idempotent)
 func (m *Manager) CreateDNSRecord(zoneID, hostname, tunnelID string) (string, error) {
 	tunnelDomain := fmt.Sprintf("%s.cfargotunnel.com", tunnelID)
-	
+
 	// First check if a DNS record with this name already exists
 	existingRecords, err := m.GetDNSRecord(zoneID, hostname, "CNAME")
 	if err == nil && len(existingRecords.Result) > 0 {
@@ -491,10 +491,10 @@ func (m *Manager) CreateDNSRecord(zoneID, hostname, tunnelID string) (string, er
 		}
 		return recordID, nil
 	}
-	
+
 	// No existing record found, create a new one
 	url := fmt.Sprintf("%s/zones/%s/dns_records", apiBaseURL, zoneID)
-	
+
 	reqBody := CreateDNSRecordRequest{
 		Type:    "CNAME",
 		Proxied: true,

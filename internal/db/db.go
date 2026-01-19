@@ -48,36 +48,11 @@ func (db *DB) GetDBPath() string {
 	return db.dbPath
 }
 
-// // Init initializes the database connection and runs migrations
-// func Init(dbPath string) (*DB, error) {
-// 	// Ensure data directory exists
-// 	dir := filepath.Dir(dbPath)
-// 	if err := os.MkdirAll(dir, 0755); err != nil {
-// 		return nil, err
-// 	}
-
-// 	// Open database connection
-// 	sqlDB, err := sql.Open("sqlite3", dbPath+"?_foreign_keys=on")
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	db := &DB{sqlDB}
-
-// 	// Run migrations
-// 	if err := db.migrate(); err != nil {
-// 		sqlDB.Close()
-// 		return nil, err
-// 	}
-
-// 	return db, nil
-// }
-
 // migrate runs database migrations
 func (db *DB) migrate() error {
 	migrations := []string{
 		`CREATE TABLE IF NOT EXISTS apps (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL UNIQUE,
 			description TEXT,
 			compose_content TEXT NOT NULL,
@@ -91,21 +66,21 @@ func (db *DB) migrate() error {
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS users (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			id TEXT PRIMARY KEY,
 			username TEXT NOT NULL UNIQUE,
 			password TEXT NOT NULL,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS settings (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			id TEXT PRIMARY KEY,
 			cloudflare_api_token TEXT,
 			cloudflare_account_id TEXT,
 			auto_start_apps INTEGER NOT NULL DEFAULT 0,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS cloudflare_tunnels (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			app_id INTEGER NOT NULL,
+			id TEXT PRIMARY KEY,
+			app_id TEXT NOT NULL,
 			tunnel_id TEXT NOT NULL,
 			tunnel_name TEXT NOT NULL,
 			tunnel_token TEXT NOT NULL,
@@ -116,13 +91,10 @@ func (db *DB) migrate() error {
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			last_synced_at DATETIME,
 			error_details TEXT,
+			ingress_rules TEXT,
 			UNIQUE(app_id),
 			FOREIGN KEY (app_id) REFERENCES apps(id) ON DELETE CASCADE
 		)`,
-		// Add missing columns if they don't exist (for existing databases)
-		`ALTER TABLE settings ADD COLUMN auto_start_apps INTEGER NOT NULL DEFAULT 0`,
-		`ALTER TABLE apps ADD COLUMN error_message TEXT`,
-		`ALTER TABLE cloudflare_tunnels ADD COLUMN ingress_rules TEXT`,
 	}
 
 	for _, migration := range migrations {
@@ -134,12 +106,35 @@ func (db *DB) migrate() error {
 		}
 	}
 
-	// Create default settings row if it doesn't exist
+	// Check if settings exist and have proper UUIDs
 	var count int
 	if err := db.QueryRow("SELECT COUNT(*) FROM settings").Scan(&count); err != nil {
 		log.Printf("Error checking settings: %v", err)
-	} else if count == 0 {
-		db.Exec("INSERT INTO settings (auto_start_apps) VALUES (0)")
+		return err
+	}
+
+	// If settings exist but have no UUIDs, fix them
+	if count > 0 {
+		var uuidCount int
+		if err := db.QueryRow("SELECT COUNT(*) FROM settings WHERE id IS NOT NULL").Scan(&uuidCount); err != nil {
+			log.Printf("Error checking UUIDs: %v", err)
+		} else if uuidCount == 0 {
+			// All settings have NULL IDs, need to fix them
+			settings := NewSettings()
+			if _, err := db.Exec("UPDATE settings SET id = ?, updated_at = ? WHERE id IS NULL",
+				settings.ID, time.Now()); err != nil {
+				log.Printf("Error fixing settings UUIDs: %v", err)
+			}
+		}
+	}
+
+	// Create default settings row if none exist
+	if count == 0 {
+		settings := NewSettings()
+		if _, err := db.Exec("INSERT INTO settings (id, cloudflare_api_token, cloudflare_account_id, auto_start_apps, updated_at) VALUES (?, ?, ?, ?, ?)",
+			settings.ID, settings.CloudflareAPIToken, settings.CloudflareAccountID, settings.AutoStartApps, settings.UpdatedAt); err != nil {
+			log.Printf("Error inserting default settings: %v", err)
+		}
 	}
 
 	return nil
@@ -164,20 +159,14 @@ func (db *DB) CreateApp(app *App) error {
 		errorMessage = nil
 	}
 
-	result, err := db.Exec(
-		"INSERT INTO apps (name, description, compose_content, tunnel_token, tunnel_id, tunnel_domain, public_url, status, error_message, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		app.Name, app.Description, app.ComposeContent, app.TunnelToken, app.TunnelID, app.TunnelDomain, app.PublicURL, app.Status, errorMessage, time.Now(), time.Now(),
+	_, err := db.Exec(
+		"INSERT INTO apps (id, name, description, compose_content, tunnel_token, tunnel_id, tunnel_domain, public_url, status, error_message, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		app.ID, app.Name, app.Description, app.ComposeContent, app.TunnelToken, app.TunnelID, app.TunnelDomain, app.PublicURL, app.Status, errorMessage, app.CreatedAt, time.Now(),
 	)
 	if err != nil {
 		return err
 	}
 
-	id, err := result.LastInsertId()
-	if err != nil {
-		return err
-	}
-
-	app.ID = id
 	return nil
 }
 
@@ -203,7 +192,7 @@ func (db *DB) GetAllApps() ([]*App, error) {
 }
 
 // GetApp retrieves an app by ID
-func (db *DB) GetApp(id int64) (*App, error) {
+func (db *DB) GetApp(id string) (*App, error) {
 	app := &App{}
 	var errorMessage sql.NullString
 	err := db.QueryRow(
@@ -259,7 +248,7 @@ func (db *DB) UpdateApp(app *App) error {
 }
 
 // DeleteApp deletes an app
-func (db *DB) DeleteApp(id int64) error {
+func (db *DB) DeleteApp(id string) error {
 	_, err := db.Exec("DELETE FROM apps WHERE id = ?", id)
 	return err
 }
@@ -268,9 +257,22 @@ func (db *DB) DeleteApp(id int64) error {
 func (db *DB) GetSettings() (*Settings, error) {
 	settings := &Settings{}
 	err := db.QueryRow(
-		"SELECT id, cloudflare_api_token, cloudflare_account_id, auto_start_apps, updated_at FROM settings WHERE id = 1",
+		"SELECT id, cloudflare_api_token, cloudflare_account_id, auto_start_apps, updated_at FROM settings LIMIT 1",
 	).Scan(&settings.ID, &settings.CloudflareAPIToken, &settings.CloudflareAccountID, &settings.AutoStartApps, &settings.UpdatedAt)
-	return settings, err
+
+	if err != nil {
+		// If no settings exist, create default settings
+		if strings.Contains(err.Error(), "no rows in result set") {
+			settings = NewSettings()
+			if err := db.UpdateSettings(settings); err != nil {
+				return nil, err
+			}
+			return settings, nil
+		}
+		return nil, err
+	}
+
+	return settings, nil
 }
 
 // UpdateSettings updates the settings
@@ -287,28 +289,22 @@ func (db *DB) UpdateSettings(settings *Settings) error {
 		accountID = nil
 	}
 	_, err := db.Exec(
-		"UPDATE settings SET cloudflare_api_token = ?, cloudflare_account_id = ?, auto_start_apps = ?, updated_at = ? WHERE id = 1",
-		apiToken, accountID, settings.AutoStartApps, time.Now(),
+		"UPDATE settings SET cloudflare_api_token = ?, cloudflare_account_id = ?, auto_start_apps = ?, updated_at = ? WHERE id = ?",
+		apiToken, accountID, settings.AutoStartApps, time.Now(), settings.ID,
 	)
 	return err
 }
 
 // CreateUser creates a new user
 func (db *DB) CreateUser(user *User) error {
-	result, err := db.Exec(
-		"INSERT INTO users (username, password, created_at) VALUES (?, ?, ?)",
-		user.Username, user.Password, time.Now(),
+	_, err := db.Exec(
+		"INSERT INTO users (id, username, password, created_at) VALUES (?, ?, ?, ?)",
+		user.ID, user.Username, user.Password, user.CreatedAt,
 	)
 	if err != nil {
 		return err
 	}
 
-	id, err := result.LastInsertId()
-	if err != nil {
-		return err
-	}
-
-	user.ID = id
 	return nil
 }
 
@@ -342,25 +338,19 @@ func (db *DB) CreateCloudflareTunnel(tunnel *CloudflareTunnel) error {
 		ingressRules = nil
 	}
 
-	result, err := db.Exec(
-		"INSERT INTO cloudflare_tunnels (app_id, tunnel_id, tunnel_name, tunnel_token, account_id, is_active, status, ingress_rules, created_at, updated_at, last_synced_at, error_details) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		tunnel.AppID, tunnel.TunnelID, tunnel.TunnelName, tunnel.TunnelToken, tunnel.AccountID, tunnel.IsActive, tunnel.Status, ingressRules, time.Now(), time.Now(), tunnel.LastSyncedAt, errorDetails,
+	_, err := db.Exec(
+		"INSERT INTO cloudflare_tunnels (id, app_id, tunnel_id, tunnel_name, tunnel_token, account_id, is_active, status, ingress_rules, created_at, updated_at, last_synced_at, error_details) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		tunnel.ID, tunnel.AppID, tunnel.TunnelID, tunnel.TunnelName, tunnel.TunnelToken, tunnel.AccountID, tunnel.IsActive, tunnel.Status, ingressRules, tunnel.CreatedAt, time.Now(), tunnel.LastSyncedAt, errorDetails,
 	)
 	if err != nil {
 		return err
 	}
 
-	id, err := result.LastInsertId()
-	if err != nil {
-		return err
-	}
-
-	tunnel.ID = id
 	return nil
 }
 
 // GetCloudflareTunnelByAppID retrieves a Cloudflare tunnel by app ID
-func (db *DB) GetCloudflareTunnelByAppID(appID int64) (*CloudflareTunnel, error) {
+func (db *DB) GetCloudflareTunnelByAppID(appID string) (*CloudflareTunnel, error) {
 	tunnel := &CloudflareTunnel{}
 	var errorDetails sql.NullString
 	var lastSyncedAt, ingressRules interface{} // Use interface{} to handle NULL values
@@ -438,7 +428,7 @@ func (db *DB) UpdateCloudflareTunnel(tunnel *CloudflareTunnel) error {
 }
 
 // DeleteCloudflareTunnel deletes a Cloudflare tunnel record
-func (db *DB) DeleteCloudflareTunnel(appID int64) error {
+func (db *DB) DeleteCloudflareTunnel(appID string) error {
 	_, err := db.Exec("DELETE FROM cloudflare_tunnels WHERE app_id = ?", appID)
 	return err
 }

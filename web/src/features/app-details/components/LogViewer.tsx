@@ -3,7 +3,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui
 import { Button } from '@/shared/components/ui/button'
 import { Download, RefreshCw } from 'lucide-react'
 
-function LogViewer({ appId }: { appId: number }) {
+function LogViewer({ appId }: { appId: string }) {
     const [logs, setLogs] = React.useState('')
     const [isLoading, setIsLoading] = React.useState(false)
 

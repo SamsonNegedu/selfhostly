@@ -3,6 +3,7 @@ import Dashboard from '@/features/dashboard'
 import CreateApp from '@/features/create-app'
 import AppDetails from '@/features/app-details'
 import Settings from '@/features/settings'
+import Cloudflare from '@/features/cloudflare'
 import App from './App'
 
 const router = createBrowserRouter([
@@ -14,6 +15,7 @@ const router = createBrowserRouter([
             { path: 'dashboard', element: <Dashboard /> },
             { path: 'apps/new', element: <CreateApp /> },
             { path: 'apps/:id', element: <AppDetails /> },
+            { path: 'cloudflare', element: <Cloudflare /> },
             { path: 'settings', element: <Settings /> },
         ],
     },

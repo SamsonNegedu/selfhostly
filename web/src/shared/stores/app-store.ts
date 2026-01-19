@@ -6,8 +6,8 @@ interface AppStore {
   selectedApp: App | null;
   setApps: (apps: App[]) => void;
   addApp: (app: App) => void;
-  updateApp: (id: number, app: Partial<App>) => void;
-  removeApp: (id: number) => void;
+  updateApp: (id: string, app: Partial<App>) => void;
+  removeApp: (id: string) => void;
   selectApp: (app: App | null) => void;
 }
 

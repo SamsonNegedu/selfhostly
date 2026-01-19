@@ -9,11 +9,11 @@ function CloudflareManagement() {
     const syncTunnel = useSyncCloudflareTunnel()
     const deleteTunnel = useDeleteCloudflareTunnel()
 
-    const handleSync = (appId: number) => {
+    const handleSync = (appId: string) => {
         syncTunnel.mutate(appId)
     }
 
-    const handleDelete = (appId: number) => {
+    const handleDelete = (appId: string) => {
         if (window.confirm('Are you sure you want to delete this Cloudflare tunnel? This will remove the tunnel configuration and cannot be undone.')) {
             deleteTunnel.mutate(appId)
         }

@@ -7,7 +7,7 @@ import { useCloudflareTunnel, useSyncCloudflareTunnel, useDeleteCloudflareTunnel
 import { IngressConfiguration } from '@/features/cloudflare/IngressConfiguration'
 
 interface CloudflareTabProps {
-    appId: number
+    appId: string;
 }
 
 function CloudflareTab({ appId }: CloudflareTabProps) {

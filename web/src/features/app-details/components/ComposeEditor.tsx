@@ -6,8 +6,8 @@ import { Save, RotateCcw } from 'lucide-react'
 import { useUpdateApp } from '@/shared/services/api'
 
 interface ComposeEditorProps {
-    appId: number
-    initialComposeContent: string
+    appId: string;
+    initialComposeContent: string;
 }
 
 function ComposeEditor({ appId, initialComposeContent }: ComposeEditorProps) {

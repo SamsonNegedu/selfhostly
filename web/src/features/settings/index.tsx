@@ -3,11 +3,13 @@ import { useSettings, useUpdateSettings } from '@/shared/services/api'
 import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/card'
 import { Button } from '@/shared/components/ui/button'
 import { Checkbox } from '@/shared/components/ui'
+import AppBreadcrumb from '@/shared/components/layout/Breadcrumb'
 
 function Settings() {
     const { data: settings, isLoading } = useSettings()
     const updateSettings = useUpdateSettings()
     const [formData, setFormData] = useState({
+        id: settings?.id,
         cloudflare_api_token: '',
         cloudflare_account_id: '',
         auto_start_apps: false,
@@ -16,6 +18,7 @@ function Settings() {
     useEffect(() => {
         if (settings) {
             setFormData({
+                id: settings.id,
                 cloudflare_api_token: '',
                 cloudflare_account_id: settings.cloudflare_account_id,
                 auto_start_apps: settings.auto_start_apps,
@@ -34,6 +37,16 @@ function Settings() {
 
     return (
         <div>
+            {/* Breadcrumb Navigation */}
+            <div className="mb-6">
+                <AppBreadcrumb
+                    items={[
+                        { label: 'Home', path: '/dashboard' },
+                        { label: 'Settings', isCurrentPage: true }
+                    ]}
+                />
+            </div>
+
             <div className="mb-6">
                 <h1 className="text-3xl font-bold">Settings</h1>
                 <p className="text-muted-foreground mt-2">

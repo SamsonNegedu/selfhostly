@@ -1,5 +1,5 @@
 export interface App {
-  id: number;
+  id: string;
   name: string;
   description: string;
   compose_content: string;
@@ -26,7 +26,7 @@ export interface UpdateAppRequest {
 }
 
 export interface Settings {
-  id: number;
+  id: string;
   cloudflare_api_token: string;
   cloudflare_account_id: string;
   auto_start_apps: boolean;
@@ -47,8 +47,8 @@ export interface UpdateSettingsRequest {
 }
 
 export interface CloudflareTunnel {
-  id: number;
-  app_id: number;
+  id: string;
+  app_id: string;
   tunnel_id: string;
   tunnel_name: string;
   status: 'active' | 'inactive' | 'error' | 'deleted';

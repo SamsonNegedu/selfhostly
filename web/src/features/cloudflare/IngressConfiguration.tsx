@@ -9,11 +9,11 @@ import { useUpdateTunnelIngress, useCreateDNSRecord } from '@/shared/services/ap
 import type { IngressRule } from '@/shared/types/api'
 
 interface IngressConfigurationProps {
-    appId: number
-    existingIngress?: IngressRule[]
-    existingHostname?: string
-    tunnelID?: string
-    onSave?: (rules: IngressRule[], hostname?: string) => void
+    appId: string;
+    existingIngress?: IngressRule[];
+    existingHostname?: string;
+    tunnelID?: string;
+    onSave?: (rules: IngressRule[], hostname?: string) => void;
 }
 
 export function IngressConfiguration({ appId, existingIngress = [], existingHostname = '', tunnelID, onSave }: IngressConfigurationProps) {

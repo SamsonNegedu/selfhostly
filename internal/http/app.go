@@ -3,7 +3,6 @@ package http
 import (
 	"log/slog"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -126,19 +125,14 @@ func (s *Server) createApp(c *gin.Context) {
 	slog.InfoContext(c.Request.Context(), "about to create app with tunnel info", "tunnelID", tunnelID, "tunnelTokenLength", len(tunnelToken), "publicURL", publicURL)
 
 	// Create app in database
-	app := &db.App{
-		Name:           req.Name,
-		Description:    req.Description,
-		ComposeContent: req.ComposeContent,
-		TunnelToken:    tunnelToken,
-		TunnelID:       tunnelID,
-		TunnelDomain:   publicURL,
-		PublicURL:      publicURL,
-		Status:         statusStopped,
-		ErrorMessage:   nil, // Initialize with nil for optional field
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
-	}
+	app := db.NewApp(req.Name, req.Description, req.ComposeContent)
+	app.TunnelToken = tunnelToken
+	app.TunnelID = tunnelID
+	app.TunnelDomain = publicURL
+	app.PublicURL = publicURL
+	app.Status = statusStopped
+	app.ErrorMessage = nil // Initialize with nil for optional field
+	app.UpdatedAt = time.Now()
 
 	// Debug logging after app creation
 	slog.InfoContext(c.Request.Context(), "app creation with tunnel info", "appID", app.ID, "tunnelID", app.TunnelID, "tunnelTokenLength", len(app.TunnelToken))
@@ -165,18 +159,7 @@ func (s *Server) createApp(c *gin.Context) {
 	// Update tunnel metadata with correct appID if Cloudflare tunnel was created
 	slog.InfoContext(c.Request.Context(), "checking tunnel metadata creation", "tunnelID", tunnelID, "tunnelTokenLength", len(tunnelToken))
 	if tunnelID != "" && tunnelToken != "" {
-		tunnel := &db.CloudflareTunnel{
-			AppID:        app.ID,
-			TunnelID:     tunnelID,
-			TunnelName:   req.Name,
-			TunnelToken:  tunnelToken,
-			AccountID:    *settings.CloudflareAccountID,
-			IsActive:     true,
-			Status:       "active",
-			CreatedAt:    time.Now(),
-			UpdatedAt:    time.Now(),
-			LastSyncedAt: nil,
-		}
+		tunnel := db.NewCloudflareTunnel(app.ID, tunnelID, req.Name, tunnelToken, *settings.CloudflareAccountID)
 
 		if err := s.database.CreateCloudflareTunnel(tunnel); err != nil {
 			slog.ErrorContext(c.Request.Context(), "failed to create tunnel metadata in database", "appID", app.ID, "error", err)
@@ -218,8 +201,8 @@ func (s *Server) createApp(c *gin.Context) {
 
 // getApp returns a single app
 func (s *Server) getApp(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
+	id := c.Param("id")
+	if id == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
 		return
 	}
@@ -236,8 +219,8 @@ func (s *Server) getApp(c *gin.Context) {
 
 // updateApp updates an app
 func (s *Server) updateApp(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
+	id := c.Param("id")
+	if id == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
 		return
 	}
@@ -344,8 +327,8 @@ func (s *Server) updateApp(c *gin.Context) {
 
 // deleteApp deletes an app using the comprehensive cleanup system
 func (s *Server) deleteApp(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
+	id := c.Param("id")
+	if id == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
 		return
 	}
@@ -425,8 +408,8 @@ func (s *Server) deleteApp(c *gin.Context) {
 
 // startApp starts an app
 func (s *Server) startApp(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
+	id := c.Param("id")
+	if id == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
 		return
 	}
@@ -473,8 +456,8 @@ func (s *Server) startApp(c *gin.Context) {
 
 // stopApp stops an app
 func (s *Server) stopApp(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
+	id := c.Param("id")
+	if id == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
 		return
 	}
@@ -521,8 +504,8 @@ func (s *Server) stopApp(c *gin.Context) {
 
 // updateAppContainers updates app containers with zero downtime
 func (s *Server) updateAppContainers(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
+	id := c.Param("id")
+	if id == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
 		return
 	}
@@ -576,8 +559,8 @@ func (s *Server) updateAppContainers(c *gin.Context) {
 
 // getAppLogs returns app logs
 func (s *Server) getAppLogs(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
+	id := c.Param("id")
+	if id == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
 		return
 	}
@@ -603,8 +586,8 @@ func (s *Server) getAppLogs(c *gin.Context) {
 
 // repairApp repairs an app's compose file if needed (e.g., adds missing cloudflared token)
 func (s *Server) repairApp(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
+	id := c.Param("id")
+	if id == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
 		return
 	}

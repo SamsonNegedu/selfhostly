@@ -16,34 +16,34 @@ type ComposeFile struct {
 
 // Service represents a docker-compose service
 type Service struct {
-	Image         string                 `yaml:"image"`
-	ContainerName string                 `yaml:"container_name,omitempty"`
-	Command       string                 `yaml:"command,omitempty"`
-	Build         BuildConfig            `yaml:"build,omitempty"`
-	Environment   map[string]string      `yaml:"environment,omitempty"`
-	EnvironmentFiles []string             `yaml:"env_file,omitempty"`
-	Ports         []string               `yaml:"ports,omitempty"`
-	Volumes       []string               `yaml:"volumes,omitempty"`
-	Networks      []string               `yaml:"networks,omitempty"`
-	DependsOn     []string               `yaml:"depends_on,omitempty"`
-	Restart       string                 `yaml:"restart,omitempty"`
-	Healthcheck   HealthcheckConfig      `yaml:"healthcheck,omitempty"`
-	Labels        map[string]string      `yaml:"labels,omitempty"`
-	Logging       LoggingConfig          `yaml:"logging,omitempty"`
-	Deploy        DeployConfig           `yaml:"deploy,omitempty"`
-	ExtraHosts    []string               `yaml:"extra_hosts,omitempty"`
-	StopSignal    string                 `yaml:"stop_signal,omitempty"`
-	Timeout       string                 `yaml:"timeout,omitempty"`
-	WorkingDir    string                 `yaml:"working_dir,omitempty"`
-	User          string                 `yaml:"user,omitempty"`
-	Hostname      string                 `yaml:"hostname,omitempty"`
-	Domainname    string                 `yaml:"domainname,omitempty"`
-	ExposedPorts  map[string]interface{} `yaml:"expose,omitempty"`
-	Tmpfs         []string               `yaml:"tmpfs,omitempty"`
-	Devices       []string               `yaml:"devices,omitempty"`
-	Privileged    bool                   `yaml:"privileged,omitempty"`
-	ReadonlyRootfs bool                   `yaml:"read_only,omitempty"`
-	Init          bool                   `yaml:"init,omitempty"`
+	Image            string                 `yaml:"image"`
+	ContainerName    string                 `yaml:"container_name,omitempty"`
+	Command          string                 `yaml:"command,omitempty"`
+	Build            BuildConfig            `yaml:"build,omitempty"`
+	Environment      map[string]string      `yaml:"environment,omitempty"`
+	EnvironmentFiles []string               `yaml:"env_file,omitempty"`
+	Ports            []string               `yaml:"ports,omitempty"`
+	Volumes          []string               `yaml:"volumes,omitempty"`
+	Networks         []string               `yaml:"networks,omitempty"`
+	DependsOn        []string               `yaml:"depends_on,omitempty"`
+	Restart          string                 `yaml:"restart,omitempty"`
+	Healthcheck      HealthcheckConfig      `yaml:"healthcheck,omitempty"`
+	Labels           map[string]string      `yaml:"labels,omitempty"`
+	Logging          LoggingConfig          `yaml:"logging,omitempty"`
+	Deploy           DeployConfig           `yaml:"deploy,omitempty"`
+	ExtraHosts       []string               `yaml:"extra_hosts,omitempty"`
+	StopSignal       string                 `yaml:"stop_signal,omitempty"`
+	Timeout          string                 `yaml:"timeout,omitempty"`
+	WorkingDir       string                 `yaml:"working_dir,omitempty"`
+	User             string                 `yaml:"user,omitempty"`
+	Hostname         string                 `yaml:"hostname,omitempty"`
+	Domainname       string                 `yaml:"domainname,omitempty"`
+	ExposedPorts     map[string]interface{} `yaml:"expose,omitempty"`
+	Tmpfs            []string               `yaml:"tmpfs,omitempty"`
+	Devices          []string               `yaml:"devices,omitempty"`
+	Privileged       bool                   `yaml:"privileged,omitempty"`
+	ReadonlyRootfs   bool                   `yaml:"read_only,omitempty"`
+	Init             bool                   `yaml:"init,omitempty"`
 }
 
 // Network represents a docker-compose network
@@ -56,26 +56,26 @@ type Volume struct{}
 
 // BuildConfig represents a docker-compose build configuration
 type BuildConfig struct {
-	Context   string            `yaml:"context,omitempty"`
+	Context    string            `yaml:"context,omitempty"`
 	Dockerfile string            `yaml:"dockerfile,omitempty"`
-	Args      map[string]string `yaml:"args,omitempty"`
-	Target    string            `yaml:"target,omitempty"`
-	Network   string            `yaml:"network,omitempty"`
-	Labels    map[string]string `yaml:"labels,omitempty"`
-	CacheFrom string            `yaml:"cache_from,omitempty"`
-	NoCache   bool              `yaml:"no_cache,omitempty"`
-	Pull      bool              `yaml:"pull,omitempty"`
-	SSH       map[string]string `yaml:"ssh,omitempty"`
+	Args       map[string]string `yaml:"args,omitempty"`
+	Target     string            `yaml:"target,omitempty"`
+	Network    string            `yaml:"network,omitempty"`
+	Labels     map[string]string `yaml:"labels,omitempty"`
+	CacheFrom  string            `yaml:"cache_from,omitempty"`
+	NoCache    bool              `yaml:"no_cache,omitempty"`
+	Pull       bool              `yaml:"pull,omitempty"`
+	SSH        map[string]string `yaml:"ssh,omitempty"`
 }
 
 // HealthcheckConfig represents a docker-compose healthcheck configuration
 type HealthcheckConfig struct {
-	Test     []string `yaml:"test,omitempty"`
-	Interval string   `yaml:"interval,omitempty"`
-	Timeout  string   `yaml:"timeout,omitempty"`
-	Retries  int      `yaml:"retries,omitempty"`
-	StartPeriod string `yaml:"start_period,omitempty"`
-	Disable  bool     `yaml:"disable,omitempty"`
+	Test        []string `yaml:"test,omitempty"`
+	Interval    string   `yaml:"interval,omitempty"`
+	Timeout     string   `yaml:"timeout,omitempty"`
+	Retries     int      `yaml:"retries,omitempty"`
+	StartPeriod string   `yaml:"start_period,omitempty"`
+	Disable     bool     `yaml:"disable,omitempty"`
 }
 
 // LoggingConfig represents a docker-compose logging configuration
@@ -86,18 +86,18 @@ type LoggingConfig struct {
 
 // DeployConfig represents a docker-compose deploy configuration
 type DeployConfig struct {
-	Replicas    *int               `yaml:"replicas,omitempty"`
-	Mode        string             `yaml:"mode,omitempty"`
-	Labels      map[string]string `yaml:"labels,omitempty"`
-	UpdateConfig UpdateConfig      `yaml:"update_config,omitempty"`
-	Resources   Resources          `yaml:"resources,omitempty"`
-	RestartPolicy RestartPolicy    `yaml:"restart_policy,omitempty"`
-	Placement   Placement          `yaml:"placement,omitempty"`
+	Replicas      *int              `yaml:"replicas,omitempty"`
+	Mode          string            `yaml:"mode,omitempty"`
+	Labels        map[string]string `yaml:"labels,omitempty"`
+	UpdateConfig  UpdateConfig      `yaml:"update_config,omitempty"`
+	Resources     Resources         `yaml:"resources,omitempty"`
+	RestartPolicy RestartPolicy     `yaml:"restart_policy,omitempty"`
+	Placement     Placement         `yaml:"placement,omitempty"`
 }
 
 // UpdateConfig represents docker-compose update configuration
 type UpdateConfig struct {
-	Parallelism     *int `yaml:"parallelism,omitempty"`
+	Parallelism     *int   `yaml:"parallelism,omitempty"`
 	Delay           string `yaml:"delay,omitempty"`
 	FailureAction   string `yaml:"failure_action,omitempty"`
 	Monitor         string `yaml:"monitor,omitempty"`
@@ -107,23 +107,23 @@ type UpdateConfig struct {
 
 // Resources represents docker-compose resource limits
 type Resources struct {
-	Limits   ResourceLimits `yaml:"limits,omitempty"`
+	Limits       ResourceLimits       `yaml:"limits,omitempty"`
 	Reservations ResourceReservations `yaml:"reservations,omitempty"`
 }
 
 // ResourceLimits represents resource limits
 type ResourceLimits struct {
-	Cpus    string `yaml:"cpus,omitempty"`
-	Memory  string `yaml:"memory,omitempty"`
-	Pids    *int   `yaml:"pids,omitempty"`
+	Cpus    string   `yaml:"cpus,omitempty"`
+	Memory  string   `yaml:"memory,omitempty"`
+	Pids    *int     `yaml:"pids,omitempty"`
 	Devices []string `yaml:"devices,omitempty"`
 }
 
 // ResourceReservations represents resource reservations
 type ResourceReservations struct {
-	Cpus    string `yaml:"cpus,omitempty"`
-	Memory  string `yaml:"memory,omitempty"`
-	Gpus    string `yaml:"gpus,omitempty"`
+	Cpus   string `yaml:"cpus,omitempty"`
+	Memory string `yaml:"memory,omitempty"`
+	Gpus   string `yaml:"gpus,omitempty"`
 }
 
 // RestartPolicy represents restart policy
@@ -136,9 +136,9 @@ type RestartPolicy struct {
 
 // Placement represents placement constraints
 type Placement struct {
-	Constraints []string `yaml:"constraints,omitempty"`
-	Preferences []string `yaml:"preferences,omitempty"`
-	MaxReplicasPerNode *int `yaml:"maxreplicaspernode,omitempty"`
+	Constraints        []string `yaml:"constraints,omitempty"`
+	Preferences        []string `yaml:"preferences,omitempty"`
+	MaxReplicasPerNode *int     `yaml:"maxreplicaspernode,omitempty"`
 }
 
 // ParseCompose parses and validates docker-compose YAML content
@@ -188,10 +188,14 @@ func InjectCloudflared(compose *ComposeFile, appName, tunnelToken string, networ
 	}
 
 	cloudflaredService := Service{
-		Image:   "cloudflare/cloudflared:latest",
-		Command: fmt.Sprintf("tunnel --no-autoupdate run --token %s", tunnelToken),
-		Restart: "unless-stopped",
-		Networks: []string{network},
+		Image:         "cloudflare/cloudflared:latest",
+		ContainerName: fmt.Sprintf("%s-cloudflared", appName),
+		Restart:       "always",
+		Networks:      []string{network},
+		Environment: map[string]string{
+			"TUNNEL_TOKEN": tunnelToken,
+		},
+		Command: "tunnel run",
 	}
 
 	compose.Services["cloudflared"] = cloudflaredService

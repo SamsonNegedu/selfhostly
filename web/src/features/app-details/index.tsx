@@ -5,19 +5,20 @@ import { useAppStore } from '@/shared/stores/app-store'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '@/shared/components/ui/Toast'
 import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/card'
-import { Button } from '@/shared/components/ui/button'
 import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog'
-import { Play, Pause, RefreshCw, Trash2, Terminal, Settings, Cloud } from 'lucide-react'
+import { RefreshCw, Terminal, Settings, Cloud } from 'lucide-react'
 import UpdateProgress from './components/UpdateProgress'
 import LogViewer from './components/LogViewer'
 import ComposeEditor from './components/ComposeEditor'
 import CloudflareTab from './components/CloudflareTab'
+import { AppActions } from './components/AppActions'
+import AppBreadcrumb from '@/shared/components/layout/Breadcrumb'
 
 type TabType = 'overview' | 'compose' | 'logs' | 'update' | 'cloudflare'
 
 function AppDetails() {
     const { id } = useParams<{ id: string }>()
-    const appId = id ? parseInt(id) : undefined
+    const appId = id ?? undefined
     const navigate = useNavigate()
     const { data: app, isLoading } = useApp(appId!)
     const startApp = useStartApp()
@@ -72,6 +73,17 @@ function AppDetails() {
 
     return (
         <div className="space-y-6">
+            {/* Breadcrumb Navigation */}
+            <div>
+                <AppBreadcrumb
+                    items={[
+                        { label: 'Home', path: '/dashboard' },
+                        { label: 'Apps', path: '/apps' },
+                        { label: app.name, isCurrentPage: true }
+                    ]}
+                />
+            </div>
+
             <Card>
                 <CardHeader>
                     <div className="flex items-center justify-between">
@@ -99,83 +111,38 @@ function AppDetails() {
                                 {app.status}
                             </div>
                         </div>
-                        <div className="flex gap-2">
-                            {app.status === 'running' && (
-                                <Button
-                                    variant="outline"
-                                    size="icon"
-                                    onClick={() => stopApp.mutate(app.id, {
-                                        onSuccess: () => {
-                                            toast.success('App stopped', `${app.name} has been stopped successfully`)
-                                        },
-                                        onError: (error) => {
-                                            toast.error('Failed to stop app', error.message)
-                                        }
-                                    })}
-                                    disabled={stopApp.isPending}
-                                >
-                                    {stopApp.isPending ? (
-                                        <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                    ) : (
-                                        <Pause className="h-4 w-4" />
-                                    )}
-                                </Button>
-                            )}
-                            {app.status === 'stopped' && (
-                                <Button
-                                    variant="outline"
-                                    size="icon"
-                                    onClick={() => startApp.mutate(app.id, {
-                                        onSuccess: () => {
-                                            toast.success('App started', `${app.name} has been started successfully`)
-                                        },
-                                        onError: (error) => {
-                                            toast.error('Failed to start app', error.message)
-                                        }
-                                    })}
-                                    disabled={startApp.isPending}
-                                >
-                                    {startApp.isPending ? (
-                                        <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                    ) : (
-                                        <Play className="h-4 w-4" />
-                                    )}
-                                </Button>
-                            )}
-                            <Button
-                                variant="outline"
-                                size="icon"
-                                onClick={() => updateApp.mutate(app.id, {
-                                    onSuccess: () => {
-                                        toast.success('Update started', `${app.name} update process has begun`)
-                                    },
-                                    onError: (error) => {
-                                        toast.error('Failed to start update', error.message)
-                                    }
-                                })}
-                                disabled={updateApp.isPending}
-                            >
-                                {updateApp.isPending ? (
-                                    <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                ) : (
-                                    <RefreshCw className="h-4 w-4" />
-                                )}
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="icon"
-                                onClick={handleDelete}
-                                className="text-destructive hover:text-destructive"
-                                title="Delete app"
-                                disabled={deleteApp.isPending}
-                            >
-                                {deleteApp.isPending ? (
-                                    <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                ) : (
-                                    <Trash2 className="h-4 w-4" />
-                                )}
-                            </Button>
-                        </div>
+                        <AppActions
+                            appStatus={app.status}
+                            isStartPending={startApp.isPending}
+                            isStopPending={stopApp.isPending}
+                            isUpdatePending={updateApp.isPending}
+                            isDeletePending={deleteApp.isPending}
+                            onStart={() => startApp.mutate(app.id, {
+                                onSuccess: () => {
+                                    toast.success('App started', `${app.name} has been started successfully`)
+                                },
+                                onError: (error) => {
+                                    toast.error('Failed to start app', error.message)
+                                }
+                            })}
+                            onStop={() => stopApp.mutate(app.id, {
+                                onSuccess: () => {
+                                    toast.success('App stopped', `${app.name} has been stopped successfully`)
+                                },
+                                onError: (error) => {
+                                    toast.error('Failed to stop app', error.message)
+                                }
+                            })}
+                            onUpdate={() => updateApp.mutate(app.id, {
+                                onSuccess: () => {
+                                    toast.success('Update started', `${app.name} update process has begun`)
+                                },
+                                onError: (error) => {
+                                    toast.error('Failed to start update', error.message)
+                                }
+                            })}
+                            onDelete={handleDelete}
+                        />
                     </div>
 
                     <div className="flex border-b">
@@ -206,7 +173,7 @@ function AppDetails() {
                             onClick={() => setActiveTab('update')}
                         >
                             <RefreshCw className="h-4 w-4 inline mr-2" />
-                            Update
+                            Deploy Updates
                         </button>
                         <button
                             className={`px-4 py-2 text-sm font-medium ${activeTab === 'logs'

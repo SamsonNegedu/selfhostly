@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -39,18 +38,18 @@ type IngressRule struct {
 
 // CloudflareTunnelResponse represents a Cloudflare tunnel API response
 type CloudflareTunnelResponse struct {
-	ID           int64      `json:"id"`
-	AppID        int64      `json:"app_id"`
-	TunnelID     string     `json:"tunnel_id"`
-	TunnelName   string     `json:"tunnel_name"`
-	Status       string     `json:"status"`
-	IsActive     bool       `json:"is_active"`
-	PublicURL    string     `json:"public_url"`
+	ID           string      `json:"id"`
+	AppID        string      `json:"app_id"`
+	TunnelID     string      `json:"tunnel_id"`
+	TunnelName   string      `json:"tunnel_name"`
+	Status       string      `json:"status"`
+	IsActive     bool        `json:"is_active"`
+	PublicURL    string      `json:"public_url"`
 	IngressRules []IngressRule `json:"ingress_rules,omitempty"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
-	LastSyncedAt *time.Time `json:"last_synced_at"`
-	ErrorDetails string     `json:"error_details,omitempty"`
+	CreatedAt    time.Time   `json:"created_at"`
+	UpdatedAt    time.Time   `json:"updated_at"`
+	LastSyncedAt *time.Time  `json:"last_synced_at"`
+	ErrorDetails string      `json:"error_details,omitempty"`
 }
 
 // listCloudflareTunnels returns all active Cloudflare tunnels
@@ -112,8 +111,8 @@ func (s *Server) listCloudflareTunnels(c *gin.Context) {
 
 // getCloudflareTunnel returns details for a specific Cloudflare tunnel
 func (s *Server) getCloudflareTunnel(c *gin.Context) {
-	appID, err := strconv.ParseInt(c.Param("appId"), 10, 64)
-	if err != nil {
+	appID := c.Param("appId")
+	if appID == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
 		return
 	}
@@ -197,8 +196,8 @@ func (s *Server) getCloudflareTunnel(c *gin.Context) {
 
 // syncCloudflareTunnel synchronizes tunnel status with Cloudflare
 func (s *Server) syncCloudflareTunnel(c *gin.Context) {
-	appID, err := strconv.ParseInt(c.Param("appId"), 10, 64)
-	if err != nil {
+	appID := c.Param("appId")
+	if appID == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
 		return
 	}
@@ -266,8 +265,8 @@ func (s *Server) syncCloudflareTunnel(c *gin.Context) {
 
 // deleteCloudflareTunnel deletes a Cloudflare tunnel for an app
 func (s *Server) deleteCloudflareTunnel(c *gin.Context) {
-	appID, err := strconv.ParseInt(c.Param("appId"), 10, 64)
-	if err != nil {
+	appID := c.Param("appId")
+	if appID == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
 		return
 	}
@@ -324,8 +323,8 @@ func (s *Server) deleteCloudflareTunnel(c *gin.Context) {
 
 // updateTunnelIngress updates the ingress configuration for a tunnel
 func (s *Server) updateTunnelIngress(c *gin.Context) {
-	appID, err := strconv.ParseInt(c.Param("appId"), 10, 64)
-	if err != nil {
+	appID := c.Param("appId")
+	if appID == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
 		return
 	}
@@ -441,8 +440,8 @@ func (s *Server) updateTunnelIngress(c *gin.Context) {
 
 // createDNSRecord creates a DNS record for a tunnel
 func (s *Server) createDNSRecord(c *gin.Context) {
-	appID, err := strconv.ParseInt(c.Param("appId"), 10, 64)
-	if err != nil {
+	appID := c.Param("appId")
+	if appID == "" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
 		return
 	}

@@ -24,7 +24,7 @@ func NewTunnelManager(apiToken, accountID string, database *db.DB) *TunnelManage
 }
 
 // CreateTunnelWithMetadata creates a tunnel and stores its metadata
-func (tm *TunnelManager) CreateTunnelWithMetadata(appName string, appID int64) (*db.CloudflareTunnel, error) {
+func (tm *TunnelManager) CreateTunnelWithMetadata(appName string, appID string) (*db.CloudflareTunnel, error) {
 	// Create tunnel via API
 	tunnelID, token, err := tm.ApiManager.CreateTunnel(appName)
 	if err != nil {
@@ -82,7 +82,7 @@ func (tm *TunnelManager) UpdateTunnelStatus(tunnelID string, status string, erro
 }
 
 // DeleteTunnelByAppID deletes a tunnel by app ID
-func (tm *TunnelManager) DeleteTunnelByAppID(appID int64) error {
+func (tm *TunnelManager) DeleteTunnelByAppID(appID string) error {
 	// Get the tunnel record
 	tunnel, err := tm.database.GetCloudflareTunnelByAppID(appID)
 	if err != nil {
@@ -179,16 +179,16 @@ func (tm *TunnelManager) UpdateTunnelIngress(tunnelID string, ingressRules []Ing
 			return fmt.Errorf("failed to get zone ID for domain %s: %w", domain, err)
 		}
 
-// Create DNS record
-	recordID, err := tm.ApiManager.CreateDNSRecord(zoneID, hostname, tunnelID)
+		// Create DNS record
+		recordID, err := tm.ApiManager.CreateDNSRecord(zoneID, hostname, tunnelID)
 		if err != nil {
 			return fmt.Errorf("failed to create DNS record: %w", err)
 		}
 
-		slog.Info("DNS record created successfully", 
-			"zoneID", zoneID, 
-			"hostname", hostname, 
-			"targetDomain", targetDomain, 
+		slog.Info("DNS record created successfully",
+			"zoneID", zoneID,
+			"hostname", hostname,
+			"targetDomain", targetDomain,
 			"recordID", recordID)
 	}
 

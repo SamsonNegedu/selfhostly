@@ -9,7 +9,7 @@ import { useDeleteApp, useStartApp, useStopApp, useUpdateAppContainers } from '@
 import { useToast } from '@/shared/components/ui/Toast'
 
 interface AppToDelete {
-    id: number
+    id: string
     name: string
 }
 
@@ -28,7 +28,7 @@ function AppList() {
     const [appToDelete, setAppToDelete] = useState<AppToDelete | null>(null)
 
     // Handle delete with confirmation dialog
-    const handleDelete = (appId: number, appName: string) => {
+    const handleDelete = (appId: string, appName: string) => {
         setAppToDelete({ id: appId, name: appName })
     }
 

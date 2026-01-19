@@ -4,7 +4,7 @@ import { Button } from '@/shared/components/ui/button'
 import { Loader2 } from 'lucide-react'
 import { useUpdateAppContainers } from '@/shared/services/api'
 
-function UpdateProgress({ appId }: { appId: number }) {
+function UpdateProgress({ appId }: { appId: string }) {
     const [isUpdating, setIsUpdating] = React.useState(false)
     const updateApp = useUpdateAppContainers()
 
@@ -18,14 +18,14 @@ function UpdateProgress({ appId }: { appId: number }) {
     return (
         <Card>
             <CardHeader>
-                <CardTitle className="text-xl">Update Progress</CardTitle>
+                <CardTitle className="text-xl">Deploy Updates</CardTitle>
             </CardHeader>
             <CardContent>
                 {isUpdating ? (
                     <div className="space-y-4">
                         <div className="flex items-center space-x-2">
                             <Loader2 className="h-4 w-4 animate-spin" />
-                            <span>Updating containers...</span>
+                            <span>Deploying updates...</span>
                         </div>
                         <div className="h-2 bg-muted rounded-full overflow-hidden">
                             <div className="h-full bg-primary animate-[width_2s_ease-in-out]" style={{ width: '60%' }} />
@@ -34,13 +34,13 @@ function UpdateProgress({ appId }: { appId: number }) {
                 ) : (
                     <div className="space-y-4">
                         <p className="text-sm text-muted-foreground">
-                            Update app containers with zero downtime
+                            Deploy the latest updates to your containers with zero downtime
                         </p>
                         <Button onClick={handleUpdate} disabled={isUpdating || updateApp.isPending}>
                             {isUpdating || updateApp.isPending ? (
                                 <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                             ) : (
-                                "Start Update"
+                                "Deploy Updates"
                             )}
                         </Button>
                     </div>

@@ -2,7 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Dashboard from '@/features/dashboard';
 import CreateApp from '@/features/create-app';
 import AppDetails from '@/features/app-details';
-import CloudflareManagement from '@/features/cloudflare/CloudflareManagement';
+import Cloudflare from '@/features/cloudflare';
 import Settings from '@/features/settings';
 import Login from '@/features/login';
 import Header from '@/shared/components/layout/Header';
@@ -111,7 +111,7 @@ function AppRoutes() {
                 path="/cloudflare"
                 element={
                     <ProtectedRoute>
-                        <CloudflareManagement />
+                        <Cloudflare />
                     </ProtectedRoute>
                 }
             />

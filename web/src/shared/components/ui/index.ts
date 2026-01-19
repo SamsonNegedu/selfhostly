@@ -1,4 +1,5 @@
 export { Button } from './button'
+export { TooltipProvider, TooltipTrigger, TooltipContent } from './tooltip'
 export { Card, CardHeader, CardTitle, CardContent } from './card'
 export { Checkbox } from './checkbox'
 export { Textarea } from './textarea'
@@ -15,3 +16,16 @@ export {
   DialogTitle,
   DialogDescription,
 } from './dialog'
+export { 
+  SimpleDropdown, 
+  SimpleDropdownItem 
+} from './simple-dropdown'
+export {
+  Breadcrumb,
+  BreadcrumbList,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+  BreadcrumbEllipsis,
+} from './breadcrumb'

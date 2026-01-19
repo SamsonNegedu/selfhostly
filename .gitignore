@@ -38,3 +38,6 @@ build/
 data/
 apps/
 automaton
+
+web/node_modules/
+web/dist/
