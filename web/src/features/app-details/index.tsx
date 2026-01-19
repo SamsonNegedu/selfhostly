@@ -6,13 +6,16 @@ import { useNavigate } from 'react-router-dom'
 import { useToast } from '@/shared/components/ui/Toast'
 import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/card'
 import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog'
-import { RefreshCw, Terminal, Settings, Cloud } from 'lucide-react'
+import { RefreshCw, Terminal, Settings, Cloud, Info, Activity, AlertTriangle } from 'lucide-react'
+import { Button } from '@/shared/components/ui/button'
 import UpdateProgress from './components/UpdateProgress'
 import LogViewer from './components/LogViewer'
 import ComposeEditor from './components/ComposeEditor'
 import CloudflareTab from './components/CloudflareTab'
 import { AppActions } from './components/AppActions'
 import AppBreadcrumb from '@/shared/components/layout/Breadcrumb'
+import { AppDetailsSkeleton } from '@/shared/components/ui/Skeleton'
+import ActivityTimeline from './components/ActivityTimeline'
 
 type TabType = 'overview' | 'compose' | 'logs' | 'update' | 'cloudflare'
 
@@ -56,23 +59,67 @@ function AppDetails() {
     const [activeTab, setActiveTab] = React.useState<TabType>('overview')
 
     if (isLoading) {
-        return (
-            <div className="flex items-center justify-center h-64">
-                Loading...
-            </div>
-        )
+        return <AppDetailsSkeleton />
     }
 
     if (!app) {
         return (
-            <div className="text-center text-destructive">
-                App not found
+            <div className="flex items-center justify-center min-h-[400px]">
+                <div className="text-center max-w-md fade-in">
+                    <AlertTriangle className="h-12 w-12 text-destructive mx-auto mb-4" />
+                    <h2 className="text-xl font-semibold mb-2">App not found</h2>
+                    <p className="text-muted-foreground mb-4">
+                        The application you're looking for doesn't exist or has been deleted.
+                    </p>
+                    <Button
+                        onClick={() => navigate('/dashboard')}
+                        className="button-press"
+                    >
+                        Return to Dashboard
+                    </Button>
+                </div>
             </div>
         )
     }
 
+    const getStatusColor = (status: string) => {
+        switch (status) {
+            case 'running':
+                return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+            case 'stopped':
+                return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+            case 'updating':
+                return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+            case 'error':
+                return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+            default:
+                return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+        }
+    }
+
+    const getStatusIcon = (status: string) => {
+        switch (status) {
+            case 'running':
+                return <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+            case 'updating':
+                return <div className="w-2 h-2 bg-blue-500 rounded-full animate-spin"></div>
+            case 'error':
+                return <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+            default:
+                return null
+        }
+    }
+
+    const tabs = [
+        { id: 'overview' as TabType, label: 'Overview', icon: Info },
+        { id: 'compose' as TabType, label: 'Compose Editor', icon: Settings },
+        { id: 'update' as TabType, label: 'Deploy Updates', icon: RefreshCw },
+        { id: 'logs' as TabType, label: 'Logs', icon: Terminal },
+        { id: 'cloudflare' as TabType, label: 'Cloudflare', icon: Cloud },
+    ]
+
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 fade-in">
             {/* Breadcrumb Navigation */}
             <div>
                 <AppBreadcrumb
@@ -84,30 +131,15 @@ function AppDetails() {
                 />
             </div>
 
-            <Card>
-                <CardHeader>
-                    <div className="flex items-center justify-between">
+            <Card className="overflow-hidden">
+                <CardHeader className="pb-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                         <div className="flex items-center gap-3">
                             <CardTitle className="text-2xl">{app.name}</CardTitle>
                             <div
-                                className={`px-3 py-1 rounded-full text-sm font-medium flex items-center gap-1 ${app.status === 'running'
-                                    ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                                    : app.status === 'stopped'
-                                        ? 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
-                                        : app.status === 'updating'
-                                            ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
-                                            : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-                                    }`}
+                                className={`px-3 py-1 rounded-full text-sm font-medium flex items-center gap-2 ${getStatusColor(app.status)}`}
                             >
-                                {app.status === 'running' && (
-                                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                                )}
-                                {app.status === 'updating' && (
-                                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-spin"></div>
-                                )}
-                                {app.status === 'error' && (
-                                    <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                                )}
+                                {getStatusIcon(app.status)}
                                 {app.status}
                             </div>
                         </div>
@@ -145,59 +177,27 @@ function AppDetails() {
                         />
                     </div>
 
-                    <div className="flex border-b">
-                        <button
-                            className={`px-4 py-2 text-sm font-medium ${activeTab === 'overview'
-                                ? 'border-b-2 border-primary text-primary'
-                                : 'text-muted-foreground hover:text-foreground'
-                                }`}
-                            onClick={() => setActiveTab('overview')}
-                        >
-                            Overview
-                        </button>
-                        <button
-                            className={`px-4 py-2 text-sm font-medium ${activeTab === 'compose'
-                                ? 'border-b-2 border-primary text-primary'
-                                : 'text-muted-foreground hover:text-foreground'
-                                }`}
-                            onClick={() => setActiveTab('compose')}
-                        >
-                            <Settings className="h-4 w-4 inline mr-2" />
-                            Compose Editor
-                        </button>
-                        <button
-                            className={`px-4 py-2 text-sm font-medium ${activeTab === 'update'
-                                ? 'border-b-2 border-primary text-primary'
-                                : 'text-muted-foreground hover:text-foreground'
-                                }`}
-                            onClick={() => setActiveTab('update')}
-                        >
-                            <RefreshCw className="h-4 w-4 inline mr-2" />
-                            Deploy Updates
-                        </button>
-                        <button
-                            className={`px-4 py-2 text-sm font-medium ${activeTab === 'logs'
-                                ? 'border-b-2 border-primary text-primary'
-                                : 'text-muted-foreground hover:text-foreground'
-                                }`}
-                            onClick={() => setActiveTab('logs')}
-                        >
-                            <Terminal className="h-4 w-4 inline mr-2" />
-                            Logs
-                        </button>
-                        <button
-                            className={`px-4 py-2 text-sm font-medium ${activeTab === 'cloudflare'
-                                ? 'border-b-2 border-primary text-primary'
-                                : 'text-muted-foreground hover:text-foreground'
-                                }`}
-                            onClick={() => setActiveTab('cloudflare')}
-                        >
-                            <Cloud className="h-4 w-4 inline mr-2" />
-                            Cloudflare
-                        </button>
+                    {/* Enhanced Tab Navigation */}
+                    <div className="flex overflow-x-auto border-b mt-6 -mx-6 px-6 scrollbar-hide">
+                        {tabs.map((tab) => {
+                            const Icon = tab.icon
+                            return (
+                                <button
+                                    key={tab.id}
+                                    className={`flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors interactive-element ${activeTab === tab.id
+                                        ? 'border-primary text-primary'
+                                        : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted'
+                                        }`}
+                                    onClick={() => setActiveTab(tab.id)}
+                                >
+                                    <Icon className="h-4 w-4" />
+                                    {tab.label}
+                                </button>
+                            )
+                        })}
                     </div>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="pt-6">
                     <p className="text-sm text-muted-foreground mb-4">
                         {app.description || 'No description'}
                     </p>
@@ -207,8 +207,9 @@ function AppDetails() {
                                 href={app.public_url}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-primary hover:underline"
+                                className="text-primary hover:underline inline-flex items-center gap-1 interactive-element"
                             >
+                                <Cloud className="h-3 w-3" />
                                 {app.public_url}
                             </a>
                         </div>
@@ -219,42 +220,39 @@ function AppDetails() {
                         </div>
                     )}
                     {activeTab === 'overview' && (
-                        <div className="space-y-4">
-                            <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                                <span className="text-sm font-medium">Status:</span>
-                                <div
-                                    className={`px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${app.status === 'running'
-                                        ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                                        : app.status === 'stopped'
-                                            ? 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
-                                            : app.status === 'updating'
-                                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
-                                                : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-                                        }`}
-                                >
-                                    {app.status === 'running' && (
-                                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                                    )}
-                                    {app.status === 'updating' && (
-                                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-spin"></div>
-                                    )}
-                                    {app.status === 'error' && (
-                                        <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                                    )}
-                                    {app.status}
+                        <div className="space-y-6">
+                            {/* Activity Timeline */}
+                            <div>
+                                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                                    <Activity className="h-5 w-5" />
+                                    Activity
+                                </h3>
+                                <ActivityTimeline app={app} />
+                            </div>
+
+                            {/* App Details */}
+                            <div className="space-y-4 p-4 bg-muted/50 rounded-lg">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-sm font-medium">Status:</span>
+                                    <div
+                                        className={`px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${getStatusColor(app.status)}`}
+                                    >
+                                        {getStatusIcon(app.status)}
+                                        {app.status}
+                                    </div>
                                 </div>
-                            </div>
-                            <div>
-                                <span className="text-sm font-medium">Created:</span>
-                                <span className="ml-2 text-sm text-muted-foreground">
-                                    {new Date(app.created_at).toLocaleString()}
-                                </span>
-                            </div>
-                            <div>
-                                <span className="text-sm font-medium">Updated:</span>
-                                <span className="ml-2 text-sm text-muted-foreground">
-                                    {new Date(app.updated_at).toLocaleString()}
-                                </span>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-sm font-medium">Created:</span>
+                                    <span className="text-sm text-muted-foreground">
+                                        {new Date(app.created_at).toLocaleString()}
+                                    </span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-sm font-medium">Updated:</span>
+                                    <span className="text-sm text-muted-foreground">
+                                        {new Date(app.updated_at).toLocaleString()}
+                                    </span>
+                                </div>
                             </div>
                         </div>
                     )}

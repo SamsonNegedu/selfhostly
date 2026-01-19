@@ -16,9 +16,9 @@ export {
   DialogTitle,
   DialogDescription,
 } from './dialog'
-export { 
-  SimpleDropdown, 
-  SimpleDropdownItem 
+export {
+  SimpleDropdown,
+  SimpleDropdownItem
 } from './simple-dropdown'
 export {
   Breadcrumb,
@@ -29,3 +29,4 @@ export {
   BreadcrumbSeparator,
   BreadcrumbEllipsis,
 } from './breadcrumb'
+export { Skeleton, CardSkeleton, DashboardSkeleton, AppDetailsSkeleton } from './Skeleton'
