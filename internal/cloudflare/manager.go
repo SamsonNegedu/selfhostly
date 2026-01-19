@@ -2,6 +2,8 @@ package cloudflare
 
 import (
 	"fmt"
+	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/selfhost-automaton/internal/db"
@@ -58,7 +60,7 @@ func (tm *TunnelManager) CreateTunnelWithMetadata(appName string, appID int64) (
 // UpdateTunnelStatus updates the status of a tunnel
 func (tm *TunnelManager) UpdateTunnelStatus(tunnelID string, status string, errorDetails string) error {
 	// Get the tunnel record first
-	tunnel, err := tm.database.GetCloudflareTunnelByAppID(0) // This is a placeholder, we need to find by tunnelID
+	tunnel, err := tm.database.GetCloudflareTunnelByTunnelID(tunnelID)
 	if err != nil {
 		return fmt.Errorf("failed to get tunnel: %w", err)
 	}
@@ -144,4 +146,51 @@ func (tm *TunnelManager) GetTunnelConfig(tunnelID string) (map[string]interface{
 		"created":   time.Now().Format(time.RFC3339),
 	}
 	return config, nil
+}
+
+// UpdateTunnelIngress updates the ingress configuration for a tunnel
+func (tm *TunnelManager) UpdateTunnelIngress(tunnelID string, ingressRules []IngressRule, hostname string, targetDomain string) error {
+	// First, validate that the tunnel exists
+	_, err := tm.database.GetCloudflareTunnelByTunnelID(tunnelID)
+	if err != nil {
+		return fmt.Errorf("failed to validate tunnel: %w", err)
+	}
+
+	// Update the ingress configuration via API
+	err = tm.ApiManager.CreateIngressConfiguration(tunnelID, ingressRules)
+	if err != nil {
+		return fmt.Errorf("failed to update ingress configuration: %w", err)
+	}
+
+	// If hostname is provided, create a DNS record
+	if hostname != "" {
+		// Extract domain from hostname (remove subdomain)
+		domain := hostname
+		if strings.Contains(hostname, ".") {
+			parts := strings.Split(hostname, ".")
+			if len(parts) > 1 {
+				domain = strings.Join(parts[len(parts)-2:], ".")
+			}
+		}
+
+		// Get zone ID for the domain
+		zoneID, err := tm.ApiManager.GetZoneID(domain)
+		if err != nil {
+			return fmt.Errorf("failed to get zone ID for domain %s: %w", domain, err)
+		}
+
+// Create DNS record
+	recordID, err := tm.ApiManager.CreateDNSRecord(zoneID, hostname, tunnelID)
+		if err != nil {
+			return fmt.Errorf("failed to create DNS record: %w", err)
+		}
+
+		slog.Info("DNS record created successfully", 
+			"zoneID", zoneID, 
+			"hostname", hostname, 
+			"targetDomain", targetDomain, 
+			"recordID", recordID)
+	}
+
+	return nil
 }

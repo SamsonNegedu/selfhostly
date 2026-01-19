@@ -3,7 +3,7 @@ import { useAppStore } from '@/shared/stores/app-store'
 import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/card'
 import { Button } from '@/shared/components/ui/button'
 import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog'
-import { Play, Square, RefreshCw, Trash2 } from 'lucide-react'
+import { Play, Pause, RefreshCw, Trash2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useDeleteApp, useStartApp, useStopApp, useUpdateAppContainers } from '@/shared/services/api'
 
@@ -125,7 +125,7 @@ function AppList() {
                                                 onClick={() => stopApp.mutate(app.id)}
                                                 title="Stop app"
                                             >
-                                                <Square className="h-4 w-4" />
+                                                <Pause className="h-4 w-4" />
                                             </Button>
                                         )}
                                         {app.status === 'stopped' && (

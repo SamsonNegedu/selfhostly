@@ -9,6 +9,14 @@ import type {
   CloudflareTunnelResponse,
 } from '../types/api';
 
+interface IngressRule {
+  hostname?: string | null
+  service: string
+  path?: string | null
+  originRequest?: Record<string, any>
+}
+
+
 // User type from go-pkgz/auth
 export interface User {
   id: string;
@@ -350,6 +358,77 @@ export function useDeleteCloudflareTunnel() {
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.error || 'Failed to delete tunnel');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnels'] });
+      queryClient.invalidateQueries({ queryKey: ['apps'] });
+    },
+  });
+}
+
+export function useUpdateTunnelIngress() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ appId, ingressRules, hostname, targetDomain }: { appId: number; ingressRules: IngressRule[]; hostname?: string; targetDomain?: string }) => {
+      const body: { ingress_rules: IngressRule[]; hostname?: string; target_domain?: string } = {
+        ingress_rules: ingressRules,
+      };
+      
+      // Ensure there's a catch-all rule at the end if not provided
+      if (ingressRules.length === 0 || ingressRules[ingressRules.length - 1].service !== 'http_status:404') {
+        body.ingress_rules = [...ingressRules, { service: 'http_status:404' }];
+      }
+      
+      if (hostname) {
+        body.hostname = hostname;
+      }
+
+      if (targetDomain) {
+        body.target_domain = targetDomain;
+      }
+
+      const response = await fetch(`/api/cloudflare/apps/${appId}/tunnel/ingress`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to update tunnel ingress');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnels'] });
+      queryClient.invalidateQueries({ queryKey: ['apps'] });
+    },
+  });
+}
+
+export function useCreateDNSRecord() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ appId, hostname, targetDomain }: { appId: number; hostname: string; targetDomain?: string }) => {
+      const body: { hostname: string; target_domain?: string } = { hostname };
+      
+      if (targetDomain) {
+        body.target_domain = targetDomain;
+      }
+
+      const response = await fetch(`/api/cloudflare/apps/${appId}/tunnel/dns`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to create DNS record');
       }
       return response.json();
     },

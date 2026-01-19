@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"log"
 	"os"
 	"path/filepath"
@@ -99,7 +100,6 @@ func (db *DB) migrate() error {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			cloudflare_api_token TEXT,
 			cloudflare_account_id TEXT,
-			auth_enabled INTEGER NOT NULL DEFAULT 0,
 			auto_start_apps INTEGER NOT NULL DEFAULT 0,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
@@ -122,6 +122,7 @@ func (db *DB) migrate() error {
 		// Add missing columns if they don't exist (for existing databases)
 		`ALTER TABLE settings ADD COLUMN auto_start_apps INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE apps ADD COLUMN error_message TEXT`,
+		`ALTER TABLE cloudflare_tunnels ADD COLUMN ingress_rules TEXT`,
 	}
 
 	for _, migration := range migrations {
@@ -138,7 +139,7 @@ func (db *DB) migrate() error {
 	if err := db.QueryRow("SELECT COUNT(*) FROM settings").Scan(&count); err != nil {
 		log.Printf("Error checking settings: %v", err)
 	} else if count == 0 {
-		db.Exec("INSERT INTO settings (auth_enabled, auto_start_apps) VALUES (0, 0)")
+		db.Exec("INSERT INTO settings (auto_start_apps) VALUES (0)")
 	}
 
 	return nil
@@ -267,8 +268,8 @@ func (db *DB) DeleteApp(id int64) error {
 func (db *DB) GetSettings() (*Settings, error) {
 	settings := &Settings{}
 	err := db.QueryRow(
-		"SELECT id, cloudflare_api_token, cloudflare_account_id, auth_enabled, auto_start_apps, updated_at FROM settings WHERE id = 1",
-	).Scan(&settings.ID, &settings.CloudflareAPIToken, &settings.CloudflareAccountID, &settings.AuthEnabled, &settings.AutoStartApps, &settings.UpdatedAt)
+		"SELECT id, cloudflare_api_token, cloudflare_account_id, auto_start_apps, updated_at FROM settings WHERE id = 1",
+	).Scan(&settings.ID, &settings.CloudflareAPIToken, &settings.CloudflareAccountID, &settings.AutoStartApps, &settings.UpdatedAt)
 	return settings, err
 }
 
@@ -286,8 +287,8 @@ func (db *DB) UpdateSettings(settings *Settings) error {
 		accountID = nil
 	}
 	_, err := db.Exec(
-		"UPDATE settings SET cloudflare_api_token = ?, cloudflare_account_id = ?, auth_enabled = ?, auto_start_apps = ?, updated_at = ? WHERE id = 1",
-		apiToken, accountID, settings.AuthEnabled, settings.AutoStartApps, time.Now(),
+		"UPDATE settings SET cloudflare_api_token = ?, cloudflare_account_id = ?, auto_start_apps = ?, updated_at = ? WHERE id = 1",
+		apiToken, accountID, settings.AutoStartApps, time.Now(),
 	)
 	return err
 }
@@ -323,16 +324,27 @@ func (db *DB) GetUser(username string) (*User, error) {
 
 // CreateCloudflareTunnel creates a new Cloudflare tunnel record
 func (db *DB) CreateCloudflareTunnel(tunnel *CloudflareTunnel) error {
-	var errorDetails interface{}
+	var errorDetails, ingressRules interface{}
 	if tunnel.ErrorDetails != nil {
 		errorDetails = *tunnel.ErrorDetails
 	} else {
 		errorDetails = nil
 	}
 
+	if tunnel.IngressRules != nil {
+		// Serialize ingress rules to JSON for storage
+		if jsonRules, err := json.Marshal(tunnel.IngressRules); err == nil {
+			ingressRules = string(jsonRules)
+		} else {
+			ingressRules = nil
+		}
+	} else {
+		ingressRules = nil
+	}
+
 	result, err := db.Exec(
-		"INSERT INTO cloudflare_tunnels (app_id, tunnel_id, tunnel_name, tunnel_token, account_id, is_active, status, created_at, updated_at, last_synced_at, error_details) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		tunnel.AppID, tunnel.TunnelID, tunnel.TunnelName, tunnel.TunnelToken, tunnel.AccountID, tunnel.IsActive, tunnel.Status, time.Now(), time.Now(), tunnel.LastSyncedAt, errorDetails,
+		"INSERT INTO cloudflare_tunnels (app_id, tunnel_id, tunnel_name, tunnel_token, account_id, is_active, status, ingress_rules, created_at, updated_at, last_synced_at, error_details) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		tunnel.AppID, tunnel.TunnelID, tunnel.TunnelName, tunnel.TunnelToken, tunnel.AccountID, tunnel.IsActive, tunnel.Status, ingressRules, time.Now(), time.Now(), tunnel.LastSyncedAt, errorDetails,
 	)
 	if err != nil {
 		return err
@@ -351,12 +363,12 @@ func (db *DB) CreateCloudflareTunnel(tunnel *CloudflareTunnel) error {
 func (db *DB) GetCloudflareTunnelByAppID(appID int64) (*CloudflareTunnel, error) {
 	tunnel := &CloudflareTunnel{}
 	var errorDetails sql.NullString
-	var lastSyncedAt interface{} // Use interface{} to handle NULL values
+	var lastSyncedAt, ingressRules interface{} // Use interface{} to handle NULL values
 	err := db.QueryRow(
-		"SELECT id, app_id, tunnel_id, tunnel_name, tunnel_token, account_id, is_active, status, created_at, updated_at, last_synced_at, error_details FROM cloudflare_tunnels WHERE app_id = ?",
+		"SELECT id, app_id, tunnel_id, tunnel_name, tunnel_token, account_id, is_active, status, ingress_rules, created_at, updated_at, last_synced_at, error_details FROM cloudflare_tunnels WHERE app_id = ?",
 		appID,
-	).Scan(&tunnel.ID, &tunnel.AppID, &tunnel.TunnelID, &tunnel.TunnelName, &tunnel.TunnelToken, &tunnel.AccountID, &tunnel.IsActive, &tunnel.Status, &tunnel.CreatedAt, &tunnel.UpdatedAt, &lastSyncedAt, &errorDetails)
-	
+	).Scan(&tunnel.ID, &tunnel.AppID, &tunnel.TunnelID, &tunnel.TunnelName, &tunnel.TunnelToken, &tunnel.AccountID, &tunnel.IsActive, &tunnel.Status, &ingressRules, &tunnel.CreatedAt, &tunnel.UpdatedAt, &lastSyncedAt, &errorDetails)
+
 	// Handle NULL last_synced_at
 	if err == nil {
 		if lastSyncedAt != nil {
@@ -378,22 +390,49 @@ func (db *DB) GetCloudflareTunnelByAppID(appID int64) (*CloudflareTunnel, error)
 		} else {
 			tunnel.ErrorDetails = nil
 		}
+
+		// Handle ingress_rules
+		if ingressRules != nil {
+			if rulesStr, ok := ingressRules.(string); ok {
+				var parsedRules []IngressRule
+				if err := json.Unmarshal([]byte(rulesStr), &parsedRules); err == nil {
+					tunnel.IngressRules = &parsedRules
+				} else {
+					tunnel.IngressRules = nil
+				}
+			} else {
+				tunnel.IngressRules = nil
+			}
+		} else {
+			tunnel.IngressRules = nil
+		}
 	}
 	return tunnel, err
 }
 
 // UpdateCloudflareTunnel updates a Cloudflare tunnel record
 func (db *DB) UpdateCloudflareTunnel(tunnel *CloudflareTunnel) error {
-	var errorDetails interface{}
+	var errorDetails, ingressRules interface{}
 	if tunnel.ErrorDetails != nil {
 		errorDetails = *tunnel.ErrorDetails
 	} else {
 		errorDetails = nil
 	}
 
+	if tunnel.IngressRules != nil {
+		// Serialize ingress rules to JSON for storage
+		if jsonRules, err := json.Marshal(tunnel.IngressRules); err == nil {
+			ingressRules = string(jsonRules)
+		} else {
+			ingressRules = nil
+		}
+	} else {
+		ingressRules = nil
+	}
+
 	_, err := db.Exec(
-		"UPDATE cloudflare_tunnels SET tunnel_name = ?, is_active = ?, status = ?, updated_at = ?, last_synced_at = ?, error_details = ? WHERE id = ?",
-		tunnel.TunnelName, tunnel.IsActive, tunnel.Status, time.Now(), tunnel.LastSyncedAt, errorDetails, tunnel.ID,
+		"UPDATE cloudflare_tunnels SET tunnel_name = ?, is_active = ?, status = ?, ingress_rules = ?, updated_at = ?, last_synced_at = ?, error_details = ? WHERE id = ?",
+		tunnel.TunnelName, tunnel.IsActive, tunnel.Status, ingressRules, time.Now(), tunnel.LastSyncedAt, errorDetails, tunnel.ID,
 	)
 	return err
 }
@@ -404,9 +443,60 @@ func (db *DB) DeleteCloudflareTunnel(appID int64) error {
 	return err
 }
 
+// GetCloudflareTunnelByTunnelID retrieves a Cloudflare tunnel by tunnel ID
+func (db *DB) GetCloudflareTunnelByTunnelID(tunnelID string) (*CloudflareTunnel, error) {
+	tunnel := &CloudflareTunnel{}
+	var errorDetails sql.NullString
+	var lastSyncedAt, ingressRules interface{} // Use interface{} to handle NULL values
+	err := db.QueryRow(
+		"SELECT id, app_id, tunnel_id, tunnel_name, tunnel_token, account_id, is_active, status, ingress_rules, created_at, updated_at, last_synced_at, error_details FROM cloudflare_tunnels WHERE tunnel_id = ?",
+		tunnelID,
+	).Scan(&tunnel.ID, &tunnel.AppID, &tunnel.TunnelID, &tunnel.TunnelName, &tunnel.TunnelToken, &tunnel.AccountID, &tunnel.IsActive, &tunnel.Status, &ingressRules, &tunnel.CreatedAt, &tunnel.UpdatedAt, &lastSyncedAt, &errorDetails)
+
+	// Handle NULL last_synced_at
+	if err == nil {
+		if lastSyncedAt != nil {
+			// Convert to time.Time if not NULL
+			if t, ok := lastSyncedAt.(time.Time); ok {
+				tunnel.LastSyncedAt = &t
+			} else {
+				// Fallback to zero time if type is unexpected
+				zeroTime := time.Time{}
+				tunnel.LastSyncedAt = &zeroTime
+			}
+		} else {
+			tunnel.LastSyncedAt = nil
+		}
+
+		// Handle error_details
+		if errorDetails.Valid {
+			tunnel.ErrorDetails = &errorDetails.String
+		} else {
+			tunnel.ErrorDetails = nil
+		}
+
+		// Handle ingress_rules
+		if ingressRules != nil {
+			if rulesStr, ok := ingressRules.(string); ok {
+				var parsedRules []IngressRule
+				if err := json.Unmarshal([]byte(rulesStr), &parsedRules); err == nil {
+					tunnel.IngressRules = &parsedRules
+				} else {
+					tunnel.IngressRules = nil
+				}
+			} else {
+				tunnel.IngressRules = nil
+			}
+		} else {
+			tunnel.IngressRules = nil
+		}
+	}
+	return tunnel, err
+}
+
 // ListActiveCloudflareTunnels retrieves all active Cloudflare tunnels
 func (db *DB) ListActiveCloudflareTunnels() ([]*CloudflareTunnel, error) {
-	rows, err := db.Query("SELECT id, app_id, tunnel_id, tunnel_name, tunnel_token, account_id, is_active, status, created_at, updated_at, last_synced_at, error_details FROM cloudflare_tunnels WHERE is_active = 1 ORDER BY created_at DESC")
+	rows, err := db.Query("SELECT id, app_id, tunnel_id, tunnel_name, tunnel_token, account_id, is_active, status, ingress_rules, created_at, updated_at, last_synced_at, error_details FROM cloudflare_tunnels WHERE is_active = 1 ORDER BY created_at DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -415,9 +505,9 @@ func (db *DB) ListActiveCloudflareTunnels() ([]*CloudflareTunnel, error) {
 	var tunnels []*CloudflareTunnel
 	for rows.Next() {
 		tunnel := &CloudflareTunnel{}
-		var lastSyncedAt interface{}
+		var lastSyncedAt, ingressRules interface{}
 		var errorDetails sql.NullString
-		err := rows.Scan(&tunnel.ID, &tunnel.AppID, &tunnel.TunnelID, &tunnel.TunnelName, &tunnel.TunnelToken, &tunnel.AccountID, &tunnel.IsActive, &tunnel.Status, &tunnel.CreatedAt, &tunnel.UpdatedAt, &lastSyncedAt, &errorDetails)
+		err := rows.Scan(&tunnel.ID, &tunnel.AppID, &tunnel.TunnelID, &tunnel.TunnelName, &tunnel.TunnelToken, &tunnel.AccountID, &tunnel.IsActive, &tunnel.Status, &ingressRules, &tunnel.CreatedAt, &tunnel.UpdatedAt, &lastSyncedAt, &errorDetails)
 		if err != nil {
 			return nil, err
 		}
@@ -440,6 +530,22 @@ func (db *DB) ListActiveCloudflareTunnels() ([]*CloudflareTunnel, error) {
 			tunnel.ErrorDetails = &errorDetails.String
 		} else {
 			tunnel.ErrorDetails = nil
+		}
+
+		// Handle ingress_rules
+		if ingressRules != nil {
+			if rulesStr, ok := ingressRules.(string); ok {
+				var parsedRules []IngressRule
+				if err := json.Unmarshal([]byte(rulesStr), &parsedRules); err == nil {
+					tunnel.IngressRules = &parsedRules
+				} else {
+					tunnel.IngressRules = nil
+				}
+			} else {
+				tunnel.IngressRules = nil
+			}
+		} else {
+			tunnel.IngressRules = nil
 		}
 
 		tunnels = append(tunnels, tunnel)

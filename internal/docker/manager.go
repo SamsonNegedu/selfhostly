@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // Manager handles Docker operations
@@ -121,7 +122,25 @@ func (m *Manager) GetAppLogs(name string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get logs: %w", err)
 	}
-	return output, nil
+	
+	// Reverse the logs so latest appears first
+	logsStr := string(output)
+	lines := strings.Split(logsStr, "\n")
+	
+	// Remove empty lines that might result from splitting
+	var nonEmptyLines []string
+	for _, line := range lines {
+		if strings.TrimSpace(line) != "" {
+			nonEmptyLines = append(nonEmptyLines, line)
+		}
+	}
+	
+	// Reverse the order of lines
+	for i, j := 0, len(nonEmptyLines)-1; i < j; i, j = i+1, j-1 {
+		nonEmptyLines[i], nonEmptyLines[j] = nonEmptyLines[j], nonEmptyLines[i]
+	}
+	
+	return []byte(strings.Join(nonEmptyLines, "\n")), nil
 }
 
 // DeleteAppDirectory removes the app directory

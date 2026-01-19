@@ -10,7 +10,6 @@ function Settings() {
     const [formData, setFormData] = useState({
         cloudflare_api_token: '',
         cloudflare_account_id: '',
-        auth_enabled: false,
         auto_start_apps: false,
     })
 
@@ -19,7 +18,6 @@ function Settings() {
             setFormData({
                 cloudflare_api_token: '',
                 cloudflare_account_id: settings.cloudflare_account_id,
-                auth_enabled: settings.auth_enabled,
                 auto_start_apps: settings.auto_start_apps,
             })
         }

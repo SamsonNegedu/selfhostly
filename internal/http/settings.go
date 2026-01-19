@@ -11,7 +11,6 @@ import (
 type UpdateSettingsRequest struct {
 	CloudflareAPIToken  string `json:"cloudflare_api_token"`
 	CloudflareAccountID string `json:"cloudflare_account_id"`
-	AuthEnabled         bool   `json:"auth_enabled"`
 	AutoStartApps       bool   `json:"auto_start_apps"`
 }
 
@@ -37,7 +36,6 @@ func (s *Server) getSettings(c *gin.Context) {
 		"id":                    settings.ID,
 		"cloudflare_api_token":  maskToken(tokenValue),
 		"cloudflare_account_id": accountIDValue,
-		"auth_enabled":          settings.AuthEnabled,
 		"auto_start_apps":       settings.AutoStartApps,
 		"updated_at":            settings.UpdatedAt,
 	}
@@ -69,7 +67,6 @@ func (s *Server) updateSettings(c *gin.Context) {
 	if req.CloudflareAccountID != "" {
 		settings.CloudflareAccountID = &req.CloudflareAccountID
 	}
-	settings.AuthEnabled = req.AuthEnabled
 	settings.AutoStartApps = req.AutoStartApps
 
 	if err := s.database.UpdateSettings(settings); err != nil {
@@ -93,7 +90,6 @@ func (s *Server) updateSettings(c *gin.Context) {
 		"id":                    settings.ID,
 		"cloudflare_api_token":  maskToken(tokenValue),
 		"cloudflare_account_id": accountIDValue,
-		"auth_enabled":          settings.AuthEnabled,
 		"auto_start_apps":       settings.AutoStartApps,
 		"updated_at":            settings.UpdatedAt,
 	}

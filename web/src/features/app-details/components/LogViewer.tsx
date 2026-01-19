@@ -54,7 +54,7 @@ function LogViewer({ appId }: { appId: number }) {
                 </div>
             </CardHeader>
             <CardContent>
-                <div className="bg-black text-green-400 p-4 rounded-md font-mono text-sm overflow-auto max-h-[400px]">
+                <div className="bg-black text-green-400 p-4 rounded-md font-mono text-sm overflow-auto max-h-[600px]">
                     {logs ? (
                         <pre className="whitespace-pre-wrap">{logs}</pre>
                     ) : (

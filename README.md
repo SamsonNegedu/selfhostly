@@ -60,7 +60,6 @@ export SERVER_ADDRESS=:8080
 export DATABASE_PATH=./data/automaton.db
 export CLOUDFLARE_API_TOKEN=your_token_here
 export CLOUDFLARE_ACCOUNT_ID=your_account_id
-export AUTH_ENABLED=false
 export JWT_SECRET=your_jwt_secret
 ```
 

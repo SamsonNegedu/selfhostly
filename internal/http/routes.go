@@ -67,6 +67,8 @@ func (s *Server) setupCloudflareRoutes(api *gin.RouterGroup) {
 		cloudflare.GET("/tunnels", s.listCloudflareTunnels)
 		cloudflare.GET("/apps/:appId/tunnel", s.getCloudflareTunnel)
 		cloudflare.POST("/apps/:appId/tunnel/sync", s.syncCloudflareTunnel)
+		cloudflare.PUT("/apps/:appId/tunnel/ingress", s.updateTunnelIngress)
+		cloudflare.POST("/apps/:appId/tunnel/dns", s.createDNSRecord)
 		cloudflare.DELETE("/apps/:appId/tunnel", s.deleteCloudflareTunnel)
 	}
 }

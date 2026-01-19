@@ -51,11 +51,38 @@ type TunnelConfig struct {
 	Ingress []IngressRule `json:"ingress"`
 }
 
+// CreateDNSRecordRequest represents a DNS record creation request
+type CreateDNSRecordRequest struct {
+	Type    string `json:"type"`
+	Proxied bool   `json:"proxied"`
+	Name    string `json:"name"`
+	Content string `json:"content"`
+}
+
+// CreateDNSRecordResponse represents a DNS record creation response
+type CreateDNSRecordResponse struct {
+	Success bool `json:"success"`
+	Errors  []struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	} `json:"errors"`
+	Messages []string `json:"messages"`
+	Result   struct {
+		ID      string `json:"id"`
+		ZoneID  string `json:"zone_id"`
+		Type    string `json:"type"`
+		Name    string `json:"name"`
+		Content string `json:"content"`
+		Proxied bool   `json:"proxied"`
+	} `json:"result"`
+}
+
 // IngressRule represents an ingress rule
 type IngressRule struct {
-	Service  string `json:"service"`
-	Hostname string `json:"hostname,omitempty"`
-	Path     string `json:"path,omitempty"`
+	Service       string                 `json:"service"`
+	Hostname      string                 `json:"hostname,omitempty"`
+	Path          string                 `json:"path,omitempty"`
+	OriginRequest map[string]interface{} `json:"originRequest,omitempty"`
 }
 
 // Manager handles Cloudflare tunnel operations
@@ -150,6 +177,237 @@ func (m *Manager) DeleteTunnel(tunnelID string) error {
 	}
 
 	return nil
+}
+
+// CreateIngressConfiguration creates or updates tunnel ingress configuration
+func (m *Manager) CreateIngressConfiguration(tunnelID string, ingressRules []IngressRule) error {
+	url := fmt.Sprintf("%s/accounts/%s/cfd_tunnel/%s/configurations", apiBaseURL, m.config.AccountID, tunnelID)
+
+	reqBody := CreateIngressRequest{
+		Config: TunnelConfig{
+			Ingress: ingressRules,
+		},
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+m.config.APIToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to create ingress configuration: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to create ingress configuration, status: %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// GetZoneID retrieves the zone ID for a given domain
+func (m *Manager) GetZoneID(domain string) (string, error) {
+	url := fmt.Sprintf("%s/zones?name=%s", apiBaseURL, domain)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+m.config.APIToken)
+
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to get zone ID: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	var respData struct {
+		Success bool `json:"success"`
+		Result  []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"result"`
+	}
+
+	if err := json.Unmarshal(body, &respData); err != nil {
+		return "", fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	if !respData.Success || len(respData.Result) == 0 {
+		return "", fmt.Errorf("no zone found for domain: %s", domain)
+	}
+
+	return respData.Result[0].ID, nil
+}
+
+// ListDNSRecordsResponse represents a list of DNS records response
+type ListDNSRecordsResponse struct {
+	Success bool `json:"success"`
+	Errors  []struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	} `json:"errors"`
+	Messages []string `json:"messages"`
+	Result   []struct {
+		ID      string `json:"id"`
+		ZoneID  string `json:"zone_id"`
+		Type    string `json:"type"`
+		Name    string `json:"name"`
+		Content string `json:"content"`
+		Proxied bool   `json:"proxied"`
+	} `json:"result"`
+}
+
+// GetDNSRecord retrieves a DNS record by name and type
+func (m *Manager) GetDNSRecord(zoneID, hostname, recordType string) (*ListDNSRecordsResponse, error) {
+	url := fmt.Sprintf("%s/zones/%s/dns_records?type=%s&name=%s", apiBaseURL, zoneID, recordType, hostname)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+m.config.APIToken)
+
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get DNS record: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	var respData ListDNSRecordsResponse
+	if err := json.Unmarshal(body, &respData); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	if !respData.Success {
+		return nil, fmt.Errorf("failed to get DNS record: %v", respData.Errors)
+	}
+
+	return &respData, nil
+}
+
+// UpdateDNSRecord updates an existing DNS record
+func (m *Manager) UpdateDNSRecord(zoneID, recordID, hostname, tunnelID string) error {
+	url := fmt.Sprintf("%s/zones/%s/dns_records/%s", apiBaseURL, zoneID, recordID)
+
+	tunnelDomain := fmt.Sprintf("%s.cfargotunnel.com", tunnelID)
+	reqBody := CreateDNSRecordRequest{
+		Type:    "CNAME",
+		Proxied: true,
+		Name:    hostname,
+		Content: tunnelDomain,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+m.config.APIToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to update DNS record: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to update DNS record, status: %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// CreateDNSRecord creates a DNS record for a tunnel (idempotent)
+func (m *Manager) CreateDNSRecord(zoneID, hostname, tunnelID string) (string, error) {
+	tunnelDomain := fmt.Sprintf("%s.cfargotunnel.com", tunnelID)
+	
+	// First check if a DNS record with this name already exists
+	existingRecords, err := m.GetDNSRecord(zoneID, hostname, "CNAME")
+	if err == nil && len(existingRecords.Result) > 0 {
+		// Record already exists, update it instead of creating a new one
+		recordID := existingRecords.Result[0].ID
+		err = m.UpdateDNSRecord(zoneID, recordID, hostname, tunnelID)
+		if err != nil {
+			return "", fmt.Errorf("failed to update existing DNS record: %w", err)
+		}
+		return recordID, nil
+	}
+	
+	// No existing record found, create a new one
+	url := fmt.Sprintf("%s/zones/%s/dns_records", apiBaseURL, zoneID)
+	
+	reqBody := CreateDNSRecordRequest{
+		Type:    "CNAME",
+		Proxied: true,
+		Name:    hostname,
+		Content: tunnelDomain,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+m.config.APIToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to create DNS record: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	var respData CreateDNSRecordResponse
+	if err := json.Unmarshal(body, &respData); err != nil {
+		return "", fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	if !respData.Success {
+		return "", fmt.Errorf("failed to create DNS record: %v", respData.Errors)
+	}
+
+	return respData.Result.ID, nil
 }
 
 // CreatePublicRoute creates a public route for the tunnel
