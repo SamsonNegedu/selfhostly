@@ -122,11 +122,11 @@ func (m *Manager) GetAppLogs(name string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get logs: %w", err)
 	}
-	
+
 	// Reverse the logs so latest appears first
 	logsStr := string(output)
 	lines := strings.Split(logsStr, "\n")
-	
+
 	// Remove empty lines that might result from splitting
 	var nonEmptyLines []string
 	for _, line := range lines {
@@ -134,12 +134,12 @@ func (m *Manager) GetAppLogs(name string) ([]byte, error) {
 			nonEmptyLines = append(nonEmptyLines, line)
 		}
 	}
-	
+
 	// Reverse the order of lines
 	for i, j := 0, len(nonEmptyLines)-1; i < j; i, j = i+1, j-1 {
 		nonEmptyLines[i], nonEmptyLines[j] = nonEmptyLines[j], nonEmptyLines[i]
 	}
-	
+
 	return []byte(strings.Join(nonEmptyLines, "\n")), nil
 }
 
@@ -147,4 +147,20 @@ func (m *Manager) GetAppLogs(name string) ([]byte, error) {
 func (m *Manager) DeleteAppDirectory(name string) error {
 	appPath := filepath.Join(m.appsDir, name)
 	return os.RemoveAll(appPath)
+}
+
+// RestartCloudflared restarts the cloudflared service to pick up new ingress configuration
+func (m *Manager) RestartCloudflared(name string) error {
+	appPath := filepath.Join(m.appsDir, name)
+	composeFile := "docker-compose.yml"
+
+	// Restart only the cloudflared service
+	cmd := exec.Command("docker", "compose", "-f", composeFile, "restart", "cloudflared")
+	cmd.Dir = appPath
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to restart cloudflared: %w\nOutput: %s", err, string(output))
+	}
+
+	return nil
 }

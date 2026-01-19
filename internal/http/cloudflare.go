@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/selfhost-automaton/internal/cloudflare"
 	"github.com/selfhost-automaton/internal/db"
+	"github.com/selfhost-automaton/internal/docker"
 )
 
 // convertHostnamePtr converts a hostname string to a string pointer
@@ -30,26 +31,26 @@ func convertPathPtr(path string) *string {
 
 // IngressRule represents a single ingress rule for a Cloudflare tunnel
 type IngressRule struct {
-	Hostname     *string                 `json:"hostname"`
-	Service      string                 `json:"service"`
-	Path         *string                `json:"path"`
+	Hostname      *string                `json:"hostname"`
+	Service       string                 `json:"service"`
+	Path          *string                `json:"path"`
 	OriginRequest map[string]interface{} `json:"originRequest"`
 }
 
 // CloudflareTunnelResponse represents a Cloudflare tunnel API response
 type CloudflareTunnelResponse struct {
-	ID           string      `json:"id"`
-	AppID        string      `json:"app_id"`
-	TunnelID     string      `json:"tunnel_id"`
-	TunnelName   string      `json:"tunnel_name"`
-	Status       string      `json:"status"`
-	IsActive     bool        `json:"is_active"`
-	PublicURL    string      `json:"public_url"`
+	ID           string        `json:"id"`
+	AppID        string        `json:"app_id"`
+	TunnelID     string        `json:"tunnel_id"`
+	TunnelName   string        `json:"tunnel_name"`
+	Status       string        `json:"status"`
+	IsActive     bool          `json:"is_active"`
+	PublicURL    string        `json:"public_url"`
 	IngressRules []IngressRule `json:"ingress_rules,omitempty"`
-	CreatedAt    time.Time   `json:"created_at"`
-	UpdatedAt    time.Time   `json:"updated_at"`
-	LastSyncedAt *time.Time  `json:"last_synced_at"`
-	ErrorDetails string      `json:"error_details,omitempty"`
+	CreatedAt    time.Time     `json:"created_at"`
+	UpdatedAt    time.Time     `json:"updated_at"`
+	LastSyncedAt *time.Time    `json:"last_synced_at"`
+	ErrorDetails string        `json:"error_details,omitempty"`
 }
 
 // listCloudflareTunnels returns all active Cloudflare tunnels
@@ -394,9 +395,9 @@ func (s *Server) updateTunnelIngress(c *gin.Context) {
 	dbIngressRules := make([]db.IngressRule, len(ingressConfig.IngressRules))
 	for i, cfRule := range ingressConfig.IngressRules {
 		dbIngressRules[i] = db.IngressRule{
-			Hostname:     convertHostnamePtr(cfRule.Hostname),
-			Service:      cfRule.Service,
-			Path:         convertPathPtr(cfRule.Path),
+			Hostname:      convertHostnamePtr(cfRule.Hostname),
+			Service:       cfRule.Service,
+			Path:          convertPathPtr(cfRule.Path),
 			OriginRequest: cfRule.OriginRequest,
 		}
 	}
@@ -418,6 +419,16 @@ func (s *Server) updateTunnelIngress(c *gin.Context) {
 		slog.ErrorContext(c.Request.Context(), "failed to update app after ingress configuration", "appID", appID, "error", err)
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to update app", Details: err.Error()})
 		return
+	}
+
+	// Restart cloudflared to pick up the new ingress configuration from Cloudflare API
+	dockerManager := docker.NewManager(s.config.AppsDir)
+	if err := dockerManager.RestartCloudflared(app.Name); err != nil {
+		slog.WarnContext(c.Request.Context(), "failed to restart cloudflared after ingress update (container may not be running)", "appID", appID, "error", err)
+		// Don't fail the request - the ingress config is already saved to Cloudflare
+		// User can manually restart or the next container start will pick up the config
+	} else {
+		slog.InfoContext(c.Request.Context(), "cloudflared restarted to apply new ingress configuration", "appID", appID)
 	}
 
 	slog.InfoContext(c.Request.Context(), "Tunnel ingress configuration updated successfully", "appID", appID, "tunnelID", app.TunnelID)
