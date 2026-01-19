@@ -1,4 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAppStore } from '../stores/app-store';
+
+// Export query client hooks for components that need them
+export { useQueryClient };
 import type {
   App,
   CreateAppRequest,
@@ -167,7 +171,44 @@ export function useStartApp() {
       }
       return response.json();
     },
-    onSuccess: () => {
+    onMutate: async (id: number) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['apps'] });
+      await queryClient.cancelQueries({ queryKey: ['app', id] });
+      
+      // Snapshot previous values
+      const previousApps = queryClient.getQueryData(['apps']);
+      const previousApp = queryClient.getQueryData(['app', id]);
+      
+      // Optimistically update both cache and store
+      if (previousApp) {
+        const updatedApp = { ...previousApp, status: 'running' as const };
+        queryClient.setQueryData(['app', id], updatedApp);
+      }
+      
+      if (previousApps) {
+        queryClient.setQueryData(['apps'], (previousApps: any[]) =>
+          previousApps.map((app) => (app.id === id ? { ...app, status: 'running' as const } : app))
+        );
+      }
+      
+      // Update Zustand store optimistically
+      useAppStore.getState().updateApp(id, { status: 'running' });
+      
+      return { previousApps, previousApp };
+    },
+    onError: (_err, id, context: any) => {
+      // Rollback both cache and store on error
+      if (context?.previousApps) {
+        queryClient.setQueryData(['apps'], context.previousApps);
+      }
+      if (context?.previousApp) {
+        queryClient.setQueryData(['app', id], context.previousApp);
+      }
+      useAppStore.getState().updateApp(id, context?.previousApp);
+    },
+    onSettled: () => {
+      // Refetch data after mutation settles
       queryClient.invalidateQueries({ queryKey: ['apps'] });
     },
   });
@@ -188,7 +229,48 @@ export function useStopApp() {
       }
       return response.json();
     },
+    onMutate: async (id: number) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['apps'] });
+      await queryClient.cancelQueries({ queryKey: ['app', id] });
+      
+      // Snapshot previous values
+      const previousApps = queryClient.getQueryData(['apps']);
+      const previousApp = queryClient.getQueryData(['app', id]);
+      
+      // Optimistically update both cache and store
+      if (previousApp) {
+        const updatedApp = { ...previousApp, status: 'stopped' as const };
+        queryClient.setQueryData(['app', id], updatedApp);
+      }
+      
+      if (previousApps) {
+        queryClient.setQueryData(['apps'], (previousApps: any[]) =>
+          previousApps.map((app) => (app.id === id ? { ...app, status: 'stopped' as const } : app))
+        );
+      }
+      
+      // Update Zustand store optimistically
+      useAppStore.getState().updateApp(id, { status: 'stopped' });
+      
+      return { previousApps, previousApp };
+    },
+    onError: (_err, id, context: any) => {
+      // Rollback both cache and store on error
+      if (context?.previousApps) {
+        queryClient.setQueryData(['apps'], context.previousApps);
+      }
+      if (context?.previousApp) {
+        queryClient.setQueryData(['app', id], context.previousApp);
+      }
+      useAppStore.getState().updateApp(id, context?.previousApp);
+    },
     onSuccess: () => {
+      // Show success notification
+      console.log('App stopped successfully');
+    },
+    onSettled: () => {
+      // Refetch data after mutation settles
       queryClient.invalidateQueries({ queryKey: ['apps'] });
     },
   });
@@ -209,8 +291,46 @@ export function useUpdateAppContainers() {
       }
       return response.json();
     },
+    onMutate: async (id: number) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['apps'] });
+      await queryClient.cancelQueries({ queryKey: ['app', id] });
+      
+      // Snapshot previous values
+      const previousApps = queryClient.getQueryData(['apps']);
+      const previousApp = queryClient.getQueryData(['app', id]);
+      
+      // Optimistically update status to 'updating' in both cache and store
+      if (previousApp) {
+        const updatedApp = { ...previousApp, status: 'updating' as const };
+        queryClient.setQueryData(['app', id], updatedApp);
+      }
+      
+      if (previousApps) {
+        queryClient.setQueryData(['apps'], (previousApps: any[]) =>
+          previousApps.map((app) => (app.id === id ? { ...app, status: 'updating' as const } : app))
+        );
+      }
+      
+      // Update Zustand store optimistically
+      useAppStore.getState().updateApp(id, { status: 'updating' });
+      
+      return { previousApps, previousApp };
+    },
+    onError: (_err, id, context: any) => {
+      // Rollback both cache and store on error
+      if (context?.previousApps) {
+        queryClient.setQueryData(['apps'], context.previousApps);
+      }
+      if (context?.previousApp) {
+        queryClient.setQueryData(['app', id], context.previousApp);
+      }
+      useAppStore.getState().updateApp(id, context?.previousApp);
+    },
     onSuccess: () => {
+      // After successful update, refetch to get the actual status
       queryClient.invalidateQueries({ queryKey: ['apps'] });
+      queryClient.invalidateQueries({ queryKey: ['app'] });
     },
   });
 }

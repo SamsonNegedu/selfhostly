@@ -1,8 +1,9 @@
 import React, { useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { useApp, useStartApp, useStopApp, useUpdateAppContainers, useDeleteApp, useCloudflareTunnel } from '@/shared/services/api'
+import { useApp, useStartApp, useStopApp, useUpdateAppContainers, useDeleteApp } from '@/shared/services/api'
 import { useAppStore } from '@/shared/stores/app-store'
 import { useNavigate } from 'react-router-dom'
+import { useToast } from '@/shared/components/ui/Toast'
 import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/card'
 import { Button } from '@/shared/components/ui/button'
 import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog'
@@ -23,6 +24,7 @@ function AppDetails() {
     const stopApp = useStopApp()
     const updateApp = useUpdateAppContainers()
     const deleteApp = useDeleteApp()
+    const { toast } = useToast()
 
     // State for confirmation dialog
     const [showDeleteDialog, setShowDeleteDialog] = useState(false)
@@ -99,17 +101,65 @@ function AppDetails() {
                         </div>
                         <div className="flex gap-2">
                             {app.status === 'running' && (
-                                <Button variant="outline" size="icon" onClick={() => stopApp.mutate(app.id)}>
-                                    <Pause className="h-4 w-4" />
+                                <Button
+                                    variant="outline"
+                                    size="icon"
+                                    onClick={() => stopApp.mutate(app.id, {
+                                        onSuccess: () => {
+                                            toast.success('App stopped', `${app.name} has been stopped successfully`)
+                                        },
+                                        onError: (error) => {
+                                            toast.error('Failed to stop app', error.message)
+                                        }
+                                    })}
+                                    disabled={stopApp.isPending}
+                                >
+                                    {stopApp.isPending ? (
+                                        <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                    ) : (
+                                        <Pause className="h-4 w-4" />
+                                    )}
                                 </Button>
                             )}
                             {app.status === 'stopped' && (
-                                <Button variant="outline" size="icon" onClick={() => startApp.mutate(app.id)}>
-                                    <Play className="h-4 w-4" />
+                                <Button
+                                    variant="outline"
+                                    size="icon"
+                                    onClick={() => startApp.mutate(app.id, {
+                                        onSuccess: () => {
+                                            toast.success('App started', `${app.name} has been started successfully`)
+                                        },
+                                        onError: (error) => {
+                                            toast.error('Failed to start app', error.message)
+                                        }
+                                    })}
+                                    disabled={startApp.isPending}
+                                >
+                                    {startApp.isPending ? (
+                                        <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                    ) : (
+                                        <Play className="h-4 w-4" />
+                                    )}
                                 </Button>
                             )}
-                            <Button variant="outline" size="icon" onClick={() => updateApp.mutate(app.id)}>
-                                <RefreshCw className="h-4 w-4" />
+                            <Button
+                                variant="outline"
+                                size="icon"
+                                onClick={() => updateApp.mutate(app.id, {
+                                    onSuccess: () => {
+                                        toast.success('Update started', `${app.name} update process has begun`)
+                                    },
+                                    onError: (error) => {
+                                        toast.error('Failed to start update', error.message)
+                                    }
+                                })}
+                                disabled={updateApp.isPending}
+                            >
+                                {updateApp.isPending ? (
+                                    <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                ) : (
+                                    <RefreshCw className="h-4 w-4" />
+                                )}
                             </Button>
                             <Button
                                 variant="outline"
@@ -131,8 +181,8 @@ function AppDetails() {
                     <div className="flex border-b">
                         <button
                             className={`px-4 py-2 text-sm font-medium ${activeTab === 'overview'
-                                    ? 'border-b-2 border-primary text-primary'
-                                    : 'text-muted-foreground hover:text-foreground'
+                                ? 'border-b-2 border-primary text-primary'
+                                : 'text-muted-foreground hover:text-foreground'
                                 }`}
                             onClick={() => setActiveTab('overview')}
                         >
@@ -140,8 +190,8 @@ function AppDetails() {
                         </button>
                         <button
                             className={`px-4 py-2 text-sm font-medium ${activeTab === 'compose'
-                                    ? 'border-b-2 border-primary text-primary'
-                                    : 'text-muted-foreground hover:text-foreground'
+                                ? 'border-b-2 border-primary text-primary'
+                                : 'text-muted-foreground hover:text-foreground'
                                 }`}
                             onClick={() => setActiveTab('compose')}
                         >
@@ -150,8 +200,8 @@ function AppDetails() {
                         </button>
                         <button
                             className={`px-4 py-2 text-sm font-medium ${activeTab === 'update'
-                                    ? 'border-b-2 border-primary text-primary'
-                                    : 'text-muted-foreground hover:text-foreground'
+                                ? 'border-b-2 border-primary text-primary'
+                                : 'text-muted-foreground hover:text-foreground'
                                 }`}
                             onClick={() => setActiveTab('update')}
                         >
@@ -160,8 +210,8 @@ function AppDetails() {
                         </button>
                         <button
                             className={`px-4 py-2 text-sm font-medium ${activeTab === 'logs'
-                                    ? 'border-b-2 border-primary text-primary'
-                                    : 'text-muted-foreground hover:text-foreground'
+                                ? 'border-b-2 border-primary text-primary'
+                                : 'text-muted-foreground hover:text-foreground'
                                 }`}
                             onClick={() => setActiveTab('logs')}
                         >
@@ -170,8 +220,8 @@ function AppDetails() {
                         </button>
                         <button
                             className={`px-4 py-2 text-sm font-medium ${activeTab === 'cloudflare'
-                                    ? 'border-b-2 border-primary text-primary'
-                                    : 'text-muted-foreground hover:text-foreground'
+                                ? 'border-b-2 border-primary text-primary'
+                                : 'text-muted-foreground hover:text-foreground'
                                 }`}
                             onClick={() => setActiveTab('cloudflare')}
                         >

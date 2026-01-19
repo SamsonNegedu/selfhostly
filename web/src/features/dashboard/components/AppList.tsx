@@ -6,6 +6,7 @@ import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog'
 import { Play, Pause, RefreshCw, Trash2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useDeleteApp, useStartApp, useStopApp, useUpdateAppContainers } from '@/shared/services/api'
+import { useToast } from '@/shared/components/ui/Toast'
 
 interface AppToDelete {
     id: number
@@ -21,6 +22,7 @@ function AppList() {
     const startApp = useStartApp()
     const stopApp = useStopApp()
     const updateApp = useUpdateAppContainers()
+    const { toast } = useToast()
 
     // State for confirmation dialog
     const [appToDelete, setAppToDelete] = useState<AppToDelete | null>(null)
@@ -122,26 +124,57 @@ function AppList() {
                                             <Button
                                                 variant="outline"
                                                 size="icon"
-                                                onClick={() => stopApp.mutate(app.id)}
+                                                onClick={() => stopApp.mutate(app.id, {
+                                                    onSuccess: () => {
+                                                        toast.success('App stopped', `${app.name} has been stopped successfully`)
+                                                    },
+                                                    onError: (error) => {
+                                                        toast.error('Failed to stop app', error.message)
+                                                    }
+                                                })}
                                                 title="Stop app"
+                                                disabled={stopApp.isPending}
                                             >
-                                                <Pause className="h-4 w-4" />
+                                                {stopApp.isPending ? (
+                                                    <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                                ) : (
+                                                    <Pause className="h-4 w-4" />
+                                                )}
                                             </Button>
                                         )}
                                         {app.status === 'stopped' && (
                                             <Button
                                                 variant="outline"
                                                 size="icon"
-                                                onClick={() => startApp.mutate(app.id)}
+                                                onClick={() => startApp.mutate(app.id, {
+                                                    onSuccess: () => {
+                                                        toast.success('App started', `${app.name} has been started successfully`)
+                                                    },
+                                                    onError: (error) => {
+                                                        toast.error('Failed to start app', error.message)
+                                                    }
+                                                })}
                                                 title="Start app"
+                                                disabled={startApp.isPending}
                                             >
-                                                <Play className="h-4 w-4" />
+                                                {startApp.isPending ? (
+                                                    <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                                ) : (
+                                                    <Play className="h-4 w-4" />
+                                                )}
                                             </Button>
                                         )}
                                         <Button
                                             variant="outline"
                                             size="icon"
-                                            onClick={() => updateApp.mutate(app.id)}
+                                            onClick={() => updateApp.mutate(app.id, {
+                                                onSuccess: () => {
+                                                    toast.success('Update started', `${app.name} update process has begun`)
+                                                },
+                                                onError: (error) => {
+                                                    toast.error('Failed to start update', error.message)
+                                                }
+                                            })}
                                             title="Update containers"
                                             disabled={updateApp.isPending}
                                         >

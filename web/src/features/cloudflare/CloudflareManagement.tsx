@@ -1,4 +1,3 @@
-import React from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/card'
 import { Button } from '@/shared/components/ui/button'
 import { Badge } from '@/shared/components/ui/badge'
@@ -35,7 +34,7 @@ function CloudflareManagement() {
         }
     }
 
-    const getStatusBadge = (status: string, isActive: boolean) => {
+    const getStatusBadge = (isActive: boolean) => {
         if (isActive) {
             return (
                 <Badge variant="default" className="bg-green-100 text-green-800">
@@ -112,7 +111,7 @@ function CloudflareManagement() {
                                                 <div>
                                                     <h3 className="font-medium">{tunnel.tunnel_name}</h3>
                                                     <div className="flex items-center gap-2 mt-1">
-                                                        {getStatusBadge(tunnel.status, tunnel.is_active)}
+                                                        {getStatusBadge(tunnel.is_active)}
                                                         {tunnel.public_url && (
                                                             <Badge variant="outline" className="bg-blue-50 text-blue-700">
                                                                 <ExternalLink className="h-3 w-3 mr-1" />

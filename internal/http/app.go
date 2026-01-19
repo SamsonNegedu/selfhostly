@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/selfhost-automaton/internal/cleanup"
 	"github.com/selfhost-automaton/internal/cloudflare"
 	"github.com/selfhost-automaton/internal/db"
 	"github.com/selfhost-automaton/internal/docker"
@@ -341,7 +342,7 @@ func (s *Server) updateApp(c *gin.Context) {
 	c.JSON(http.StatusOK, app)
 }
 
-// deleteApp deletes an app
+// deleteApp deletes an app using the comprehensive cleanup system
 func (s *Server) deleteApp(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -356,42 +357,70 @@ func (s *Server) deleteApp(c *gin.Context) {
 		return
 	}
 
-	// Stop app if running
+	// Get Cloudflare settings
+	settings, err := s.database.GetSettings()
+	if err != nil {
+		slog.WarnContext(c.Request.Context(), "failed to get settings for cleanup", "app", app.Name, "error", err)
+		// Continue with basic cleanup even if settings fail
+	}
+
+	var tunnelManager *cloudflare.TunnelManager
+	if settings != nil && settings.CloudflareAPIToken != nil && settings.CloudflareAccountID != nil &&
+		*settings.CloudflareAPIToken != "" && *settings.CloudflareAccountID != "" {
+		tunnelManager = cloudflare.NewTunnelManager(*settings.CloudflareAPIToken, *settings.CloudflareAccountID, s.database)
+	} else {
+		slog.WarnContext(c.Request.Context(), "Cloudflare not configured, will skip Cloudflare cleanup", "app", app.Name)
+	}
+
+	// Create cleanup manager
 	dockerManager := docker.NewManager(s.config.AppsDir)
-	if err := dockerManager.StopApp(app.Name); err != nil {
-		slog.WarnContext(c.Request.Context(), "failed to stop app during deletion", "app", app.Name, "error", err)
-		// Continue with deletion despite stop failure
+	cleanupManager := cleanup.NewCleanupManager(dockerManager, s.database, settings, tunnelManager)
+
+	// Perform comprehensive cleanup
+	results, err := cleanupManager.CleanupApp(app)
+	
+	// Calculate summary
+	successCount, failedCount, totalDuration := cleanupManager.GetSummary()
+	
+	// Log comprehensive results
+	if err != nil {
+		slog.ErrorContext(c.Request.Context(), "App cleanup completed with errors", 
+			"app", app.Name, 
+			"appID", app.ID, 
+			"successCount", successCount, 
+			"failedCount", failedCount, 
+			"totalDuration", totalDuration,
+			"error", err)
+	} else {
+		slog.InfoContext(c.Request.Context(), "App cleanup completed successfully", 
+			"app", app.Name, 
+			"appID", app.ID, 
+			"successCount", successCount, 
+			"failedCount", failedCount, 
+			"totalDuration", totalDuration)
 	}
 
-	// Delete Cloudflare tunnel if exists
-	if app.TunnelID != "" {
-		settings, err := s.database.GetSettings()
-		if err == nil && settings.CloudflareAPIToken != nil && settings.CloudflareAccountID != nil &&
-			*settings.CloudflareAPIToken != "" && *settings.CloudflareAccountID != "" {
-			tunnelManager := cloudflare.NewTunnelManager(*settings.CloudflareAPIToken, *settings.CloudflareAccountID, s.database)
-			if err := tunnelManager.DeleteTunnelByAppID(app.ID); err != nil {
-				slog.WarnContext(c.Request.Context(), "failed to delete cloudflare tunnel", "app", app.Name, "tunnelID", app.TunnelID, "error", err)
-				// Continue with deletion despite tunnel deletion failure
-			}
-		}
+	// Return appropriate response based on cleanup results
+	if failedCount > 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "App deleted successfully, but some cleanup errors occurred",
+			"appID":   app.ID,
+			"successCount": successCount,
+			"failedCount": failedCount,
+			"totalDuration": totalDuration.String(),
+			"errors": failedCount,
+			"details": results,
+		})
+	} else {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "App deleted successfully",
+			"appID":   app.ID,
+			"successCount": successCount,
+			"failedCount": failedCount,
+			"totalDuration": totalDuration.String(),
+			"details": results,
+		})
 	}
-
-	// Delete app directory
-	if err := dockerManager.DeleteAppDirectory(app.Name); err != nil {
-		slog.ErrorContext(c.Request.Context(), "failed to delete app directory", "app", app.Name, "error", err)
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to delete app directory", Details: err.Error()})
-		return
-	}
-
-	// Delete from database
-	if err := s.database.DeleteApp(id); err != nil {
-		slog.ErrorContext(c.Request.Context(), "failed to delete app from database", "appID", id, "error", err)
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to delete app", Details: err.Error()})
-		return
-	}
-
-	slog.InfoContext(c.Request.Context(), "app deleted successfully", "app", app.Name, "appID", id)
-	c.JSON(http.StatusOK, gin.H{"message": "App deleted successfully"})
 }
 
 // startApp starts an app

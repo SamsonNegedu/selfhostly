@@ -1,8 +1,8 @@
-import React from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/card'
 import { Button } from '@/shared/components/ui/button'
 import { Badge } from '@/shared/components/ui/badge'
-import { RefreshCw, Trash2, ExternalLink, AlertCircle, CheckCircle, Clock, Cloud, Settings, Eye, Plus } from 'lucide-react'
+import { RefreshCw, Trash2, ExternalLink, AlertCircle, CheckCircle, Clock, Cloud, Settings, Plus } from 'lucide-react'
+import React from 'react'
 import { useCloudflareTunnel, useSyncCloudflareTunnel, useDeleteCloudflareTunnel } from '@/shared/services/api'
 import { IngressConfiguration } from '@/features/cloudflare/IngressConfiguration'
 

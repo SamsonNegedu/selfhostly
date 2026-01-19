@@ -8,6 +8,7 @@ import Login from '@/features/login';
 import Header from '@/shared/components/layout/Header';
 import MainLayout from '@/shared/components/layout/MainLayout';
 import { AuthProvider, useAuth } from '@/shared/components/auth/AuthProvider';
+import { useToast, ToastContainer } from '@/shared/components/ui/Toast';
 
 // Protected route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -122,10 +123,13 @@ function AppRoutes() {
 }
 
 function App() {
+    const { toasts, removeToast } = useToast();
+
     return (
         <BrowserRouter>
             <AuthProvider>
                 <AppRoutes />
+                <ToastContainer toasts={toasts} removeToast={removeToast} />
             </AuthProvider>
         </BrowserRouter>
     );

@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom'
+import { createBrowserRouter, Navigate } from 'react-router-dom'
 import Dashboard from '@/features/dashboard'
 import CreateApp from '@/features/create-app'
 import AppDetails from '@/features/app-details'
