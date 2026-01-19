@@ -89,7 +89,7 @@ type IngressRule struct {
 // Manager handles Cloudflare tunnel operations
 type Manager struct {
 	config *APICredentials
-	client *http.Client
+	client HTTPClient
 }
 
 // NewManager creates a new Cloudflare tunnel manager
@@ -99,7 +99,18 @@ func NewManager(apiToken, accountID string) *Manager {
 			APIToken:  apiToken,
 			AccountID: accountID,
 		},
-		client: &http.Client{},
+		client: NewRealHTTPClient(),
+	}
+}
+
+// NewManagerWithClient creates a new Cloudflare tunnel manager with a custom HTTP client (for testing)
+func NewManagerWithClient(apiToken, accountID string, client HTTPClient) *Manager {
+	return &Manager{
+		config: &APICredentials{
+			APIToken:  apiToken,
+			AccountID: accountID,
+		},
+		client: client,
 	}
 }
 

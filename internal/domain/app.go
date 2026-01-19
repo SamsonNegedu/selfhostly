@@ -22,6 +22,7 @@ type DockerManager interface {
 	GetAppStatus(name string) (string, error)
 	GetAppLogs(name string) ([]byte, error)
 	DeleteAppDirectory(name string) error
+	RestartCloudflared(name string) error
 }
 
 // CloudflareTunnel defines the interface for Cloudflare tunnel operations

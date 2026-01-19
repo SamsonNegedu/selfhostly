@@ -116,8 +116,8 @@ function ActivityTimeline({ app }: ActivityTimelineProps) {
             <div className="absolute left-4 top-2 bottom-2 w-0.5 bg-border" />
 
             <div className="space-y-4">
-                {activities.map((activity, index) => (
-                    <div key={activity.id} className="relative flex items-start gap-4 pl-10 fade-in stagger-${index + 1}">
+                {activities.map((activity) => (
+                    <div key={activity.id} className="relative flex items-start gap-4 pl-10 fade-in">
                         {/* Timeline dot */}
                         <div className={`absolute left-0 w-8 h-8 rounded-full flex items-center justify-center ${activity.color} bg-background border-2 border-border`}>
                             {activity.icon}

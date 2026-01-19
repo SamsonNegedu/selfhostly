@@ -160,6 +160,9 @@ func InjectCloudflared(compose *ComposeFile, appName, tunnelToken string, networ
 	if compose.Services == nil {
 		compose.Services = make(map[string]Service)
 	}
+	if compose.Networks == nil {
+		compose.Networks = make(map[string]Network)
+	}
 
 	// If no specific network is provided, extract networks from existing services
 	if network == "" {

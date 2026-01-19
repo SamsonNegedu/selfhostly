@@ -1,6 +1,6 @@
-# Self-Host Automaton
+# Selfhostly
 
-A web-based automation tool for managing self-hosted applications on Raspberry Pi with Cloudflare tunnel management and zero-downtime updates.
+A web-based tool for managing self-hosted applications with Cloudflare tunnel management and zero-downtime updates.
 
 ## Tech Stack
 
@@ -24,7 +24,7 @@ A web-based automation tool for managing self-hosted applications on Raspberry P
 ## Project Structure
 
 ```
-selfhost-automaton/
+selfhostly/
 ├── cmd/server/           # Backend entry point
 ├── internal/             # Private application code
 │   ├── config/         # Configuration management
@@ -42,7 +42,51 @@ selfhost-automaton/
 └── pkg/                  # Public libraries
 ```
 
-## Setup
+## 🚀 Quick Start (Docker)
+
+The easiest way to run Selfhostly is with Docker:
+
+```bash
+# 1. Pull the image
+docker pull ghcr.io/YOUR_USERNAME/selfhostly:latest
+
+# 2. Create a .env file (copy from env.example)
+cp env.example .env
+# Edit .env with your configuration
+
+# 3. Run with docker-compose
+docker compose -f docker-compose.prod.yml up -d
+```
+
+### With Cloudflare Tunnel
+
+```bash
+# Include the tunnel profile
+docker compose -f docker-compose.prod.yml --profile tunnel up -d
+```
+
+## ⚙️ Configuration
+
+Copy `env.example` to `.env` and configure:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `GITHUB_CLIENT_ID` | Yes | GitHub OAuth App Client ID |
+| `GITHUB_CLIENT_SECRET` | Yes | GitHub OAuth App Client Secret |
+| `JWT_SECRET` | Yes | Random secret for JWT tokens |
+| `BASE_URL` | Yes | Public URL (e.g., `https://selfhostly.example.com`) |
+| `CLOUDFLARE_API_TOKEN` | No | For tunnel management |
+| `CLOUDFLARE_ACCOUNT_ID` | No | For tunnel management |
+
+### Creating a GitHub OAuth App
+
+1. Go to [GitHub Developer Settings](https://github.com/settings/developers)
+2. Click "New OAuth App"
+3. Set **Homepage URL** to your `BASE_URL`
+4. Set **Authorization callback URL** to `{BASE_URL}/auth/github/callback`
+5. Copy the Client ID and Client Secret to your `.env`
+
+## 🔧 Development Setup
 
 ### Backend Setup
 

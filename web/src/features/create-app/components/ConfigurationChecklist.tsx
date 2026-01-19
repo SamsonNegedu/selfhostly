@@ -1,4 +1,3 @@
-import React from 'react'
 import { Check, X, AlertCircle } from 'lucide-react'
 
 interface ChecklistItem {

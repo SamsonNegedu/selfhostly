@@ -9,9 +9,9 @@ import (
 	"github.com/go-pkgz/auth"
 	"github.com/go-pkgz/auth/avatar"
 	"github.com/go-pkgz/auth/token"
-	"github.com/selfhost-automaton/internal/config"
-	"github.com/selfhost-automaton/internal/db"
-	"github.com/selfhost-automaton/internal/docker"
+	"github.com/selfhostly/internal/config"
+	"github.com/selfhostly/internal/db"
+	"github.com/selfhostly/internal/docker"
 )
 
 // Server wraps the HTTP server
@@ -81,7 +81,7 @@ func initAuthService(cfg *config.Config) *auth.Service {
 		}),
 		TokenDuration:  time.Hour * 24,     // Token valid for 24 hours
 		CookieDuration: time.Hour * 24 * 7, // Cookie valid for 7 days
-		Issuer:         "selfhost-automaton",
+		Issuer:         "selfhostly",
 		URL:            baseURL + "/auth", // Include /auth prefix for callback URLs
 		AvatarStore:    avatar.NewNoOp(),  // No avatar storage
 		SecureCookies:  cfg.Auth.SecureCookie,

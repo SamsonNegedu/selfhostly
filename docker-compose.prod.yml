@@ -1,0 +1,66 @@
+# Selfhostly Production Deployment
+# Usage: docker compose -f docker-compose.prod.yml up -d
+
+services:
+  selfhostly:
+    image: ghcr.io/selfhostly/selfhostly:latest
+    container_name: selfhostly
+    ports:
+      - "8080:8080"
+    environment:
+      # Database
+      DATABASE_PATH: /app/data/selfhostly.db
+      APPS_DIR: /app/apps
+
+      # Cloudflare (optional)
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
+
+      # Authentication
+      AUTH_ENABLED: ${AUTH_ENABLED:-true}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      JWT_SECRET: ${JWT_SECRET:-}
+      BASE_URL: ${BASE_URL:-http://localhost:8080}
+    volumes:
+      - selfhostly-data:/app/data
+      - selfhostly-apps:/app/apps
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - selfhostly-network
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:8080/api/health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Optional: Cloudflare Tunnel for public access
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: selfhostly-cloudflared
+    command: tunnel run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    networks:
+      - selfhostly-network
+    restart: unless-stopped
+    depends_on:
+      selfhostly:
+        condition: service_healthy
+networks:
+  selfhostly-network:
+    driver: bridge
+
+volumes:
+  selfhostly-data:
+  selfhostly-apps:

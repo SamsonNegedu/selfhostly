@@ -24,7 +24,7 @@ function Login() {
             </svg>
           </div>
           <h1 className="text-3xl font-bold text-white mb-2">
-            Self-Host Automaton
+            Selfhostly
           </h1>
           <p className="text-slate-400">
             Deploy and manage your self-hosted applications

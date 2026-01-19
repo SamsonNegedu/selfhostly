@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/selfhost-automaton/internal/cleanup"
-	"github.com/selfhost-automaton/internal/cloudflare"
-	"github.com/selfhost-automaton/internal/db"
-	"github.com/selfhost-automaton/internal/docker"
+	"github.com/selfhostly/internal/cleanup"
+	"github.com/selfhostly/internal/cloudflare"
+	"github.com/selfhostly/internal/db"
+	"github.com/selfhostly/internal/docker"
 )
 
 const (

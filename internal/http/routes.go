@@ -21,6 +21,14 @@ func (s *Server) setupRoutes() {
 		}
 	}
 
+	// Health check endpoint (no auth required)
+	s.engine.GET("/api/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "healthy",
+			"service": "selfhostly",
+		})
+	})
+
 	// API routes - all protected by authentication
 	api := s.engine.Group("/api")
 	api.Use(s.getAuthMiddleware())

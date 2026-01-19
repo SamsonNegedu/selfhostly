@@ -23,7 +23,7 @@ function AppDetails() {
     const { id } = useParams<{ id: string }>()
     const appId = id ?? undefined
     const navigate = useNavigate()
-    const { data: app, isLoading } = useApp(appId!)
+    const { data: app, isLoading, refetch, isFetching } = useApp(appId!)
     const startApp = useStartApp()
     const stopApp = useStopApp()
     const updateApp = useUpdateAppContainers()
@@ -149,9 +149,12 @@ function AppDetails() {
                             isStopPending={stopApp.isPending}
                             isUpdatePending={updateApp.isPending}
                             isDeletePending={deleteApp.isPending}
+                            isRefreshing={isFetching}
+                            onRefresh={() => refetch()}
                             onStart={() => startApp.mutate(app.id, {
                                 onSuccess: () => {
                                     toast.success('App started', `${app.name} has been started successfully`)
+                                    refetch()
                                 },
                                 onError: (error) => {
                                     toast.error('Failed to start app', error.message)
@@ -160,6 +163,7 @@ function AppDetails() {
                             onStop={() => stopApp.mutate(app.id, {
                                 onSuccess: () => {
                                     toast.success('App stopped', `${app.name} has been stopped successfully`)
+                                    refetch()
                                 },
                                 onError: (error) => {
                                     toast.error('Failed to stop app', error.message)
@@ -168,6 +172,7 @@ function AppDetails() {
                             onUpdate={() => updateApp.mutate(app.id, {
                                 onSuccess: () => {
                                     toast.success('Update started', `${app.name} update process has begun`)
+                                    refetch()
                                 },
                                 onError: (error) => {
                                     toast.error('Failed to start update', error.message)

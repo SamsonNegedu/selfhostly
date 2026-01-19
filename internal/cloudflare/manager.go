@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/selfhost-automaton/internal/db"
+	"github.com/selfhostly/internal/db"
 )
 
 // TunnelManager handles Cloudflare tunnel management operations

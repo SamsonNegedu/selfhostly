@@ -1,5 +1,5 @@
 import { Button } from '@/shared/components/ui/button'
-import { Play, Pause, RotateCcw, Trash2, Loader2 } from 'lucide-react'
+import { Play, Square, RefreshCw, Trash2, Loader2, RotateCcw } from 'lucide-react'
 import { TooltipProvider, TooltipContent, TooltipTrigger } from '@/shared/components/ui/tooltip'
 
 interface AppActionsProps {
@@ -8,10 +8,12 @@ interface AppActionsProps {
     isStopPending: boolean
     isUpdatePending: boolean
     isDeletePending: boolean
+    isRefreshing?: boolean
     onStart: () => void
     onStop: () => void
     onUpdate: () => void
     onDelete: () => void
+    onRefresh?: () => void
 }
 
 export function AppActions({
@@ -20,122 +22,136 @@ export function AppActions({
     isStopPending,
     isUpdatePending,
     isDeletePending,
+    isRefreshing = false,
     onStart,
     onStop,
     onUpdate,
-    onDelete
+    onDelete,
+    onRefresh
 }: AppActionsProps) {
-    const getActiveActions = () => {
-        if (appStatus === 'running') {
-            return { showStop: true, showStart: false }
-        } else if (appStatus === 'stopped') {
-            return { showStop: false, showStart: true }
-        }
-        return { showStop: true, showStart: true }
-    }
+    const isAnyActionPending = isStartPending || isStopPending || isUpdatePending || isDeletePending
 
-    const { showStop, showStart } = getActiveActions()
+    const isRunning = appStatus === 'running'
+    const isStopped = appStatus === 'stopped'
 
     return (
-        <div className="flex gap-2">
-            {showStart && (
+        <div className="flex items-center gap-1.5">
+            {/* Refresh Button */}
+            {onRefresh && (
                 <TooltipProvider>
-                    <div className="relative group">
-                        <TooltipTrigger asChild>
-                            <Button
-                                variant="default"
-                                size="icon"
-                                onClick={onStart}
-                                disabled={isStartPending || isUpdatePending}
-                                className="bg-green-600 hover:bg-green-700 text-white"
-                                title="Start App"
-                            >
-                                {isStartPending ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                    <Play className="h-4 w-4" />
-                                )}
-                            </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                            <p>Start App</p>
-                        </TooltipContent>
-                    </div>
-                </TooltipProvider>
-            )}
-
-            {showStop && (
-                <TooltipProvider>
-                    <div className="relative group">
-                        <TooltipTrigger asChild>
-                            <Button
-                                variant="outline"
-                                size="icon"
-                                onClick={onStop}
-                                disabled={isStopPending || isUpdatePending}
-                                className="bg-red-600 hover:bg-red-700 text-white border-red-600 hover:border-red-700"
-                                title="Stop App"
-                            >
-                                {isStopPending ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                    <Pause className="h-4 w-4" />
-                                )}
-                            </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                            <p>Stop App</p>
-                        </TooltipContent>
-                    </div>
-                </TooltipProvider>
-            )}
-
-            <TooltipProvider>
-                <div className="relative group">
                     <TooltipTrigger asChild>
                         <Button
-                            variant="outline"
+                            variant="ghost"
                             size="icon"
-                            onClick={onUpdate}
-                            disabled={isUpdatePending || isStartPending || isStopPending}
-                            className="bg-blue-600 hover:bg-blue-700 text-white border-blue-600 hover:border-blue-700"
-                            title="Update Containers"
+                            onClick={onRefresh}
+                            disabled={isRefreshing}
+                            className="h-9 w-9 text-muted-foreground hover:text-foreground"
                         >
-                            {isUpdatePending ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                                <RotateCcw className="h-4 w-4" />
-                            )}
+                            <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
                         </Button>
                     </TooltipTrigger>
                     <TooltipContent>
-                        <p>Update Containers</p>
+                        <p>Refresh</p>
                     </TooltipContent>
-                </div>
+                </TooltipProvider>
+            )}
+
+            {/* Divider */}
+            {onRefresh && <div className="h-6 w-px bg-border mx-1" />}
+
+            {/* Start Button - shown when stopped */}
+            {isStopped && (
+                <TooltipProvider>
+                    <TooltipTrigger asChild>
+                        <Button
+                            variant="default"
+                            size="sm"
+                            onClick={onStart}
+                            disabled={isAnyActionPending}
+                            className="h-9 px-3 bg-green-600 hover:bg-green-700 text-white gap-1.5"
+                        >
+                            {isStartPending ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <Play className="h-4 w-4" />
+                            )}
+                            <span className="hidden sm:inline">Start</span>
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                        <p>Start application</p>
+                    </TooltipContent>
+                </TooltipProvider>
+            )}
+
+            {/* Stop Button - shown when running */}
+            {isRunning && (
+                <TooltipProvider>
+                    <TooltipTrigger asChild>
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={onStop}
+                            disabled={isAnyActionPending}
+                            className="h-9 px-3 gap-1.5"
+                        >
+                            {isStopPending ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <Square className="h-4 w-4" />
+                            )}
+                            <span className="hidden sm:inline">Stop</span>
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                        <p>Stop application</p>
+                    </TooltipContent>
+                </TooltipProvider>
+            )}
+
+            {/* Update Button */}
+            <TooltipProvider>
+                <TooltipTrigger asChild>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={onUpdate}
+                        disabled={isAnyActionPending}
+                        className="h-9 px-3 gap-1.5"
+                    >
+                        {isUpdatePending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                            <RotateCcw className="h-4 w-4" />
+                        )}
+                        <span className="hidden sm:inline">Update</span>
+                    </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                    <p>Pull latest images & restart</p>
+                </TooltipContent>
             </TooltipProvider>
 
+            {/* Delete Button */}
             <TooltipProvider>
-                <div className="relative group">
-                    <TooltipTrigger asChild>
-                        <Button
-                            variant="outline"
-                            size="icon"
-                            onClick={onDelete}
-                            disabled={isDeletePending || isUpdatePending || isStartPending || isStopPending}
-                            className="text-destructive hover:text-destructive hover:bg-destructive hover:text-destructive-foreground"
-                            title="Delete App"
-                        >
-                            {isDeletePending ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                                <Trash2 className="h-4 w-4" />
-                            )}
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                        <p>Delete App</p>
-                    </TooltipContent>
-                </div>
+                <TooltipTrigger asChild>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={onDelete}
+                        disabled={isAnyActionPending}
+                        className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    >
+                        {isDeletePending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                            <Trash2 className="h-4 w-4" />
+                        )}
+                    </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                    <p>Delete application</p>
+                </TooltipContent>
             </TooltipProvider>
         </div>
     )

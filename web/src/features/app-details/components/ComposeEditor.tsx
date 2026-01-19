@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/card'
 import { Button } from '@/shared/components/ui/button'
-import { Save, RotateCcw, FileCode, Check, AlertTriangle, Settings } from 'lucide-react'
+import { Save, RotateCcw, FileCode, AlertTriangle } from 'lucide-react'
 import { useUpdateApp } from '@/shared/services/api'
 import { useToast } from '@/shared/components/ui/Toast'
 
@@ -56,32 +56,6 @@ function ComposeEditor({ appId, initialComposeContent }: ComposeEditorProps) {
         setHasChanges(value !== initialComposeContent)
     }
 
-    const handleAutoFormat = () => {
-        try {
-            // Basic YAML formatting
-            let formatted = composeContent
-            // Fix indentation (convert tabs to spaces)
-            formatted = formatted.replace(/\t/g, '  ')
-            // Fix spacing around colons
-            formatted = formatted.replace(/:\s*/g, ': ')
-            // Remove extra spaces before line breaks
-            formatted = formatted.replace(/\s+$/gm, '')
-            // Ensure blank lines between sections
-            formatted = formatted.replace(/(\n[^\s])/g, '\n\n$1')
-
-            setComposeContent(formatted.trim())
-            setHasChanges(formatted !== initialComposeContent)
-            toast.success('Formatted', 'YAML has been auto-formatted')
-        } catch (error) {
-            toast.error('Format error', 'Could not auto-format the YAML')
-        }
-    }
-
-    const handleCopy = () => {
-        navigator.clipboard.writeText(composeContent)
-        toast.success('Copied', 'Content copied to clipboard')
-    }
-
     return (
         <Card>
             <CardHeader>
@@ -91,27 +65,6 @@ function ComposeEditor({ appId, initialComposeContent }: ComposeEditorProps) {
                         <CardTitle className="text-xl">Docker Compose Editor</CardTitle>
                     </div>
                     <div className="flex gap-2 flex-wrap">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={handleAutoFormat}
-                            disabled={!composeContent.trim()}
-                            title="Auto-format YAML"
-                            className="button-press"
-                        >
-                            <Settings className="h-4 w-4 mr-2" />
-                            Format
-                        </Button>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={handleCopy}
-                            disabled={!composeContent.trim()}
-                            title="Copy to clipboard"
-                            className="button-press"
-                        >
-                            <Check className="h-4 w-4" />
-                        </Button>
                         <Button
                             variant="outline"
                             size="sm"

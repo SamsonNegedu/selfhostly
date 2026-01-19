@@ -41,9 +41,9 @@ type CloudflareTunnel struct {
 
 // IngressRule represents a single ingress rule for a Cloudflare tunnel
 type IngressRule struct {
-	Hostname     *string                 `json:"hostname" db:"hostname"`
-	Service      string                 `json:"service" db:"service"`
-	Path         *string                `json:"path" db:"path"`
+	Hostname      *string                `json:"hostname" db:"hostname"`
+	Service       string                 `json:"service" db:"service"`
+	Path          *string                `json:"path" db:"path"`
 	OriginRequest map[string]interface{} `json:"originRequest" db:"originRequest"`
 }
 

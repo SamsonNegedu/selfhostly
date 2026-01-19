@@ -3,20 +3,29 @@ package docker
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
 
 // Manager handles Docker operations
 type Manager struct {
-	appsDir string
+	appsDir        string
+	commandExecutor CommandExecutor
 }
 
-// NewManager creates a new Docker manager
+// NewManager creates a new Docker manager with default command executor
 func NewManager(appsDir string) *Manager {
 	return &Manager{
-		appsDir: appsDir,
+		appsDir:        appsDir,
+		commandExecutor: NewRealCommandExecutor(),
+	}
+}
+
+// NewManagerWithExecutor creates a new Docker manager with a custom command executor (for testing)
+func NewManagerWithExecutor(appsDir string, executor CommandExecutor) *Manager {
+	return &Manager{
+		appsDir:        appsDir,
+		commandExecutor: executor,
 	}
 }
 
@@ -47,10 +56,7 @@ func (m *Manager) WriteComposeFile(name, content string) error {
 // StartApp starts the app using docker compose
 func (m *Manager) StartApp(name string) error {
 	appPath := filepath.Join(m.appsDir, name)
-	// Use just the filename since cmd.Dir is set to the app directory
-	cmd := exec.Command("docker", "compose", "-f", "docker-compose.yml", "up", "-d")
-	cmd.Dir = appPath
-	output, err := cmd.CombinedOutput()
+	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, "docker", "compose", "-f", "docker-compose.yml", "up", "-d")
 	if err != nil {
 		return fmt.Errorf("failed to start app: %w\nOutput: %s", err, string(output))
 	}
@@ -60,10 +66,7 @@ func (m *Manager) StartApp(name string) error {
 // StopApp stops the app using docker compose
 func (m *Manager) StopApp(name string) error {
 	appPath := filepath.Join(m.appsDir, name)
-	// Use just the filename since cmd.Dir is set to the app directory
-	cmd := exec.Command("docker", "compose", "-f", "docker-compose.yml", "down")
-	cmd.Dir = appPath
-	output, err := cmd.CombinedOutput()
+	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, "docker", "compose", "-f", "docker-compose.yml", "down")
 	if err != nil {
 		return fmt.Errorf("failed to stop app: %w\nOutput: %s", err, string(output))
 	}
@@ -77,17 +80,15 @@ func (m *Manager) UpdateApp(name string) error {
 	composeFile := "docker-compose.yml"
 
 	// Pull latest images
-	cmdPull := exec.Command("docker", "compose", "-f", composeFile, "pull")
-	cmdPull.Dir = appPath
-	if output, err := cmdPull.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to pull images: %w\nOutput: %s", err, string(output))
+	_, err := m.commandExecutor.ExecuteCommandInDir(appPath, "docker", "compose", "-f", composeFile, "pull")
+	if err != nil {
+		return fmt.Errorf("failed to pull images: %w", err)
 	}
 
 	// Update app services (cloudflared stays running)
-	cmdUp := exec.Command("docker", "compose", "-f", composeFile, "up", "-d")
-	cmdUp.Dir = appPath
-	if output, err := cmdUp.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to update app: %w\nOutput: %s", err, string(output))
+	_, err = m.commandExecutor.ExecuteCommandInDir(appPath, "docker", "compose", "-f", composeFile, "up", "-d")
+	if err != nil {
+		return fmt.Errorf("failed to update app: %w", err)
 	}
 
 	return nil
@@ -97,11 +98,9 @@ func (m *Manager) UpdateApp(name string) error {
 func (m *Manager) GetAppStatus(name string) (string, error) {
 	appPath := filepath.Join(m.appsDir, name)
 	// Use just the filename since cmd.Dir is set to the app directory
-	cmd := exec.Command("docker", "compose", "-f", "docker-compose.yml", "ps")
-	cmd.Dir = appPath
-	output, err := cmd.CombinedOutput()
+	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, "docker", "compose", "-f", "docker-compose.yml", "ps")
 	if err != nil {
-		return "unknown", fmt.Errorf("failed to get status: %w\nOutput: %s", err, string(output))
+		return "unknown", fmt.Errorf("failed to get status: %w", err)
 	}
 
 	// Simple status detection (in production, parse the output properly)
@@ -116,9 +115,7 @@ func (m *Manager) GetAppStatus(name string) (string, error) {
 func (m *Manager) GetAppLogs(name string) ([]byte, error) {
 	appPath := filepath.Join(m.appsDir, name)
 	// Use just the filename since cmd.Dir is set to the app directory
-	cmd := exec.Command("docker", "compose", "-f", "docker-compose.yml", "logs", "--tail=100")
-	cmd.Dir = appPath
-	output, err := cmd.CombinedOutput()
+	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, "docker", "compose", "-f", "docker-compose.yml", "logs", "--tail=100")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get logs: %w", err)
 	}
@@ -155,11 +152,9 @@ func (m *Manager) RestartCloudflared(name string) error {
 	composeFile := "docker-compose.yml"
 
 	// Restart only the cloudflared service
-	cmd := exec.Command("docker", "compose", "-f", composeFile, "restart", "cloudflared")
-	cmd.Dir = appPath
-	output, err := cmd.CombinedOutput()
+	_, err := m.commandExecutor.ExecuteCommandInDir(appPath, "docker", "compose", "-f", composeFile, "restart", "cloudflared")
 	if err != nil {
-		return fmt.Errorf("failed to restart cloudflared: %w\nOutput: %s", err, string(output))
+		return fmt.Errorf("failed to restart cloudflared: %w", err)
 	}
 
 	return nil

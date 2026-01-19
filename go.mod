@@ -1,11 +1,11 @@
-module github.com/selfhost-automaton
+module github.com/selfhostly
 
 go 1.24.0
 
 require (
 	github.com/gin-gonic/gin v1.9.1
-	github.com/google/uuid v1.6.0
 	github.com/go-pkgz/auth v1.24.0
+	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
 	github.com/mattn/go-sqlite3 v1.14.32
 	gopkg.in/yaml.v3 v3.0.1

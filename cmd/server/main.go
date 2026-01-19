@@ -5,9 +5,9 @@ import (
 	"os"
 
 	"github.com/joho/godotenv"
-	"github.com/selfhost-automaton/internal/config"
-	"github.com/selfhost-automaton/internal/db"
-	"github.com/selfhost-automaton/internal/http"
+	"github.com/selfhostly/internal/config"
+	"github.com/selfhostly/internal/db"
+	"github.com/selfhostly/internal/http"
 )
 
 func main() {
