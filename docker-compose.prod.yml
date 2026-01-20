@@ -21,7 +21,7 @@ services:
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       JWT_SECRET: ${JWT_SECRET:-}
-      BASE_URL: ${BASE_URL:-http://localhost:8080}
+      AUTH_BASE_URL: ${AUTH_BASE_URL:-http://localhost:8080}
     volumes:
       - selfhostly-data:/app/data
       - selfhostly-apps:/app/apps

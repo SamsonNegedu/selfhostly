@@ -74,7 +74,7 @@ Copy `env.example` to `.env` and configure:
 | `GITHUB_CLIENT_ID` | Yes | GitHub OAuth App Client ID |
 | `GITHUB_CLIENT_SECRET` | Yes | GitHub OAuth App Client Secret |
 | `JWT_SECRET` | Yes | Random secret for JWT tokens |
-| `BASE_URL` | Yes | Public URL (e.g., `https://selfhostly.example.com`) |
+| `AUTH_BASE_URL` | Yes | Public URL (e.g., `https://selfhostly.example.com`) |
 | `CLOUDFLARE_API_TOKEN` | No | For tunnel management |
 | `CLOUDFLARE_ACCOUNT_ID` | No | For tunnel management |
 
