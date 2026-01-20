@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/card'
 import { Button } from '@/shared/components/ui/button'
 import { Save, RotateCcw, FileCode, AlertTriangle } from 'lucide-react'
-import { useUpdateApp } from '@/shared/services/api'
+import { useUpdateApp, useUpdateAppContainers } from '@/shared/services/api'
 import { useToast } from '@/shared/components/ui/Toast'
+import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog'
 
 interface ComposeEditorProps {
     appId: string;
@@ -16,7 +17,9 @@ function ComposeEditor({ appId, initialComposeContent }: ComposeEditorProps) {
     const [hasChanges, setHasChanges] = useState(false)
     const [lineCount, setLineCount] = useState(0)
     const [charCount, setCharCount] = useState(0)
+    const [showUpdateDialog, setShowUpdateDialog] = useState(false)
     const updateApp = useUpdateApp(appId)
+    const updateAppContainers = useUpdateAppContainers()
     const { toast } = useToast()
 
     // Update line and character counts
@@ -36,12 +39,26 @@ function ComposeEditor({ appId, initialComposeContent }: ComposeEditorProps) {
             })
             setHasChanges(false)
             toast.success('Saved', 'Docker Compose configuration updated successfully')
+            // Prompt user to update containers with new config
+            setShowUpdateDialog(true)
         } catch (error) {
             console.error('Failed to update compose file:', error)
             toast.error('Failed to save', 'Could not update compose configuration')
         } finally {
             setIsSaving(false)
         }
+    }
+
+    const handleUpdateContainers = () => {
+        updateAppContainers.mutate(appId, {
+            onSuccess: () => {
+                toast.success('Update Started', 'Containers are being updated with the new configuration')
+                setShowUpdateDialog(false)
+            },
+            onError: (error) => {
+                toast.error('Update Failed', error.message)
+            }
+        })
     }
 
     const handleReset = () => {
@@ -165,6 +182,18 @@ services:
                     </div>
                 </div>
             </CardContent>
+
+            {/* Update Containers Dialog */}
+            <ConfirmationDialog
+                open={showUpdateDialog}
+                onOpenChange={setShowUpdateDialog}
+                title="Update Containers?"
+                description="Your compose configuration has been saved. Would you like to update the running containers to apply these changes?"
+                confirmText="Update Containers"
+                cancelText="Not Now"
+                onConfirm={handleUpdateContainers}
+                isLoading={updateAppContainers.isPending}
+            />
         </Card>
     )
 }

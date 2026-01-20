@@ -190,6 +190,16 @@ func InjectCloudflared(compose *ComposeFile, appName, tunnelToken string, networ
 		compose.Networks[network] = Network{Driver: "bridge"}
 	}
 
+	// Add all services without an explicit network to the same network
+	// This ensures cloudflared can communicate with all services
+	for serviceName, service := range compose.Services {
+		if len(service.Networks) == 0 {
+			// Service has no network defined, add it to the same network as cloudflared
+			service.Networks = []string{network}
+			compose.Services[serviceName] = service
+		}
+	}
+
 	cloudflaredService := Service{
 		Image:         "cloudflare/cloudflared:latest",
 		ContainerName: fmt.Sprintf("%s-cloudflared", appName),

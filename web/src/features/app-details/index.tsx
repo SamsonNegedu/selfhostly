@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom'
 import { useToast } from '@/shared/components/ui/Toast'
 import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/card'
 import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog'
-import { RefreshCw, Terminal, Settings, Cloud, Info, Activity, AlertTriangle } from 'lucide-react'
+import { RefreshCw, Terminal, Settings, Cloud, Info, AlertTriangle } from 'lucide-react'
 import { Button } from '@/shared/components/ui/button'
 import UpdateProgress from './components/UpdateProgress'
 import LogViewer from './components/LogViewer'
@@ -15,7 +15,7 @@ import CloudflareTab from './components/CloudflareTab'
 import { AppActions } from './components/AppActions'
 import AppBreadcrumb from '@/shared/components/layout/Breadcrumb'
 import { AppDetailsSkeleton } from '@/shared/components/ui/Skeleton'
-import ActivityTimeline from './components/ActivityTimeline'
+import AppOverview from './components/AppOverview'
 
 type TabType = 'overview' | 'compose' | 'logs' | 'update' | 'cloudflare'
 
@@ -225,41 +225,7 @@ function AppDetails() {
                         </div>
                     )}
                     {activeTab === 'overview' && (
-                        <div className="space-y-6">
-                            {/* Activity Timeline */}
-                            <div>
-                                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                                    <Activity className="h-5 w-5" />
-                                    Activity
-                                </h3>
-                                <ActivityTimeline app={app} />
-                            </div>
-
-                            {/* App Details */}
-                            <div className="space-y-4 p-4 bg-muted/50 rounded-lg">
-                                <div className="flex items-center justify-between">
-                                    <span className="text-sm font-medium">Status:</span>
-                                    <div
-                                        className={`px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${getStatusColor(app.status)}`}
-                                    >
-                                        {getStatusIcon(app.status)}
-                                        {app.status}
-                                    </div>
-                                </div>
-                                <div className="flex items-center justify-between">
-                                    <span className="text-sm font-medium">Created:</span>
-                                    <span className="text-sm text-muted-foreground">
-                                        {new Date(app.created_at).toLocaleString()}
-                                    </span>
-                                </div>
-                                <div className="flex items-center justify-between">
-                                    <span className="text-sm font-medium">Updated:</span>
-                                    <span className="text-sm text-muted-foreground">
-                                        {new Date(app.updated_at).toLocaleString()}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
+                        <AppOverview app={app} />
                     )}
                     {activeTab === 'compose' && (
                         <ComposeEditor

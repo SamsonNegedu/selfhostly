@@ -459,8 +459,10 @@ export function useSyncCloudflareTunnel() {
       }
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (_, appId) => {
+      queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', appId] });
       queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnels'] });
+      queryClient.invalidateQueries({ queryKey: ['app', appId] });
       queryClient.invalidateQueries({ queryKey: ['apps'] });
     },
   });
@@ -481,8 +483,10 @@ export function useDeleteCloudflareTunnel() {
       }
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (_, appId) => {
+      queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', appId] });
       queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnels'] });
+      queryClient.invalidateQueries({ queryKey: ['app', appId] });
       queryClient.invalidateQueries({ queryKey: ['apps'] });
     },
   });
@@ -526,6 +530,7 @@ export function useUpdateTunnelIngress() {
       // Invalidate the specific tunnel query to refresh the data
       queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', variables.appId] });
       queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnels'] });
+      queryClient.invalidateQueries({ queryKey: ['app', variables.appId] });
       queryClient.invalidateQueries({ queryKey: ['apps'] });
     },
   });
@@ -554,8 +559,10 @@ export function useCreateDNSRecord() {
       }
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', variables.appId] });
       queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnels'] });
+      queryClient.invalidateQueries({ queryKey: ['app', variables.appId] });
       queryClient.invalidateQueries({ queryKey: ['apps'] });
     },
   });

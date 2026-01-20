@@ -16,7 +16,7 @@ interface IngressConfigurationProps {
     onSave?: (rules: IngressRule[], hostname?: string) => void;
 }
 
-export function IngressConfiguration({ appId, existingIngress = [], existingHostname = '', tunnelID, onSave }: IngressConfigurationProps) {
+export function IngressConfiguration({ appId, existingIngress = [], existingHostname: _existingHostname = '', tunnelID: _tunnelID, onSave }: IngressConfigurationProps) {
     const queryClient = useQueryClient()
     // Handle null values in existing ingress rules
     const sanitizedIngress = existingIngress.map(rule => ({
@@ -25,8 +25,6 @@ export function IngressConfiguration({ appId, existingIngress = [], existingHost
         path: rule.path || null
     }))
     const [rules, setRules] = useState<IngressRule[]>(sanitizedIngress.length > 0 ? sanitizedIngress : [{ service: '', hostname: null, path: null }])
-    const [hostname, setHostname] = useState(existingHostname || '')
-    const [targetDomain, setTargetDomain] = useState('') // Default empty for cfargotunnel.com
     const [isSaving, setIsSaving] = useState(false)
     const [saveError, setSaveError] = useState<string | null>(null)
     const [saveSuccess, setSaveSuccess] = useState(false)
@@ -78,37 +76,56 @@ export function IngressConfiguration({ appId, existingIngress = [], existingHost
             return
         }
 
+        // Extract all unique hostnames from rules for DNS record creation
+        const hostnames = validRules
+            .map(rule => rule.hostname)
+            .filter((h): h is string => h !== null && h !== undefined && h.trim() !== '')
+            .filter((value, index, self) => self.indexOf(value) === index) // unique values
+
         // Update ingress configuration
         updateTunnelIngressMutation.mutate(
             {
                 appId,
                 ingressRules: validRules,
-                hostname: hostname || undefined,
-                targetDomain: targetDomain || undefined
+                hostname: hostnames[0] || undefined, // Send first hostname for backward compatibility
+                targetDomain: undefined
             },
             {
                 onSuccess: () => {
                     setSaveSuccess(true)
                     setSaveError(null)
 
-                    // If hostname is provided, also create DNS record
-                    if (hostname) {
-                        createDNSRecordMutation.mutate(
-                            {
+                    // Immediately invalidate tunnel query for instant UI feedback
+                    queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', appId] })
+
+                    // Create DNS records for all hostnames
+                    if (hostnames.length > 0) {
+                        const dnsPromises = hostnames.map(hostname =>
+                            createDNSRecordMutation.mutateAsync({
                                 appId,
                                 hostname,
-                                targetDomain: targetDomain || undefined
-                            },
-                            {
-                                onSuccess: () => {
-                                    onSave?.(validRules, hostname)
-                                },
-                                onError: (error: Error) => {
-                                    setSaveError(`Ingress configured but DNS creation failed: ${error.message}`)
-                                }
-                            }
+                                targetDomain: undefined
+                            })
                         )
+
+                        Promise.all(dnsPromises)
+                            .then(() => {
+                                // Invalidate all related queries to refresh UI
+                                queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', appId] })
+                                queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnels'] })
+                                queryClient.invalidateQueries({ queryKey: ['app', appId] })
+                                queryClient.invalidateQueries({ queryKey: ['apps'] })
+                                onSave?.(validRules, hostnames[0])
+                            })
+                            .catch((error: Error) => {
+                                setSaveError(`Ingress configured but DNS creation failed: ${error.message}`)
+                            })
                     } else {
+                        // Invalidate all related queries to refresh UI
+                        queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', appId] })
+                        queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnels'] })
+                        queryClient.invalidateQueries({ queryKey: ['app', appId] })
+                        queryClient.invalidateQueries({ queryKey: ['apps'] })
                         onSave?.(validRules, undefined)
                     }
                 },
@@ -146,64 +163,23 @@ export function IngressConfiguration({ appId, existingIngress = [], existingHost
                         <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3 flex items-center gap-2">
                             <CheckCircle className="h-4 w-4 text-green-500" />
                             <span className="text-sm text-green-700 dark:text-green-400">
-                                {hostname ? 'Ingress and DNS configuration saved successfully' : 'Ingress configuration saved successfully'}
+                                Ingress configuration saved successfully. DNS records created automatically for custom domains.
                             </span>
                         </div>
                     )}
 
-                    {/* Hostname Configuration */}
-                    <div className="border rounded-lg p-4 bg-blue-50 dark:bg-blue-900/20">
-                        <div className="flex items-center gap-2 mb-3">
-                            <Globe className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                            <h3 className="text-sm font-medium text-blue-800 dark:text-blue-200">Custom Domain Setup</h3>
-                        </div>
-                        <div className="space-y-3">
-                            <div>
-                                <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Custom Domain (Optional)</label>
-                                <Input
-                                    placeholder="app.example.com"
-                                    value={hostname}
-                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHostname(e.target.value)}
-                                    className="mt-1"
-                                />
-                                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                                    Enter your custom domain to create a DNS record for public access.
-                                    This will create a CNAME record pointing your subdomain to your Cloudflare tunnel.
-                                    Make sure your domain is already pointed to Cloudflare nameservers.
+                    {/* Info Banner */}
+                    <div className="border rounded-lg p-4 bg-blue-50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-900/30">
+                        <div className="flex items-start gap-3">
+                            <Globe className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                            <div className="space-y-1">
+                                <h3 className="text-sm font-medium text-blue-900 dark:text-blue-100">Custom Domain Setup</h3>
+                                <p className="text-xs text-blue-700 dark:text-blue-300">
+                                    Add a hostname (e.g., <code className="px-1 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30">vertsh.localnest.de</code>) to any ingress rule below,
+                                    and a DNS CNAME record will be created automatically pointing to your Cloudflare tunnel.
+                                    Leave hostname empty to use the default tunnel URL.
                                 </p>
                             </div>
-
-                            <div>
-                                <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Target Domain (Optional)</label>
-                                <Input
-                                    placeholder="example.com"
-                                    value={targetDomain}
-                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTargetDomain(e.target.value)}
-                                    className="mt-1"
-                                />
-                                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                                    Leave empty to use the default Cloudflare tunnel domain (your_tunnel_id.cfargotunnel.com),
-                                    or enter your own domain (e.g., example.com) if you have custom routing configured.
-                                </p>
-                            </div>
-
-                            {hostname && (
-                                <div className="pt-2">
-                                    <p className="text-xs font-medium text-blue-700 dark:text-blue-300">DNS Record Preview:</p>
-                                    <Badge variant="secondary" className="mt-1">
-                                        CNAME {hostname || 'your-domain'} → {tunnelID}.cfargotunnel.com
-                                        {targetDomain && (
-                                            <span className="ml-1 text-xs">(Custom domain: {targetDomain})</span>
-                                        )}
-                                    </Badge>
-                                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                                        {targetDomain
-                                            ? `This will create a CNAME record pointing ${hostname || 'your-domain'} to your tunnel.`
-                                            : `This will create a CNAME record pointing ${hostname || 'your-domain'} directly to your Cloudflare tunnel (${tunnelID}.cfargotunnel.com).`
-                                        }
-                                    </p>
-                                </div>
-                            )}
                         </div>
                     </div>
 
@@ -241,14 +217,21 @@ export function IngressConfiguration({ appId, existingIngress = [], existingHost
 
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                     <div>
-                                        <label className="text-xs font-medium text-muted-foreground">Hostname</label>
+                                        <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                                            Hostname
+                                            {rule.hostname && <Globe className="h-3 w-3 text-green-500" />}
+                                        </label>
                                         <Input
-                                            placeholder="app.example.com"
+                                            placeholder="vertsh.localnest.de"
                                             value={rule.hostname || ''}
                                             onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateRule(index, 'hostname', e.target.value || undefined)}
                                         />
                                         <p className="text-xs text-muted-foreground mt-1">
-                                            Leave empty for tunnel URL
+                                            {rule.hostname
+                                                ? <span className="text-green-600 dark:text-green-400 flex items-center gap-1">
+                                                    <CheckCircle className="h-3 w-3" /> DNS record will be created
+                                                </span>
+                                                : 'Optional - uses tunnel URL if empty'}
                                         </p>
                                     </div>
 
@@ -265,14 +248,14 @@ export function IngressConfiguration({ appId, existingIngress = [], existingHost
                                     </div>
 
                                     <div>
-                                        <label className="text-xs font-medium text-muted-foreground">Path</label>
+                                        <label className="text-xs font-medium text-muted-foreground">Path (Optional)</label>
                                         <Input
                                             placeholder="/api/*"
                                             value={rule.path || ''}
                                             onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateRule(index, 'path', e.target.value || undefined)}
                                         />
                                         <p className="text-xs text-muted-foreground mt-1">
-                                            Optional path routing
+                                            For path-based routing
                                         </p>
                                     </div>
                                 </div>
@@ -300,9 +283,19 @@ export function IngressConfiguration({ appId, existingIngress = [], existingHost
                         </Button>
                     </div>
 
-                    <div className="text-xs text-muted-foreground space-y-2">
-                        <p><strong>Note:</strong> A catch-all rule (404 response) is automatically added to the end of your configuration.</p>
-                        <p><strong>Tip:</strong> To access your app via a custom domain, add a DNS CNAME record pointing to your tunnel ID.</p>
+                    <div className="text-xs text-muted-foreground space-y-2 bg-muted/50 rounded-lg p-3">
+                        <p className="flex items-start gap-2">
+                            <CheckCircle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-green-500" />
+                            <span>A catch-all rule (404 response) is automatically added to the end of your configuration.</span>
+                        </p>
+                        <p className="flex items-start gap-2">
+                            <CheckCircle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-green-500" />
+                            <span>DNS CNAME records are automatically created for any hostname you enter in the ingress rules.</span>
+                        </p>
+                        <p className="flex items-start gap-2">
+                            <AlertCircle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-blue-500" />
+                            <span>Make sure your domain's nameservers are pointing to Cloudflare before adding a custom hostname.</span>
+                        </p>
                     </div>
                 </div>
             </CardContent>

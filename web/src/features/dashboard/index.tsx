@@ -171,57 +171,59 @@ function Dashboard() {
                 </div>
             </div>
 
-            {/* Search and Filters */}
-            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-                {/* Search Bar */}
-                <div className="relative flex-1 max-w-md w-full">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <input
-                        type="text"
-                        placeholder="Search apps..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-background"
-                    />
-                    {searchQuery && (
-                        <button
-                            onClick={() => setSearchQuery('')}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                        >
-                            <X className="h-4 w-4" />
-                        </button>
-                    )}
-                </div>
-
-                {/* Filters */}
-                <div className="flex items-center gap-2">
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setShowFilters(!showFilters)}
-                        className="button-press"
-                    >
-                        <Filter className="h-4 w-4 mr-2" />
-                        Filters
-                        {(statusFilter !== 'all' || sortBy !== 'date') && (
-                            <span className="ml-2 px-1.5 py-0.5 text-xs bg-primary text-primary-foreground rounded-full">
-                                {(statusFilter !== 'all' ? 1 : 0) + (sortBy !== 'date' ? 1 : 0)}
-                            </span>
+            {/* Search and Filters - only show if apps exist */}
+            {stats.total > 0 && (
+                <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+                    {/* Search Bar */}
+                    <div className="relative flex-1 max-w-md w-full">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <input
+                            type="text"
+                            placeholder="Search apps..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-background"
+                        />
+                        {searchQuery && (
+                            <button
+                                onClick={() => setSearchQuery('')}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
                         )}
-                    </Button>
+                    </div>
 
-                    {(searchQuery || statusFilter !== 'all' || sortBy !== 'date') && (
+                    {/* Filters */}
+                    <div className="flex items-center gap-2">
                         <Button
-                            variant="ghost"
+                            variant="outline"
                             size="sm"
-                            onClick={clearFilters}
+                            onClick={() => setShowFilters(!showFilters)}
                             className="button-press"
                         >
-                            Clear all
+                            <Filter className="h-4 w-4 mr-2" />
+                            Filters
+                            {(statusFilter !== 'all' || sortBy !== 'date') && (
+                                <span className="ml-2 px-1.5 py-0.5 text-xs bg-primary text-primary-foreground rounded-full">
+                                    {(statusFilter !== 'all' ? 1 : 0) + (sortBy !== 'date' ? 1 : 0)}
+                                </span>
+                            )}
                         </Button>
-                    )}
+
+                        {(searchQuery || statusFilter !== 'all' || sortBy !== 'date') && (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={clearFilters}
+                                className="button-press"
+                            >
+                                Clear all
+                            </Button>
+                        )}
+                    </div>
                 </div>
-            </div>
+            )}
 
             {/* Filter Options Panel */}
             {showFilters && (

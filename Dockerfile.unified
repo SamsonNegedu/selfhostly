@@ -48,7 +48,11 @@ FROM alpine:latest
 RUN apk add --no-cache sqlite ca-certificates tzdata docker-cli docker-cli-compose
 
 # Create non-root user with fixed UID/GID (1000) for predictable permissions
-RUN addgroup -g 1000 -S selfhostly && adduser -u 1000 -S selfhostly -G selfhostly
+# Also add to docker group (GID 999) for socket access
+RUN addgroup -g 999 docker && \
+    addgroup -g 1000 -S selfhostly && \
+    adduser -u 1000 -S selfhostly -G selfhostly && \
+    addgroup selfhostly docker
 
 WORKDIR /app
 
