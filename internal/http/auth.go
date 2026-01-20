@@ -8,4 +8,10 @@ package http
 //   - GET /auth/logout - Logout and clear session
 //   - GET /api/me - Get current user info
 //
+// SECURITY NOTICE:
+// This system implements AUTHENTICATION but NOT AUTHORIZATION.
+// Any authenticated user can access/manage ALL resources in the system.
+// This is by design for SINGLE-USER deployments only.
+// See docs/SECURITY.md for details and multi-user migration path.
+//
 // ErrorResponse is defined in app.go

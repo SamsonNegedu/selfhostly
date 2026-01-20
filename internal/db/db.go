@@ -171,6 +171,8 @@ func (db *DB) CreateApp(app *App) error {
 }
 
 // GetAllApps retrieves all apps
+// SECURITY: Returns ALL apps without user filtering (single-user design)
+// For multi-user support, implement GetUserApps(userID string) instead
 func (db *DB) GetAllApps() ([]*App, error) {
 	rows, err := db.Query("SELECT id, name, description, compose_content, tunnel_token, tunnel_id, tunnel_domain, public_url, status, error_message, created_at, updated_at FROM apps ORDER BY created_at DESC")
 	if err != nil {

@@ -19,7 +19,22 @@ A web-based tool for managing self-hosted applications with Cloudflare tunnel ma
 - Real-time app status monitoring
 - Docker-compose YAML editor with validation
 - Preview merged compose files
-- Optional authentication
+- Optional authentication (Cloudflare Zero Trust recommended)
+
+## ⚠️ Security Notice
+
+**This application is designed for SINGLE-USER deployments only.**
+
+- ✅ **RECOMMENDED:** Deploy behind Cloudflare Zero Trust (no OAuth needed)
+- ✅ Alternative: GitHub OAuth authentication (more overhead)
+- ❌ No resource-level authorization or multi-user support
+- ❌ All authenticated users can see and manage ALL resources
+
+**Use Case:** Personal Raspberry Pi hosting, single admin managing all apps on private infrastructure.
+
+**Not Suitable For:** Multi-user environments, shared infrastructure, SaaS deployments.
+
+📖 Read the full [Security Documentation](./docs/SECURITY.md) for deployment options and architecture details.
 
 ## Project Structure
 
@@ -67,24 +82,64 @@ docker compose -f docker-compose.prod.yml --profile tunnel up -d
 
 ## ⚙️ Configuration
 
-Copy `env.example` to `.env` and configure:
+### Recommended: Deploy Behind Cloudflare Zero Trust
+
+The simplest and most secure setup. No OAuth configuration needed!
+
+```env
+# Disable built-in auth (Cloudflare handles it)
+AUTH_ENABLED=false
+
+# Optional: For tunnel management
+CLOUDFLARE_API_TOKEN=your_cloudflare_api_token
+CLOUDFLARE_ACCOUNT_ID=your_cloudflare_account_id
+```
+
+**Setup Cloudflare Zero Trust:**
+1. Go to Cloudflare Dashboard → Zero Trust → Access
+2. Create a new application for your domain
+3. Add authentication policy (email, Google, GitHub, etc.)
+4. Done! Cloudflare authenticates all requests at the edge
+
+**Benefits:**
+- ✅ No OAuth app setup
+- ✅ No JWT secrets to manage
+- ✅ Multiple identity providers
+- ✅ Built-in audit logs
+- ✅ Free for up to 50 users
+
+---
+
+### Alternative: GitHub OAuth (More Overhead)
+
+If you prefer built-in authentication instead of Cloudflare Zero Trust:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
+| `AUTH_ENABLED` | Yes | Set to `true` |
 | `GITHUB_CLIENT_ID` | Yes | GitHub OAuth App Client ID |
 | `GITHUB_CLIENT_SECRET` | Yes | GitHub OAuth App Client Secret |
-| `JWT_SECRET` | Yes | Random secret for JWT tokens |
+| `GITHUB_ALLOWED_USERS` | **Yes** | Comma-separated GitHub usernames (e.g., `user1,user2`) |
 | `AUTH_BASE_URL` | Yes | Public URL (e.g., `https://selfhostly.example.com`) |
-| `CLOUDFLARE_API_TOKEN` | No | For tunnel management |
-| `CLOUDFLARE_ACCOUNT_ID` | No | For tunnel management |
 
-### Creating a GitHub OAuth App
+#### Creating a GitHub OAuth App
 
 1. Go to [GitHub Developer Settings](https://github.com/settings/developers)
 2. Click "New OAuth App"
 3. Set **Homepage URL** to your `BASE_URL`
 4. Set **Authorization callback URL** to `{BASE_URL}/auth/github/callback`
 5. Copy the Client ID and Client Secret to your `.env`
+6. **Important:** Set `GITHUB_ALLOWED_USERS` to your GitHub username to restrict access
+
+Example `.env`:
+```bash
+AUTH_ENABLED=true
+GITHUB_CLIENT_ID=your_client_id
+GITHUB_CLIENT_SECRET=your_client_secret
+GITHUB_ALLOWED_USERS=your-github-username,trusted-friend
+AUTH_BASE_URL=https://your-domain.com
+AUTH_SECURE_COOKIE=true
+```
 
 ## 🔧 Development Setup
 
@@ -104,7 +159,12 @@ export SERVER_ADDRESS=:8080
 export DATABASE_PATH=./data/automaton.db
 export CLOUDFLARE_API_TOKEN=your_token_here
 export CLOUDFLARE_ACCOUNT_ID=your_account_id
-export JWT_SECRET=your_jwt_secret
+export AUTH_ENABLED=false
+export AUTH_BASE_URL=https://your-domain.com
+export AUTH_SECURE_COOKIE=true
+export GITHUB_CLIENT_ID=your_client_id
+export GITHUB_CLIENT_SECRET=your_client_secret
+export GITHUB_ALLOWED_USERS=your-github-username,trusted-friend
 ```
 
 3. Run the server:
@@ -196,11 +256,31 @@ If your app defines custom networks, cloudflared will automatically connect to t
 
 ## Security
 
-- Store Cloudflare API tokens securely
-- Use bcrypt for password hashing
-- Validate all user inputs
-- Sanitize YAML content before parsing
-- Restrict Docker API access to local only
+**⚠️ Single-User Design:** This system is designed for personal use by a single administrator. See [Security Documentation](./docs/SECURITY.md) for details.
+
+**Security Measures:**
+- ✅ GitHub OAuth authentication
+- ✅ JWT tokens with HTTP-only cookies
+- ✅ Security headers (X-Frame-Options, CSP, etc.)
+- ✅ CORS protection
+- ✅ Input validation and sanitization
+- ✅ Cloudflare API tokens stored securely
+- ❌ No multi-user resource isolation (by design)
+
+**Best Practices:**
+- Use HTTPS in production
+- Set strong JWT secret (32+ characters)
+- Enable secure cookies in production
+- Keep Docker socket restricted to local access
+- Regularly update dependencies
+- Use firewall rules to limit access to trusted IPs
+
+📖 **Read the full [Security Documentation](./docs/SECURITY.md)** for:
+- Current security model explanation
+- Known limitations and vulnerabilities
+- Multi-user migration path (if needed in future)
+- Deployment recommendations
+- Security checklist
 
 ## Development
 

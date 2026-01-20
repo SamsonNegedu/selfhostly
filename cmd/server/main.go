@@ -36,6 +36,13 @@ func main() {
 			clientID = clientID[:8]
 		}
 		log.Printf("GitHub OAuth configured: ClientID=%s...", clientID)
+		
+		// Show allowed users count (but not the actual usernames for security)
+		if len(cfg.Auth.GitHub.AllowedUsers) > 0 {
+			log.Printf("GitHub whitelist configured: %d user(s) allowed", len(cfg.Auth.GitHub.AllowedUsers))
+		} else {
+			log.Printf("WARNING: GitHub auth enabled but no allowed users configured - all access will be denied")
+		}
 	}
 
 	// Initialize database

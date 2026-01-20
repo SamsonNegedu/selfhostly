@@ -3,6 +3,7 @@ package http
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -87,8 +88,31 @@ func initAuthService(cfg *config.Config) *auth.Service {
 		SecureCookies:  cfg.Auth.SecureCookie,
 		DisableXSRF:    true, // Disable for API usage
 		Validator: token.ValidatorFunc(func(_ string, claims token.Claims) bool {
-			// Accept all valid tokens
-			return claims.User != nil
+			// Verify user exists
+			if claims.User == nil {
+				slog.Warn("JWT validation failed: no user in claims")
+				return false
+			}
+
+			// If no whitelist is configured, reject all access (fail-secure)
+			if len(cfg.Auth.GitHub.AllowedUsers) == 0 {
+				slog.Warn("GitHub auth enabled but no allowed users configured - rejecting access", "username", claims.User.Name)
+				return false
+			}
+
+			// Check if GitHub username is in the whitelist
+			// GitHub usernames are case-insensitive, so normalize for comparison
+			username := strings.ToLower(claims.User.Name)
+			for _, allowedUser := range cfg.Auth.GitHub.AllowedUsers {
+				if username == strings.ToLower(allowedUser) {
+					slog.Info("User authorized", "username", claims.User.Name)
+					return true
+				}
+			}
+
+			// User not in whitelist
+			slog.Warn("Unauthorized GitHub user attempted access", "username", username, "allowedUsers", len(cfg.Auth.GitHub.AllowedUsers))
+			return false
 		}),
 	}
 

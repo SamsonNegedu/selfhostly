@@ -1,11 +1,77 @@
-import { Github } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Github, AlertCircle, Shield, X } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import { loginWithGitHub } from '@/shared/services/api';
+import { useSearchParams } from 'react-router-dom';
 
 function Login() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showError, setShowError] = useState(false);
+
+  useEffect(() => {
+    // Check for error parameter in URL (from OAuth callback)
+    const error = searchParams.get('error');
+    const errorDescription = searchParams.get('error_description');
+    
+    if (error) {
+      // Set appropriate error message based on error type
+      if (error === 'access_denied' || errorDescription?.includes('whitelist') || errorDescription?.includes('not authorized')) {
+        setErrorMessage('Access denied: Your GitHub account is not authorized to access this system.');
+      } else if (error === 'unauthorized') {
+        setErrorMessage('Authentication failed: You are not authorized to access this system.');
+      } else {
+        setErrorMessage(`Authentication failed: ${errorDescription || 'Please try again'}`);
+      }
+      setShowError(true);
+      
+      // Clear error params from URL
+      searchParams.delete('error');
+      searchParams.delete('error_description');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
+  const dismissError = () => {
+    setShowError(false);
+    setTimeout(() => setErrorMessage(null), 300);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
+        {/* Error Alert */}
+        {showError && errorMessage && (
+          <div className="mb-6 bg-red-900/20 border border-red-500/50 rounded-xl p-4 backdrop-blur-sm fade-in">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <h3 className="text-red-400 font-semibold mb-1">Access Denied</h3>
+                <p className="text-red-200/90 text-sm">{errorMessage}</p>
+                {errorMessage.includes('not authorized') && (
+                  <div className="mt-3 p-3 bg-slate-900/50 rounded-lg border border-slate-700">
+                    <div className="flex items-center gap-2 text-slate-400 text-xs mb-2">
+                      <Shield className="w-4 h-4" />
+                      <span className="font-medium">Security Notice</span>
+                    </div>
+                    <p className="text-slate-400 text-xs leading-relaxed">
+                      Only specific GitHub accounts are authorized to access this system. 
+                      If you believe you should have access, contact your system administrator 
+                      to add your GitHub username to the whitelist.
+                    </p>
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={dismissError}
+                className="text-red-400 hover:text-red-300 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Logo and title */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-400 to-cyan-500 mb-4">

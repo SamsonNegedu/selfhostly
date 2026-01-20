@@ -93,7 +93,10 @@ func (s *Server) setupSettingsRoutes(api *gin.RouterGroup) {
 func (s *Server) getCurrentUser(c *gin.Context) {
 	user, exists := getUserFromContext(c)
 	if !exists {
-		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Not authenticated"})
+		c.JSON(http.StatusUnauthorized, ErrorResponse{
+			Error:   "Not authenticated",
+			Details: "Please login with GitHub to continue",
+		})
 		return
 	}
 

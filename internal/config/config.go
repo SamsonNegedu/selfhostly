@@ -41,6 +41,7 @@ type AuthConfig struct {
 type GitHubOAuthConfig struct {
 	ClientID     string
 	ClientSecret string
+	AllowedUsers []string // Whitelist of GitHub usernames allowed to access the system
 }
 
 // Load loads configuration from environment variables with defaults
@@ -59,13 +60,13 @@ func Load() (*Config, error) {
 		},
 		Auth: AuthConfig{
 			Enabled:      getEnv("AUTH_ENABLED", "false") == "true",
-			JWTSecret:    getEnv("JWT_SECRET", "change-me-in-production-secret-key"),
 			CookieDomain: getEnv("AUTH_COOKIE_DOMAIN", "localhost"),
 			SecureCookie: getEnv("AUTH_SECURE_COOKIE", "false") == "true",
 			BaseURL:      getEnv("AUTH_BASE_URL", "http://localhost:8080"),
 			GitHub: GitHubOAuthConfig{
 				ClientID:     os.Getenv("GITHUB_CLIENT_ID"),
 				ClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"),
+				AllowedUsers: parseCommaSeparatedList(os.Getenv("GITHUB_ALLOWED_USERS")),
 			},
 		},
 		AutoStart: getEnv("AUTO_START_APPS", "false") == "true",

@@ -132,7 +132,7 @@ function AppList({ filteredApps }: AppListProps) {
                 {apps.map((app, index) => (
                     <Card
                         key={app.id}
-                        className={`cursor-pointer card-hover border-2 hover:border-primary/20 ${app.status === 'running' ? 'border-green-200 dark:border-green-900/30' : ''} fade-in stagger-${(index % 6) + 1}`}
+                        className={`cursor-pointer card-hover fade-in stagger-${(index % 6) + 1}`}
                         onClick={() => navigate(`/apps/${app.id}`)}
                     >
                         <CardHeader>

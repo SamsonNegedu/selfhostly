@@ -23,6 +23,16 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     }
 
     if (!isAuthenticated) {
+        // Check if we just came from GitHub OAuth callback
+        const params = new URLSearchParams(window.location.search);
+        const hasOAuthParams = params.has('code') || params.has('state');
+
+        // If we have OAuth params but still not authenticated, it means validation failed
+        // (likely whitelist rejection)
+        if (hasOAuthParams) {
+            return <Navigate to="/login?error=unauthorized&error_description=not+authorized" replace />;
+        }
+
         return <Navigate to="/login" replace />;
     }
 

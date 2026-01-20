@@ -6,6 +6,11 @@ import (
 	"github.com/google/uuid"
 )
 
+// SECURITY NOTICE:
+// Models do not include user_id/owner_id fields as this system is designed
+// for SINGLE-USER deployments. All authenticated users can access all resources.
+// For multi-user support, see docs/SECURITY.md for required changes.
+
 // App represents a self-hosted application
 type App struct {
 	ID             string    `json:"id" db:"id"`

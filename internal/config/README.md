@@ -30,7 +30,6 @@ The following environment variables can be used to configure the application:
 - `CLOUDFLARE_API_TOKEN`: Cloudflare API token (default: "")
 - `CLOUDFLARE_ACCOUNT_ID`: Cloudflare account ID (default: "")
 - `AUTH_ENABLED`: Whether authentication is enabled (default: "false")
-- `JWT_SECRET`: JWT secret key (default: "change-me-in-production-secret-key")
 - `AUTH_COOKIE_DOMAIN`: Authentication cookie domain (default: "localhost")
 - `AUTH_SECURE_COOKIE`: Whether to use secure cookies (default: "false")
 - `AUTH_BASE_URL`: Base URL for OAuth callbacks (default: "http://localhost:8080")
