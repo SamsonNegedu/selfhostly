@@ -7,10 +7,12 @@ import ComposeEditor from './components/ComposeEditor'
 import PreviewCompose from './components/PreviewCompose'
 import ProgressIndicator from './components/ProgressIndicator'
 import ConfigurationChecklist from './components/ConfigurationChecklist'
+import IngressRulesEditor from './components/IngressRulesEditor'
 import AppBreadcrumb from '@/shared/components/layout/Breadcrumb'
-import { ArrowRight, ArrowLeft, Sparkles, Shield, CheckCircle2 } from 'lucide-react'
+import { ArrowRight, ArrowLeft, Sparkles, Shield, CheckCircle2, Globe } from 'lucide-react'
+import type { IngressRule } from '@/shared/types/api'
 
-type StepType = 'information' | 'compose' | 'review'
+type StepType = 'information' | 'compose' | 'ingress' | 'review'
 
 function CreateApp() {
     const navigate = useNavigate()
@@ -23,12 +25,14 @@ function CreateApp() {
         name: '',
         description: '',
         compose_content: '',
+        ingress_rules: [] as IngressRule[],
     })
 
     const steps = [
-        { id: 1, label: 'Information', status: currentStep === 'information' ? 'current' as const : (['compose', 'review'].includes(currentStep) ? 'completed' as const : 'pending' as const) },
-        { id: 2, label: 'Compose', status: currentStep === 'compose' ? 'current' as const : currentStep === 'review' ? 'completed' as const : 'pending' as const },
-        { id: 3, label: 'Review', status: currentStep === 'review' ? 'current' as const : 'pending' as const },
+        { id: 1, label: 'Information', status: currentStep === 'information' ? 'current' as const : (['compose', 'ingress', 'review'].includes(currentStep) ? 'completed' as const : 'pending' as const) },
+        { id: 2, label: 'Compose', status: currentStep === 'compose' ? 'current' as const : (['ingress', 'review'].includes(currentStep) ? 'completed' as const : 'pending' as const) },
+        { id: 3, label: 'Ingress (Optional)', status: currentStep === 'ingress' ? 'current' as const : currentStep === 'review' ? 'completed' as const : 'pending' as const },
+        { id: 4, label: 'Review', status: currentStep === 'review' ? 'current' as const : 'pending' as const },
     ]
 
     // Form validation
@@ -62,10 +66,10 @@ function CreateApp() {
         return Object.keys(newErrors).length === 0
     }
 
-    const handleFieldChange = (name: string, value: string) => {
+    const handleFieldChange = (name: string, value: string | IngressRule[]) => {
         setFormData({ ...formData, [name]: value })
 
-        if (touched[name]) {
+        if (touched[name] && typeof value === 'string') {
             const error = validateField(name, value)
             setErrors(prev => ({
                 ...prev,
@@ -76,11 +80,14 @@ function CreateApp() {
 
     const handleFieldBlur = (name: string) => {
         setTouched(prev => ({ ...prev, [name]: true }))
-        const error = validateField(name, formData[name as keyof typeof formData])
-        setErrors(prev => ({
-            ...prev,
-            [name]: error || ''
-        }))
+        const value = formData[name as keyof typeof formData]
+        if (typeof value === 'string') {
+            const error = validateField(name, value)
+            setErrors(prev => ({
+                ...prev,
+                [name]: error || ''
+            }))
+        }
     }
 
     const handleNext = () => {
@@ -94,20 +101,36 @@ function CreateApp() {
             setCurrentStep('compose')
         } else if (currentStep === 'compose') {
             if (!validateForm()) return
+            setCurrentStep('ingress')
+        } else if (currentStep === 'ingress') {
             setCurrentStep('review')
         }
     }
 
+    const handleSkipIngress = () => {
+        setFormData({ ...formData, ingress_rules: [] })
+        setCurrentStep('review')
+    }
+
     const handleBack = () => {
         if (currentStep === 'compose') setCurrentStep('information')
-        else if (currentStep === 'review') setCurrentStep('compose')
+        else if (currentStep === 'ingress') setCurrentStep('compose')
+        else if (currentStep === 'review') setCurrentStep('ingress')
     }
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault()
         if (!validateForm()) return
 
-        createApp.mutate(formData, {
+        // Filter out empty ingress rules
+        const validIngressRules = formData.ingress_rules.filter(rule => rule.service.trim() !== '')
+
+        const submitData = {
+            ...formData,
+            ingress_rules: validIngressRules.length > 0 ? validIngressRules : undefined,
+        }
+
+        createApp.mutate(submitData, {
             onSuccess: () => {
                 navigate('/dashboard')
             },
@@ -115,6 +138,7 @@ function CreateApp() {
     }
 
     // Configuration checklist for review step
+    const hasValidIngressRules = formData.ingress_rules.some(rule => rule.service.trim() !== '')
     const checklist = [
         {
             id: '1',
@@ -130,6 +154,11 @@ function CreateApp() {
             id: '3',
             label: 'Cloudflare Tunnel will be configured',
             checked: true
+        },
+        {
+            id: '4',
+            label: hasValidIngressRules ? 'Ingress rules configured' : 'Ingress rules will use default',
+            checked: true
         }
     ]
 
@@ -137,7 +166,9 @@ function CreateApp() {
         ? !!formData.name && !errors.name
         : currentStep === 'compose'
             ? !!formData.compose_content && !errors.compose_content
-            : true
+            : currentStep === 'ingress'
+                ? true // Ingress is optional
+                : true
 
     return (
         <div className="fade-in">
@@ -162,7 +193,7 @@ function CreateApp() {
             {/* Progress Indicator */}
             <ProgressIndicator steps={steps} />
 
-            <div className="max-w-3xl">
+            <div className={currentStep === 'review' ? 'w-full' : 'max-w-3xl'}>
                 {/* Step 1: App Information */}
                 {currentStep === 'information' && (
                     <Card>
@@ -266,79 +297,161 @@ function CreateApp() {
                     </Card>
                 )}
 
-                {/* Step 3: Review & Deploy */}
-                {currentStep === 'review' && (
+                {/* Step 3: Ingress Configuration (Optional) */}
+                {currentStep === 'ingress' && (
                     <Card>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
-                                <CheckCircle2 className="h-5 w-5 text-primary" />
-                                Review & Deploy
+                                <Globe className="h-5 w-5 text-primary" />
+                                Ingress Configuration (Optional)
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-6">
-                            {/* Configuration Checklist */}
-                            <ConfigurationChecklist items={checklist} />
-
-                            {/* Summary */}
-                            <div className="space-y-4">
-                                <div className="p-4 bg-muted/50 rounded-lg">
-                                    <h3 className="font-semibold mb-3">Summary</h3>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                                        <div>
-                                            <span className="text-muted-foreground">Name:</span>
-                                            <p className="font-medium mt-1">{formData.name}</p>
-                                        </div>
-                                        <div>
-                                            <span className="text-muted-foreground">Description:</span>
-                                            <p className="font-medium mt-1">{formData.description || 'No description'}</p>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <h3 className="font-semibold mb-3">Docker Compose Preview</h3>
-                                    <PreviewCompose content={formData.compose_content} />
-                                </div>
+                            <div className="text-sm text-muted-foreground">
+                                Configure how your app will be accessible via Cloudflare Tunnel.
+                                You can skip this step and configure it later from the app details page.
                             </div>
 
-                            {createApp.error && (
-                                <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                                    <p className="text-sm text-red-600 dark:text-red-400">
-                                        {createApp.error.message}
-                                    </p>
-                                </div>
-                            )}
+                            <IngressRulesEditor
+                                value={formData.ingress_rules}
+                                onChange={(rules) => setFormData({ ...formData, ingress_rules: rules })}
+                            />
 
                             <div className="flex justify-between">
                                 <Button
                                     variant="outline"
                                     onClick={handleBack}
-                                    disabled={createApp.isPending}
                                     className="button-press"
                                 >
                                     <ArrowLeft className="h-4 w-4 mr-2" />
                                     Back
                                 </Button>
-                                <Button
-                                    onClick={handleSubmit}
-                                    disabled={createApp.isPending || !checklist.every(i => i.checked)}
-                                    className="button-press"
-                                >
-                                    {createApp.isPending ? (
-                                        <>
-                                            <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2" />
-                                            Deploying...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Sparkles className="h-4 w-4 mr-2" />
-                                            Deploy App
-                                        </>
-                                    )}
-                                </Button>
+                                <div className="flex gap-2">
+                                    <Button
+                                        variant="ghost"
+                                        onClick={handleSkipIngress}
+                                        className="button-press"
+                                    >
+                                        Skip for Now
+                                    </Button>
+                                    <Button
+                                        onClick={handleNext}
+                                        disabled={!canProceed}
+                                        className="button-press"
+                                    >
+                                        Review
+                                        <ArrowRight className="h-4 w-4 ml-2" />
+                                    </Button>
+                                </div>
                             </div>
                         </CardContent>
                     </Card>
+                )}
+
+                {/* Step 4: Review & Deploy */}
+                {currentStep === 'review' && (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Left Pane - Configuration Details */}
+                        <Card className="h-fit">
+                            <CardHeader>
+                                <CardTitle className="flex items-center gap-2">
+                                    <CheckCircle2 className="h-5 w-5 text-primary" />
+                                    Review & Deploy
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-6">
+                                {/* Configuration Checklist */}
+                                <ConfigurationChecklist items={checklist} />
+
+                                {/* Summary */}
+                                <div className="space-y-4">
+                                    <div className="p-4 bg-muted/50 rounded-lg">
+                                        <h3 className="font-semibold mb-3">Summary</h3>
+                                        <div className="space-y-3 text-sm">
+                                            <div>
+                                                <span className="text-muted-foreground">Name:</span>
+                                                <p className="font-medium mt-1">{formData.name}</p>
+                                            </div>
+                                            <div>
+                                                <span className="text-muted-foreground">Description:</span>
+                                                <p className="font-medium mt-1">{formData.description || 'No description'}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {hasValidIngressRules && (
+                                        <div>
+                                            <h3 className="font-semibold mb-3">Ingress Rules</h3>
+                                            <div className="p-4 bg-muted/50 rounded-lg space-y-2">
+                                                {formData.ingress_rules
+                                                    .filter(rule => rule.service.trim() !== '')
+                                                    .map((rule, index) => (
+                                                        <div key={index} className="flex items-center gap-2 text-sm">
+                                                            <Globe className="h-4 w-4 text-primary flex-shrink-0" />
+                                                            <span className="font-medium truncate">
+                                                                {rule.hostname || 'Default tunnel URL'}
+                                                            </span>
+                                                            <span className="text-muted-foreground">→</span>
+                                                            <span className="text-muted-foreground truncate">{rule.service}</span>
+                                                            {rule.path && (
+                                                                <span className="text-muted-foreground text-xs">({rule.path})</span>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {createApp.error && (
+                                    <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                                        <p className="text-sm text-red-600 dark:text-red-400">
+                                            {createApp.error.message}
+                                        </p>
+                                    </div>
+                                )}
+
+                                <div className="flex justify-between pt-4">
+                                    <Button
+                                        variant="outline"
+                                        onClick={handleBack}
+                                        disabled={createApp.isPending}
+                                        className="button-press"
+                                    >
+                                        <ArrowLeft className="h-4 w-4 mr-2" />
+                                        Back
+                                    </Button>
+                                    <Button
+                                        onClick={handleSubmit}
+                                        disabled={createApp.isPending || !checklist.every(i => i.checked)}
+                                        className="button-press"
+                                    >
+                                        {createApp.isPending ? (
+                                            <>
+                                                <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2" />
+                                                Deploying...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Sparkles className="h-4 w-4 mr-2" />
+                                                Deploy App
+                                            </>
+                                        )}
+                                    </Button>
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        {/* Right Pane - Docker Compose Preview */}
+                        <Card className="h-fit lg:sticky lg:top-6">
+                            <CardHeader>
+                                <CardTitle className="text-lg">Docker Compose Preview</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <PreviewCompose content={formData.compose_content} height="500px" />
+                            </CardContent>
+                        </Card>
+                    </div>
                 )}
             </div>
         </div>

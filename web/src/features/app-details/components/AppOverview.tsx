@@ -4,13 +4,11 @@ import { Badge } from '@/shared/components/ui/badge'
 import {
     Activity,
     Clock,
-    Globe,
     Layers,
     HardDrive,
     Network,
     Calendar,
     Server,
-    ExternalLink,
     CheckCircle2,
     XCircle,
     Play,
@@ -19,7 +17,6 @@ import {
 } from 'lucide-react'
 import ActivityTimeline from './ActivityTimeline'
 import type { App } from '@/shared/types/api'
-import { Button } from '@/shared/components/ui/button'
 
 interface AppOverviewProps {
     app: App

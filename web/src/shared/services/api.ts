@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '../stores/app-store';
+import { apiClient } from '../lib/api-client';
 
 // Export query client hooks for components that need them
 export { useQueryClient };
@@ -11,6 +12,8 @@ import type {
   UpdateSettingsRequest,
   CloudflareTunnel,
   CloudflareTunnelResponse,
+  ComposeVersion,
+  RollbackRequest,
 } from '../types/api';
 
 interface IngressRule {
@@ -32,36 +35,14 @@ export interface User {
 export function useApps() {
   return useQuery<App[]>({
     queryKey: ['apps'],
-    queryFn: async () => {
-      const response = await fetch(`/api/apps`, {
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        if (response.status === 401) {
-          throw new Error('UNAUTHORIZED');
-        }
-        throw new Error('Failed to fetch apps');
-      }
-      return response.json();
-    },
+    queryFn: () => apiClient.get<App[]>('/api/apps'),
   });
 }
 
 export function useApp(id: string) {
   return useQuery<App>({
     queryKey: ['app', id],
-    queryFn: async () => {
-      const response = await fetch(`/api/apps/${id}`, {
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        if (response.status === 401) {
-          throw new Error('UNAUTHORIZED');
-        }
-        throw new Error('Failed to fetch app');
-      }
-      return response.json();
-    },
+    queryFn: () => apiClient.get<App>(`/api/apps/${id}`),
     enabled: !!id,
   });
 }
@@ -70,19 +51,7 @@ export function useCreateApp() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async (data: CreateAppRequest) => {
-      const response = await fetch(`/api/apps`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to create app');
-      }
-      return response.json();
-    },
+    mutationFn: (data: CreateAppRequest) => apiClient.post<App, CreateAppRequest>('/api/apps', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['apps'] });
     },
@@ -93,19 +62,7 @@ export function useUpdateApp(id: string) {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async (data: UpdateAppRequest) => {
-      const response = await fetch(`/api/apps/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to update app');
-      }
-      return response.json();
-    },
+    mutationFn: (data: UpdateAppRequest) => apiClient.put<App, UpdateAppRequest>(`/api/apps/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['apps'] });
       queryClient.invalidateQueries({ queryKey: ['app', id] });
@@ -117,17 +74,7 @@ export function useDeleteApp() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async (id: string) => {
-      const response = await fetch(`/api/apps/${id}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to delete app');
-      }
-      return response.json();
-    },
+    mutationFn: (id: string) => apiClient.delete<{ message: string; appID: string }>(`/api/apps/${id}`),
     // Optimistic update - remove from cache immediately
     onMutate: async (id: string) => {
       // Cancel any outgoing refetches
@@ -160,17 +107,7 @@ export function useStartApp() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async (id: string) => {
-      const response = await fetch(`/api/apps/${id}/start`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to start app');
-      }
-      return response.json();
-    },
+    mutationFn: (id: string) => apiClient.post<App>(`/api/apps/${id}/start`),
     onMutate: async (id: string) => {
       // Cancel any outgoing refetches
       await queryClient.cancelQueries({ queryKey: ['apps'] });
@@ -218,17 +155,7 @@ export function useStopApp() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async (id: string) => {
-      const response = await fetch(`/api/apps/${id}/stop`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to stop app');
-      }
-      return response.json();
-    },
+    mutationFn: (id: string) => apiClient.post<App>(`/api/apps/${id}/stop`),
     onMutate: async (id: string) => {
       // Cancel any outgoing refetches
       await queryClient.cancelQueries({ queryKey: ['apps'] });
@@ -280,17 +207,7 @@ export function useUpdateAppContainers() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async (id: string) => {
-      const response = await fetch(`/api/apps/${id}/update`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to update app containers');
-      }
-      return response.json();
-    },
+    mutationFn: (id: string) => apiClient.post<App>(`/api/apps/${id}/update`),
     onMutate: async (id: string) => {
       // Cancel any outgoing refetches
       await queryClient.cancelQueries({ queryKey: ['apps'] });
@@ -335,22 +252,45 @@ export function useUpdateAppContainers() {
   });
 }
 
+// Compose Versions API
+export function useComposeVersions(appId: string) {
+  return useQuery<ComposeVersion[]>({
+    queryKey: ['compose-versions', appId],
+    queryFn: () => apiClient.get<ComposeVersion[]>(`/api/apps/${appId}/compose/versions`),
+    enabled: !!appId,
+  });
+}
+
+export function useComposeVersion(appId: string, version: number) {
+  return useQuery<ComposeVersion>({
+    queryKey: ['compose-version', appId, version],
+    queryFn: () => apiClient.get<ComposeVersion>(`/api/apps/${appId}/compose/versions/${version}`),
+    enabled: !!appId && version > 0,
+  });
+}
+
+export function useRollbackToVersion(appId: string) {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: ({ version, change_reason }: { version: number; change_reason?: string }) => {
+      const body: RollbackRequest = change_reason ? { change_reason } : {};
+      return apiClient.post<{ message: string; app: App; new_version: ComposeVersion }>(`/api/apps/${appId}/compose/rollback/${version}`, body);
+    },
+    onSuccess: () => {
+      // Invalidate related queries
+      queryClient.invalidateQueries({ queryKey: ['app', appId] });
+      queryClient.invalidateQueries({ queryKey: ['apps'] });
+      queryClient.invalidateQueries({ queryKey: ['compose-versions', appId] });
+    },
+  });
+}
+
 // Settings API
 export function useSettings() {
   return useQuery<Settings>({
     queryKey: ['settings'],
-    queryFn: async () => {
-      const response = await fetch(`/api/settings`, {
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        if (response.status === 401) {
-          throw new Error('UNAUTHORIZED');
-        }
-        throw new Error('Failed to fetch settings');
-      }
-      return response.json();
-    },
+    queryFn: () => apiClient.get<Settings>('/api/settings'),
   });
 }
 
@@ -358,19 +298,7 @@ export function useUpdateSettings() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async (data: UpdateSettingsRequest) => {
-      const response = await fetch(`/api/settings`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to update settings');
-      }
-      return response.json();
-    },
+    mutationFn: (data: UpdateSettingsRequest) => apiClient.put<Settings, UpdateSettingsRequest>('/api/settings', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
     },
@@ -394,16 +322,15 @@ export function useCurrentUser() {
   return useQuery<User | null>({
     queryKey: ['currentUser'],
     queryFn: async () => {
-      const response = await fetch(`/api/me`, {
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        if (response.status === 401) {
+      try {
+        return await apiClient.get<User>('/api/me');
+      } catch (error) {
+        // Return null for 401 instead of throwing
+        if (error instanceof Error && error.message === 'UNAUTHORIZED') {
           return null;
         }
-        throw new Error('Failed to fetch user');
+        throw error;
       }
-      return response.json();
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
     retry: false,
@@ -414,32 +341,14 @@ export function useCurrentUser() {
 export function useCloudflareTunnels() {
   return useQuery<CloudflareTunnelResponse>({
     queryKey: ['cloudflare', 'tunnels'],
-    queryFn: async () => {
-      const response = await fetch('/api/cloudflare/tunnels', {
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to fetch tunnels');
-      }
-      return response.json();
-    },
+    queryFn: () => apiClient.get<CloudflareTunnelResponse>('/api/cloudflare/tunnels'),
   });
 }
 
 export function useCloudflareTunnel(appId: string) {
   return useQuery<CloudflareTunnel>({
     queryKey: ['cloudflare', 'tunnel', appId],
-    queryFn: async () => {
-      const response = await fetch(`/api/cloudflare/apps/${appId}/tunnel`, {
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to fetch tunnel');
-      }
-      return response.json();
-    },
+    queryFn: () => apiClient.get<CloudflareTunnel>(`/api/cloudflare/apps/${appId}/tunnel`),
     enabled: !!appId,
   });
 }
@@ -448,17 +357,7 @@ export function useSyncCloudflareTunnel() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async (appId: string) => {
-      const response = await fetch(`/api/cloudflare/apps/${appId}/tunnel/sync`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to sync tunnel');
-      }
-      return response.json();
-    },
+    mutationFn: (appId: string) => apiClient.post<CloudflareTunnel>(`/api/cloudflare/apps/${appId}/tunnel/sync`),
     onSuccess: (_, appId) => {
       queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', appId] });
       queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnels'] });
@@ -472,17 +371,7 @@ export function useDeleteCloudflareTunnel() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (appId: string) => {
-      const response = await fetch(`/api/cloudflare/apps/${appId}/tunnel`, {
-        method: 'DELETE',
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to delete tunnel');
-      }
-      return response.json();
-    },
+    mutationFn: (appId: string) => apiClient.delete<{ message: string }>(`/api/cloudflare/apps/${appId}/tunnel`),
     onSuccess: (_, appId) => {
       queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', appId] });
       queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnels'] });
@@ -496,7 +385,7 @@ export function useUpdateTunnelIngress() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ appId, ingressRules, hostname, targetDomain }: { appId: string; ingressRules: IngressRule[]; hostname?: string; targetDomain?: string }) => {
+    mutationFn: ({ appId, ingressRules, hostname, targetDomain }: { appId: string; ingressRules: IngressRule[]; hostname?: string; targetDomain?: string }) => {
       const body: { ingress_rules: IngressRule[]; hostname?: string; target_domain?: string } = {
         ingress_rules: ingressRules,
       };
@@ -514,17 +403,7 @@ export function useUpdateTunnelIngress() {
         body.target_domain = targetDomain;
       }
 
-      const response = await fetch(`/api/cloudflare/apps/${appId}/tunnel/ingress`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to update tunnel ingress');
-      }
-      return response.json();
+      return apiClient.put<CloudflareTunnel>(`/api/cloudflare/apps/${appId}/tunnel/ingress`, body);
     },
     onSuccess: (_, variables) => {
       // Invalidate the specific tunnel query to refresh the data
@@ -540,24 +419,14 @@ export function useCreateDNSRecord() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ appId, hostname, targetDomain }: { appId: string; hostname: string; targetDomain?: string }) => {
+    mutationFn: ({ appId, hostname, targetDomain }: { appId: string; hostname: string; targetDomain?: string }) => {
       const body: { hostname: string; target_domain?: string } = { hostname };
       
       if (targetDomain) {
         body.target_domain = targetDomain;
       }
 
-      const response = await fetch(`/api/cloudflare/apps/${appId}/tunnel/dns`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to create DNS record');
-      }
-      return response.json();
+      return apiClient.post<{ message: string; tunnel: CloudflareTunnel }>(`/api/cloudflare/apps/${appId}/tunnel/dns`, body);
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', variables.appId] });

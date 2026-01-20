@@ -116,3 +116,30 @@ func NewSettings() *Settings {
 		UpdatedAt:     time.Now(),
 	}
 }
+
+// ComposeVersion represents a versioned snapshot of a compose file
+type ComposeVersion struct {
+	ID             string     `json:"id" db:"id"`
+	AppID          string     `json:"app_id" db:"app_id"`
+	Version        int        `json:"version" db:"version"`                 // Sequential version number
+	ComposeContent string     `json:"compose_content" db:"compose_content"` // The actual compose file content
+	ChangeReason   *string    `json:"change_reason" db:"change_reason"`     // Optional reason for the change
+	ChangedBy      *string    `json:"changed_by" db:"changed_by"`           // Optional user who made the change
+	IsCurrent      bool       `json:"is_current" db:"is_current"`           // Whether this is the active version
+	CreatedAt      time.Time  `json:"created_at" db:"created_at"`
+	RolledBackFrom *int       `json:"rolled_back_from" db:"rolled_back_from"` // Version number this was rolled back from (if applicable)
+}
+
+// NewComposeVersion creates a new ComposeVersion with a generated UUID
+func NewComposeVersion(appID string, version int, composeContent string, changeReason *string, changedBy *string) *ComposeVersion {
+	return &ComposeVersion{
+		ID:             uuid.New().String(),
+		AppID:          appID,
+		Version:        version,
+		ComposeContent: composeContent,
+		ChangeReason:   changeReason,
+		ChangedBy:      changedBy,
+		IsCurrent:      true,
+		CreatedAt:      time.Now(),
+	}
+}

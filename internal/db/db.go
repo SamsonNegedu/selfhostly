@@ -95,6 +95,21 @@ func (db *DB) migrate() error {
 			UNIQUE(app_id),
 			FOREIGN KEY (app_id) REFERENCES apps(id) ON DELETE CASCADE
 		)`,
+		`CREATE TABLE IF NOT EXISTS compose_versions (
+			id TEXT PRIMARY KEY,
+			app_id TEXT NOT NULL,
+			version INTEGER NOT NULL,
+			compose_content TEXT NOT NULL,
+			change_reason TEXT,
+			changed_by TEXT,
+			is_current INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			rolled_back_from INTEGER,
+			UNIQUE(app_id, version),
+			FOREIGN KEY (app_id) REFERENCES apps(id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_compose_versions_app_id ON compose_versions(app_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_compose_versions_is_current ON compose_versions(app_id, is_current)`,
 	}
 
 	for _, migration := range migrations {
@@ -544,4 +559,162 @@ func (db *DB) ListActiveCloudflareTunnels() ([]*CloudflareTunnel, error) {
 	}
 
 	return tunnels, nil
+}
+
+// CreateComposeVersion creates a new compose version record
+func (db *DB) CreateComposeVersion(version *ComposeVersion) error {
+	var changeReason, changedBy, rolledBackFrom interface{}
+	if version.ChangeReason != nil {
+		changeReason = *version.ChangeReason
+	} else {
+		changeReason = nil
+	}
+	if version.ChangedBy != nil {
+		changedBy = *version.ChangedBy
+	} else {
+		changedBy = nil
+	}
+	if version.RolledBackFrom != nil {
+		rolledBackFrom = *version.RolledBackFrom
+	} else {
+		rolledBackFrom = nil
+	}
+
+	_, err := db.Exec(
+		"INSERT INTO compose_versions (id, app_id, version, compose_content, change_reason, changed_by, is_current, created_at, rolled_back_from) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		version.ID, version.AppID, version.Version, version.ComposeContent, changeReason, changedBy, version.IsCurrent, version.CreatedAt, rolledBackFrom,
+	)
+	return err
+}
+
+// GetComposeVersionsByAppID retrieves all compose versions for an app, ordered by version DESC
+func (db *DB) GetComposeVersionsByAppID(appID string) ([]*ComposeVersion, error) {
+	rows, err := db.Query("SELECT id, app_id, version, compose_content, change_reason, changed_by, is_current, created_at, rolled_back_from FROM compose_versions WHERE app_id = ? ORDER BY version DESC", appID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var versions []*ComposeVersion
+	for rows.Next() {
+		version := &ComposeVersion{}
+		var changeReason, changedBy sql.NullString
+		var rolledBackFrom sql.NullInt64
+		err := rows.Scan(&version.ID, &version.AppID, &version.Version, &version.ComposeContent, &changeReason, &changedBy, &version.IsCurrent, &version.CreatedAt, &rolledBackFrom)
+		if err != nil {
+			return nil, err
+		}
+
+		if changeReason.Valid {
+			version.ChangeReason = &changeReason.String
+		}
+		if changedBy.Valid {
+			version.ChangedBy = &changedBy.String
+		}
+		if rolledBackFrom.Valid {
+			rbf := int(rolledBackFrom.Int64)
+			version.RolledBackFrom = &rbf
+		}
+
+		versions = append(versions, version)
+	}
+
+	return versions, nil
+}
+
+// GetComposeVersion retrieves a specific compose version by app ID and version number
+func (db *DB) GetComposeVersion(appID string, version int) (*ComposeVersion, error) {
+	v := &ComposeVersion{}
+	var changeReason, changedBy sql.NullString
+	var rolledBackFrom sql.NullInt64
+	err := db.QueryRow(
+		"SELECT id, app_id, version, compose_content, change_reason, changed_by, is_current, created_at, rolled_back_from FROM compose_versions WHERE app_id = ? AND version = ?",
+		appID, version,
+	).Scan(&v.ID, &v.AppID, &v.Version, &v.ComposeContent, &changeReason, &changedBy, &v.IsCurrent, &v.CreatedAt, &rolledBackFrom)
+
+	if err == nil {
+		if changeReason.Valid {
+			v.ChangeReason = &changeReason.String
+		}
+		if changedBy.Valid {
+			v.ChangedBy = &changedBy.String
+		}
+		if rolledBackFrom.Valid {
+			rbf := int(rolledBackFrom.Int64)
+			v.RolledBackFrom = &rbf
+		}
+	}
+	return v, err
+}
+
+// GetCurrentComposeVersion retrieves the current active compose version for an app
+func (db *DB) GetCurrentComposeVersion(appID string) (*ComposeVersion, error) {
+	v := &ComposeVersion{}
+	var changeReason, changedBy sql.NullString
+	var rolledBackFrom sql.NullInt64
+	err := db.QueryRow(
+		"SELECT id, app_id, version, compose_content, change_reason, changed_by, is_current, created_at, rolled_back_from FROM compose_versions WHERE app_id = ? AND is_current = 1",
+		appID,
+	).Scan(&v.ID, &v.AppID, &v.Version, &v.ComposeContent, &changeReason, &changedBy, &v.IsCurrent, &v.CreatedAt, &rolledBackFrom)
+
+	if err == nil {
+		if changeReason.Valid {
+			v.ChangeReason = &changeReason.String
+		}
+		if changedBy.Valid {
+			v.ChangedBy = &changedBy.String
+		}
+		if rolledBackFrom.Valid {
+			rbf := int(rolledBackFrom.Int64)
+			v.RolledBackFrom = &rbf
+		}
+	}
+	return v, err
+}
+
+// GetLatestVersionNumber retrieves the latest version number for an app
+func (db *DB) GetLatestVersionNumber(appID string) (int, error) {
+	var version sql.NullInt64
+	err := db.QueryRow("SELECT MAX(version) FROM compose_versions WHERE app_id = ?", appID).Scan(&version)
+	if err != nil {
+		return 0, err
+	}
+	if !version.Valid {
+		return 0, nil
+	}
+	return int(version.Int64), nil
+}
+
+// MarkAllVersionsAsNotCurrent marks all versions for an app as not current
+func (db *DB) MarkAllVersionsAsNotCurrent(appID string) error {
+	_, err := db.Exec("UPDATE compose_versions SET is_current = 0 WHERE app_id = ?", appID)
+	return err
+}
+
+// MarkVersionAsCurrent marks a specific version as current and all others as not current
+func (db *DB) MarkVersionAsCurrent(appID string, version int) error {
+	// Start a transaction
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Mark all versions as not current
+	if _, err := tx.Exec("UPDATE compose_versions SET is_current = 0 WHERE app_id = ?", appID); err != nil {
+		return err
+	}
+
+	// Mark the specified version as current
+	if _, err := tx.Exec("UPDATE compose_versions SET is_current = 1 WHERE app_id = ? AND version = ?", appID, version); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// DeleteComposeVersionsByAppID deletes all compose versions for an app
+func (db *DB) DeleteComposeVersionsByAppID(appID string) error {
+	_, err := db.Exec("DELETE FROM compose_versions WHERE app_id = ?", appID)
+	return err
 }

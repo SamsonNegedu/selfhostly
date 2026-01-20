@@ -41,13 +41,22 @@ function AppDetails() {
 
     const confirmDelete = () => {
         if (app) {
-            // Remove from local store if exists
-            useAppStore.getState().removeApp(app.id)
+            const appName = app.name
 
-            // Redirect to dashboard after deletion
+            // Show immediate feedback that deletion started
+            toast.info('Deleting app', `Deleting "${appName}"...`)
+
+            // Trigger deletion
             deleteApp.mutate(app.id, {
                 onSuccess: () => {
+                    // Remove from local store on success
+                    useAppStore.getState().removeApp(app.id)
+                    toast.success('App deleted', `"${appName}" has been deleted successfully`)
+                    // Redirect to dashboard after deletion
                     navigate('/dashboard')
+                },
+                onError: (error) => {
+                    toast.error('Failed to delete app', error.message)
                 }
             })
 
@@ -119,7 +128,24 @@ function AppDetails() {
     ]
 
     return (
-        <div className="space-y-6 fade-in">
+        <div className="space-y-6 fade-in relative">
+            {/* Deletion Overlay */}
+            {deleteApp.isPending && (
+                <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center">
+                    <div className="bg-card border rounded-lg p-8 shadow-lg max-w-md w-full mx-4 fade-in">
+                        <div className="flex flex-col items-center text-center gap-4">
+                            <div className="h-16 w-16 border-4 border-destructive border-t-transparent rounded-full animate-spin"></div>
+                            <div>
+                                <h3 className="text-lg font-semibold mb-2">Deleting {app.name}</h3>
+                                <p className="text-sm text-muted-foreground">
+                                    Please wait while we remove the application and clean up resources...
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Breadcrumb Navigation */}
             <div>
                 <AppBreadcrumb

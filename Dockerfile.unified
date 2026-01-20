@@ -48,10 +48,21 @@ FROM alpine:latest
 RUN apk add --no-cache sqlite ca-certificates tzdata docker-cli docker-cli-compose
 
 # Create non-root user with fixed UID/GID (1000) for predictable permissions
-# Also add to docker group (GID 999) for socket access
-RUN addgroup -g 999 docker && \
-    addgroup -g 1000 -S selfhostly && \
-    adduser -u 1000 -S selfhostly -G selfhostly && \
+# Add to docker group for socket access
+RUN set -ex; \
+    # Create docker group if it doesn't exist (let system assign GID)
+    if ! getent group docker >/dev/null; then \
+        addgroup -S docker; \
+    fi; \
+    # Create selfhostly group if it doesn't exist
+    if ! getent group selfhostly >/dev/null; then \
+        addgroup -g 1000 -S selfhostly; \
+    fi; \
+    # Create selfhostly user if it doesn't exist
+    if ! getent passwd selfhostly >/dev/null; then \
+        adduser -u 1000 -S selfhostly -G selfhostly; \
+    fi; \
+    # Add selfhostly user to docker group
     addgroup selfhostly docker
 
 WORKDIR /app

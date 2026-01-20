@@ -37,6 +37,7 @@ func NewServer(cfg *config.Config, database *db.DB) *Server {
 	// Middleware - order matters
 	engine.Use(securityHeadersMiddleware())
 	engine.Use(corsMiddleware(cfg))
+	engine.Use(cacheControlMiddleware())
 	engine.Use(loggerMiddleware())
 
 	// Initialize auth service
@@ -204,6 +205,33 @@ func corsMiddleware(cfg *config.Config) gin.HandlerFunc {
 	}
 }
 
+// cacheControlMiddleware sets appropriate cache headers based on content type
+func cacheControlMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		path := c.Request.URL.Path
+
+		// API endpoints - no caching for dynamic data
+		if strings.HasPrefix(path, "/api/") {
+			c.Writer.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+			c.Writer.Header().Set("Pragma", "no-cache")
+			c.Writer.Header().Set("Expires", "0")
+		} else if strings.HasPrefix(path, "/auth/") {
+			// Auth endpoints - no caching
+			c.Writer.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+			c.Writer.Header().Set("Pragma", "no-cache")
+			c.Writer.Header().Set("Expires", "0")
+		} else if strings.HasPrefix(path, "/assets/") {
+			// Static assets - long-term caching with immutable flag
+			// These are versioned/hashed files that never change
+			c.Writer.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		}
+		// For other paths (like index.html), don't set cache headers
+		// Let default Gin static file handling decide
+
+		c.Next()
+	}
+}
+
 // loggerMiddleware logs HTTP requests
 func loggerMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -247,6 +275,8 @@ func (s *Server) getAuthMiddleware() gin.HandlerFunc {
 		handler.ServeHTTP(c.Writer, c.Request)
 
 		if !authenticated {
+			// Override the text/plain response from go-pkgz/auth with JSON
+			c.Writer.Header().Set("Content-Type", "application/json")
 			c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Authentication required. Please login with GitHub."})
 			c.Abort()
 			return

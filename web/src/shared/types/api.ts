@@ -17,6 +17,7 @@ export interface CreateAppRequest {
   name: string;
   description: string;
   compose_content: string;
+  ingress_rules?: IngressRule[];
 }
 
 export interface UpdateAppRequest {
@@ -70,4 +71,20 @@ export interface ApiResponse<T = unknown> {
   data?: T;
   error?: string;
   message?: string;
+}
+
+export interface ComposeVersion {
+  id: string;
+  app_id: string;
+  version: number;
+  compose_content: string;
+  change_reason?: string | null;
+  changed_by?: string | null;
+  is_current: boolean;
+  created_at: string;
+  rolled_back_from?: number | null;
+}
+
+export interface RollbackRequest {
+  change_reason?: string;
 }

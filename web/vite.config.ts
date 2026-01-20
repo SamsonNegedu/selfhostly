@@ -19,7 +19,6 @@ export default defineConfig(({ mode }) => {
           target: env.VITE_API_BASE || 'http://localhost:8080',
           changeOrigin: true,
         },
-        // Proxy GoBetterAuth requests to avoid CORS issues during development
         '/auth': {
           target: env.VITE_API_BASE || 'http://localhost:8080',
           changeOrigin: true,

@@ -1,6 +1,7 @@
 package http
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -21,9 +22,10 @@ const (
 
 // CreateAppRequest represents a create app request
 type CreateAppRequest struct {
-	Name           string `json:"name" binding:"required"`
-	Description    string `json:"description"`
-	ComposeContent string `json:"compose_content" binding:"required"`
+	Name           string                   `json:"name" binding:"required"`
+	Description    string                   `json:"description"`
+	ComposeContent string                   `json:"compose_content" binding:"required"`
+	IngressRules   []cloudflare.IngressRule `json:"ingress_rules,omitempty"`
 }
 
 // UpdateAppRequest represents an update app request
@@ -143,6 +145,19 @@ func (s *Server) createApp(c *gin.Context) {
 		return
 	}
 
+	// Create initial compose version (version 1)
+	user, userExists := getUserFromContext(c)
+	var changedBy *string
+	if userExists && user.Name != "" {
+		changedBy = &user.Name
+	}
+	initialReason := "Initial version"
+	initialVersion := db.NewComposeVersion(app.ID, 1, app.ComposeContent, &initialReason, changedBy)
+	if err := s.database.CreateComposeVersion(initialVersion); err != nil {
+		slog.WarnContext(c.Request.Context(), "failed to create initial compose version", "appID", app.ID, "error", err)
+		// Don't fail the app creation if version tracking fails
+	}
+
 	// Create app directory and write compose file
 	if err := s.dockerManager.CreateAppDirectory(app.Name, app.ComposeContent); err != nil {
 		slog.ErrorContext(c.Request.Context(), "failed to create app directory", "app", req.Name, "error", err)
@@ -192,6 +207,24 @@ func (s *Server) createApp(c *gin.Context) {
 			app.UpdatedAt = time.Now()
 			if err := s.database.UpdateApp(app); err != nil {
 				slog.ErrorContext(c.Request.Context(), "failed to update app status after auto-start", "app", app.Name, "appID", app.ID, "error", err)
+			}
+
+			// Apply ingress rules if provided
+			if len(req.IngressRules) > 0 && tunnelID != "" && settings.CloudflareAPIToken != nil && settings.CloudflareAccountID != nil {
+				slog.InfoContext(c.Request.Context(), "applying ingress rules after app start", "app", req.Name, "appID", app.ID, "ruleCount", len(req.IngressRules))
+
+				// Ensure there's a catch-all rule at the end if not provided
+				if req.IngressRules[len(req.IngressRules)-1].Service != "http_status:404" {
+					req.IngressRules = append(req.IngressRules, cloudflare.IngressRule{
+						Service: "http_status:404",
+					})
+				}
+
+				// Use the shared helper to apply ingress rules (with DNS creation)
+				if err := s.applyIngressRulesInternal(app, tunnelID, req.IngressRules, settings, true); err != nil {
+					slog.ErrorContext(c.Request.Context(), "failed to apply ingress rules", "app", req.Name, "appID", app.ID, "error", err)
+					// Don't fail app creation if ingress update fails
+				}
 			}
 		}
 	}
@@ -304,6 +337,9 @@ func (s *Server) updateApp(c *gin.Context) {
 	if req.Description != "" {
 		app.Description = req.Description
 	}
+
+	// Check if compose content has changed
+	composeChanged := composeContent != app.ComposeContent
 	app.ComposeContent = composeContent
 	app.UpdatedAt = time.Now()
 
@@ -311,6 +347,37 @@ func (s *Server) updateApp(c *gin.Context) {
 		slog.ErrorContext(c.Request.Context(), "failed to update app in database", "appID", id, "error", err)
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to update app", Details: err.Error()})
 		return
+	}
+
+	// Create a new compose version if content changed
+	if composeChanged {
+		latestVersion, err := s.database.GetLatestVersionNumber(id)
+		if err != nil {
+			slog.WarnContext(c.Request.Context(), "failed to get latest version number", "appID", id, "error", err)
+			latestVersion = 0
+		}
+
+		// Get authenticated user info
+		user, userExists := getUserFromContext(c)
+		var changedBy *string
+		if userExists && user.Name != "" {
+			changedBy = &user.Name
+		}
+
+		// Mark all versions as not current
+		if err := s.database.MarkAllVersionsAsNotCurrent(id); err != nil {
+			slog.WarnContext(c.Request.Context(), "failed to mark versions as not current", "appID", id, "error", err)
+		}
+
+		// Create new version
+		updateReason := "Compose file updated"
+		newVersion := db.NewComposeVersion(id, latestVersion+1, app.ComposeContent, &updateReason, changedBy)
+		if err := s.database.CreateComposeVersion(newVersion); err != nil {
+			slog.WarnContext(c.Request.Context(), "failed to create compose version", "appID", id, "error", err)
+			// Don't fail the update if version tracking fails
+		} else {
+			slog.InfoContext(c.Request.Context(), "created compose version", "appID", id, "version", latestVersion+1)
+		}
 	}
 
 	// Update compose file on disk
@@ -361,47 +428,47 @@ func (s *Server) deleteApp(c *gin.Context) {
 
 	// Perform comprehensive cleanup
 	results, err := cleanupManager.CleanupApp(app)
-	
+
 	// Calculate summary
 	successCount, failedCount, totalDuration := cleanupManager.GetSummary()
-	
+
 	// Log comprehensive results
 	if err != nil {
-		slog.ErrorContext(c.Request.Context(), "App cleanup completed with errors", 
-			"app", app.Name, 
-			"appID", app.ID, 
-			"successCount", successCount, 
-			"failedCount", failedCount, 
+		slog.ErrorContext(c.Request.Context(), "App cleanup completed with errors",
+			"app", app.Name,
+			"appID", app.ID,
+			"successCount", successCount,
+			"failedCount", failedCount,
 			"totalDuration", totalDuration,
 			"error", err)
 	} else {
-		slog.InfoContext(c.Request.Context(), "App cleanup completed successfully", 
-			"app", app.Name, 
-			"appID", app.ID, 
-			"successCount", successCount, 
-			"failedCount", failedCount, 
+		slog.InfoContext(c.Request.Context(), "App cleanup completed successfully",
+			"app", app.Name,
+			"appID", app.ID,
+			"successCount", successCount,
+			"failedCount", failedCount,
 			"totalDuration", totalDuration)
 	}
 
 	// Return appropriate response based on cleanup results
 	if failedCount > 0 {
 		c.JSON(http.StatusOK, gin.H{
-			"message": "App deleted successfully, but some cleanup errors occurred",
-			"appID":   app.ID,
-			"successCount": successCount,
-			"failedCount": failedCount,
+			"message":       "App deleted successfully, but some cleanup errors occurred",
+			"appID":         app.ID,
+			"successCount":  successCount,
+			"failedCount":   failedCount,
 			"totalDuration": totalDuration.String(),
-			"errors": failedCount,
-			"details": results,
+			"errors":        failedCount,
+			"details":       results,
 		})
 	} else {
 		c.JSON(http.StatusOK, gin.H{
-			"message": "App deleted successfully",
-			"appID":   app.ID,
-			"successCount": successCount,
-			"failedCount": failedCount,
+			"message":       "App deleted successfully",
+			"appID":         app.ID,
+			"successCount":  successCount,
+			"failedCount":   failedCount,
 			"totalDuration": totalDuration.String(),
-			"details": results,
+			"details":       results,
 		})
 	}
 }
@@ -702,4 +769,180 @@ func (s *Server) listApps(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, apps)
+}
+
+// RollbackRequest represents a rollback request with optional metadata
+type RollbackRequest struct {
+	ChangeReason *string `json:"change_reason"`
+}
+
+// getComposeVersions returns all compose versions for an app
+func (s *Server) getComposeVersions(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
+		return
+	}
+
+	// Verify app exists
+	_, err := s.database.GetApp(id)
+	if err != nil {
+		slog.DebugContext(c.Request.Context(), "app not found", "appID", id)
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "App not found"})
+		return
+	}
+
+	versions, err := s.database.GetComposeVersionsByAppID(id)
+	if err != nil {
+		slog.ErrorContext(c.Request.Context(), "failed to retrieve compose versions", "appID", id, "error", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to retrieve compose versions"})
+		return
+	}
+
+	// Return empty array instead of null if no versions
+	if versions == nil {
+		versions = []*db.ComposeVersion{}
+	}
+
+	c.JSON(http.StatusOK, versions)
+}
+
+// getComposeVersion returns a specific compose version
+func (s *Server) getComposeVersion(c *gin.Context) {
+	id := c.Param("id")
+	versionParam := c.Param("version")
+	if id == "" || versionParam == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID or version"})
+		return
+	}
+
+	// Parse version number
+	var version int
+	if _, err := fmt.Sscanf(versionParam, "%d", &version); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid version number"})
+		return
+	}
+
+	// Verify app exists
+	_, err := s.database.GetApp(id)
+	if err != nil {
+		slog.DebugContext(c.Request.Context(), "app not found", "appID", id)
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "App not found"})
+		return
+	}
+
+	composeVersion, err := s.database.GetComposeVersion(id, version)
+	if err != nil {
+		slog.DebugContext(c.Request.Context(), "compose version not found", "appID", id, "version", version)
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Compose version not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, composeVersion)
+}
+
+// rollbackToVersion rolls back to a specific compose version
+func (s *Server) rollbackToVersion(c *gin.Context) {
+	id := c.Param("id")
+	versionParam := c.Param("version")
+	if id == "" || versionParam == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID or version"})
+		return
+	}
+
+	// Parse version number
+	var targetVersion int
+	if _, err := fmt.Sscanf(versionParam, "%d", &targetVersion); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid version number"})
+		return
+	}
+
+	// Get optional rollback request body
+	var req RollbackRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// Body is optional, so just use empty request if binding fails
+		req = RollbackRequest{}
+	}
+
+	// Get the app
+	app, err := s.database.GetApp(id)
+	if err != nil {
+		slog.DebugContext(c.Request.Context(), "app not found for rollback", "appID", id)
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "App not found"})
+		return
+	}
+
+	// Get the target version
+	targetComposeVersion, err := s.database.GetComposeVersion(id, targetVersion)
+	if err != nil {
+		slog.DebugContext(c.Request.Context(), "target compose version not found", "appID", id, "version", targetVersion)
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Target version not found"})
+		return
+	}
+
+	// Get current version number
+	currentVersionNumber, err := s.database.GetLatestVersionNumber(id)
+	if err != nil {
+		slog.ErrorContext(c.Request.Context(), "failed to get current version number", "appID", id, "error", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to get current version"})
+		return
+	}
+
+	// Get authenticated user info
+	user, userExists := getUserFromContext(c)
+	var changedBy *string
+	if userExists && user.Name != "" {
+		changedBy = &user.Name
+	}
+
+	// Create a new version with the rolled-back content
+	newVersionNumber := currentVersionNumber + 1
+	rolledBackFrom := currentVersionNumber
+	changeReason := req.ChangeReason
+	if changeReason == nil {
+		reason := fmt.Sprintf("Rolled back to version %d", targetVersion)
+		changeReason = &reason
+	}
+
+	newVersion := db.NewComposeVersion(id, newVersionNumber, targetComposeVersion.ComposeContent, changeReason, changedBy)
+	newVersion.RolledBackFrom = &rolledBackFrom
+
+	// Mark all versions as not current
+	if err := s.database.MarkAllVersionsAsNotCurrent(id); err != nil {
+		slog.ErrorContext(c.Request.Context(), "failed to mark versions as not current", "appID", id, "error", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to prepare rollback"})
+		return
+	}
+
+	// Create the new version
+	if err := s.database.CreateComposeVersion(newVersion); err != nil {
+		slog.ErrorContext(c.Request.Context(), "failed to create rolled-back version", "appID", id, "error", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to create rolled-back version"})
+		return
+	}
+
+	// Update the app with the rolled-back content
+	app.ComposeContent = targetComposeVersion.ComposeContent
+	app.UpdatedAt = time.Now()
+	if err := s.database.UpdateApp(app); err != nil {
+		slog.ErrorContext(c.Request.Context(), "failed to update app with rolled-back content", "appID", id, "error", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to update app"})
+		return
+	}
+
+	// Update compose file on disk
+	dockerManager := docker.NewManager(s.config.AppsDir)
+	if err := dockerManager.WriteComposeFile(app.Name, app.ComposeContent); err != nil {
+		slog.ErrorContext(c.Request.Context(), "failed to update compose file on disk", "app", app.Name, "error", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to update compose file", Details: err.Error()})
+		return
+	}
+
+	slog.InfoContext(c.Request.Context(), "rolled back compose version", "app", app.Name, "appID", id, "fromVersion", targetVersion, "toVersion", newVersionNumber)
+	c.JSON(http.StatusOK, gin.H{
+		"message":      "Rolled back successfully",
+		"app":          app,
+		"new_version":  newVersion,
+		"from_version": targetVersion,
+	})
 }

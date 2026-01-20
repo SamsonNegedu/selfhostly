@@ -3,7 +3,7 @@ import { useAppStore } from '@/shared/stores/app-store'
 import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/card'
 import { Button } from '@/shared/components/ui/button'
 import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog'
-import { Play, Pause, RefreshCw, Trash2, ExternalLink, Clock, Search } from 'lucide-react'
+import { Play, Pause, RefreshCw, Trash2, ExternalLink, Clock, Search, Loader2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useDeleteApp, useStartApp, useStopApp, useUpdateAppContainers } from '@/shared/services/api'
 import { useToast } from '@/shared/components/ui/Toast'
@@ -27,8 +27,9 @@ function AppList({ filteredApps }: AppListProps) {
     const updateApp = useUpdateAppContainers()
     const { toast } = useToast()
 
-    // State for confirmation dialog
+    // State for confirmation dialog and deletion tracking
     const [appToDelete, setAppToDelete] = useState<AppToDelete | null>(null)
+    const [deletingAppId, setDeletingAppId] = useState<string | null>(null)
 
     // Handle delete with confirmation dialog
     const handleDelete = (appId: string, appName: string) => {
@@ -38,11 +39,28 @@ function AppList({ filteredApps }: AppListProps) {
     // Confirm deletion
     const confirmDelete = () => {
         if (appToDelete) {
-            // Optimistically remove from local store
-            useAppStore.getState().removeApp(appToDelete.id)
+            const appName = appToDelete.name
+            const appId = appToDelete.id
+
+            // Mark app as being deleted
+            setDeletingAppId(appId)
+
+            // Show immediate feedback that deletion started
+            toast.info('Deleting app', `Deleting "${appName}"...`)
 
             // Then trigger the actual deletion
-            deleteApp.mutate(appToDelete.id)
+            deleteApp.mutate(appId, {
+                onSuccess: () => {
+                    // Optimistically remove from local store on success
+                    useAppStore.getState().removeApp(appId)
+                    toast.success('App deleted', `"${appName}" has been deleted successfully`)
+                    setDeletingAppId(null)
+                },
+                onError: (error) => {
+                    toast.error('Failed to delete app', error.message)
+                    setDeletingAppId(null)
+                }
+            })
 
             // Reset dialog state
             setAppToDelete(null)
@@ -129,150 +147,165 @@ function AppList({ filteredApps }: AppListProps) {
     return (
         <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {apps.map((app, index) => (
-                    <Card
-                        key={app.id}
-                        className={`cursor-pointer card-hover fade-in stagger-${(index % 6) + 1}`}
-                        onClick={() => navigate(`/apps/${app.id}`)}
-                    >
-                        <CardHeader>
-                            <div className="flex items-center justify-between">
-                                <CardTitle className="text-xl truncate">{app.name}</CardTitle>
-                                <div
-                                    className={`px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${getStatusColor(app.status)}`}
-                                >
-                                    {getStatusIcon(app.status)}
-                                    {app.status}
+                {apps.map((app, index) => {
+                    const isDeleting = deletingAppId === app.id
+                    return (
+                        <Card
+                            key={app.id}
+                            className={`cursor-pointer card-hover fade-in stagger-${(index % 6) + 1} relative ${isDeleting ? 'opacity-60 pointer-events-none' : ''}`}
+                            onClick={() => !isDeleting && navigate(`/apps/${app.id}`)}
+                        >
+                            {/* Deletion Overlay */}
+                            {isDeleting && (
+                                <div className="absolute inset-0 bg-background/80 backdrop-blur-sm rounded-lg z-10 flex items-center justify-center">
+                                    <div className="flex flex-col items-center gap-3 text-center p-4">
+                                        <Loader2 className="h-8 w-8 animate-spin text-destructive" />
+                                        <div>
+                                            <p className="font-semibold text-sm">Deleting...</p>
+                                            <p className="text-xs text-muted-foreground">Removing app and resources</p>
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                        </CardHeader>
-                        <CardContent>
-                            <p className="text-sm text-muted-foreground mb-4 line-clamp-2 min-h-[2.5rem]">
-                                {app.description || 'No description'}
-                            </p>
-
-                            {app.public_url && (
-                                <div className="text-sm mb-4">
-                                    <a
-                                        href={app.public_url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-primary hover:underline flex items-center gap-1 interactive-element"
-                                        onClick={(e) => e.stopPropagation()}
+                            )}
+                            <CardHeader>
+                                <div className="flex items-center justify-between">
+                                    <CardTitle className="text-xl truncate">{app.name}</CardTitle>
+                                    <div
+                                        className={`px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${getStatusColor(app.status)}`}
                                     >
-                                        <ExternalLink className="h-3 w-3" />
-                                        <span className="truncate">{app.public_url}</span>
-                                    </a>
+                                        {getStatusIcon(app.status)}
+                                        {app.status}
+                                    </div>
                                 </div>
-                            )}
+                            </CardHeader>
+                            <CardContent>
+                                <p className="text-sm text-muted-foreground mb-4 line-clamp-2 min-h-[2.5rem]">
+                                    {app.description || 'No description'}
+                                </p>
 
-                            {app.status === 'error' && app.error_message && (
-                                <div className="text-sm text-red-600 dark:text-red-400 mb-4 p-2 bg-red-50 dark:bg-red-900/20 rounded">
-                                    <span className="font-medium">Error:</span> {app.error_message}
-                                </div>
-                            )}
-
-                            <div className="flex items-center justify-between text-xs text-muted-foreground mb-4">
-                                <span className="flex items-center gap-1">
-                                    <Clock className="h-3 w-3" />
-                                    {new Date(app.updated_at).toLocaleDateString()}
-                                </span>
-                            </div>
-
-                            <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-                                {(stopApp.isPending && app.status === 'running') || (startApp.isPending && app.status === 'stopped') ? (
-                                    <Button variant="outline" size="icon" title="Processing" disabled className="button-press">
-                                        <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                    </Button>
-                                ) : (
-                                    <>
-                                        {app.status === 'running' && (
-                                            <Button
-                                                variant="outline"
-                                                size="icon"
-                                                onClick={() => stopApp.mutate(app.id, {
-                                                    onSuccess: () => {
-                                                        toast.success('App stopped', `${app.name} has been stopped successfully`)
-                                                    },
-                                                    onError: (error) => {
-                                                        toast.error('Failed to stop app', error.message)
-                                                    }
-                                                })}
-                                                title="Stop app"
-                                                disabled={stopApp.isPending}
-                                                className="button-press"
-                                            >
-                                                {stopApp.isPending ? (
-                                                    <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                                ) : (
-                                                    <Pause className="h-4 w-4" />
-                                                )}
-                                            </Button>
-                                        )}
-                                        {app.status === 'stopped' && (
-                                            <Button
-                                                variant="outline"
-                                                size="icon"
-                                                onClick={() => startApp.mutate(app.id, {
-                                                    onSuccess: () => {
-                                                        toast.success('App started', `${app.name} has been started successfully`)
-                                                    },
-                                                    onError: (error) => {
-                                                        toast.error('Failed to start app', error.message)
-                                                    }
-                                                })}
-                                                title="Start app"
-                                                disabled={startApp.isPending}
-                                                className="button-press"
-                                            >
-                                                {startApp.isPending ? (
-                                                    <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                                ) : (
-                                                    <Play className="h-4 w-4" />
-                                                )}
-                                            </Button>
-                                        )}
-                                        <Button
-                                            variant="outline"
-                                            size="icon"
-                                            onClick={() => updateApp.mutate(app.id, {
-                                                onSuccess: () => {
-                                                    toast.success('Update started', `${app.name} update process has begun`)
-                                                },
-                                                onError: (error) => {
-                                                    toast.error('Failed to start update', error.message)
-                                                }
-                                            })}
-                                            title="Update containers"
-                                            disabled={updateApp.isPending}
-                                            className="button-press"
+                                {app.public_url && (
+                                    <div className="text-sm mb-4">
+                                        <a
+                                            href={app.public_url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-primary hover:underline flex items-center gap-1 interactive-element"
+                                            onClick={(e) => e.stopPropagation()}
                                         >
-                                            {updateApp.isPending ? (
-                                                <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                            ) : (
-                                                <RefreshCw className="h-4 w-4" />
-                                            )}
-                                        </Button>
-                                    </>
+                                            <ExternalLink className="h-3 w-3" />
+                                            <span className="truncate">{app.public_url}</span>
+                                        </a>
+                                    </div>
                                 )}
-                                <Button
-                                    variant="outline"
-                                    size="icon"
-                                    onClick={() => handleDelete(app.id, app.name)}
-                                    title="Delete app"
-                                    className="text-destructive hover:text-destructive button-press"
-                                    disabled={deleteApp.isPending}
-                                >
-                                    {deleteApp.isPending ? (
-                                        <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+
+                                {app.status === 'error' && app.error_message && (
+                                    <div className="text-sm text-red-600 dark:text-red-400 mb-4 p-2 bg-red-50 dark:bg-red-900/20 rounded">
+                                        <span className="font-medium">Error:</span> {app.error_message}
+                                    </div>
+                                )}
+
+                                <div className="flex items-center justify-between text-xs text-muted-foreground mb-4">
+                                    <span className="flex items-center gap-1">
+                                        <Clock className="h-3 w-3" />
+                                        {new Date(app.updated_at).toLocaleDateString()}
+                                    </span>
+                                </div>
+
+                                <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+                                    {(stopApp.isPending && app.status === 'running') || (startApp.isPending && app.status === 'stopped') ? (
+                                        <Button variant="outline" size="icon" title="Processing" disabled className="button-press">
+                                            <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                        </Button>
                                     ) : (
-                                        <Trash2 className="h-4 w-4" />
+                                        <>
+                                            {app.status === 'running' && (
+                                                <Button
+                                                    variant="outline"
+                                                    size="icon"
+                                                    onClick={() => stopApp.mutate(app.id, {
+                                                        onSuccess: () => {
+                                                            toast.success('App stopped', `${app.name} has been stopped successfully`)
+                                                        },
+                                                        onError: (error) => {
+                                                            toast.error('Failed to stop app', error.message)
+                                                        }
+                                                    })}
+                                                    title="Stop app"
+                                                    disabled={stopApp.isPending}
+                                                    className="button-press"
+                                                >
+                                                    {stopApp.isPending ? (
+                                                        <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                                    ) : (
+                                                        <Pause className="h-4 w-4" />
+                                                    )}
+                                                </Button>
+                                            )}
+                                            {app.status === 'stopped' && (
+                                                <Button
+                                                    variant="outline"
+                                                    size="icon"
+                                                    onClick={() => startApp.mutate(app.id, {
+                                                        onSuccess: () => {
+                                                            toast.success('App started', `${app.name} has been started successfully`)
+                                                        },
+                                                        onError: (error) => {
+                                                            toast.error('Failed to start app', error.message)
+                                                        }
+                                                    })}
+                                                    title="Start app"
+                                                    disabled={startApp.isPending}
+                                                    className="button-press"
+                                                >
+                                                    {startApp.isPending ? (
+                                                        <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                                    ) : (
+                                                        <Play className="h-4 w-4" />
+                                                    )}
+                                                </Button>
+                                            )}
+                                            <Button
+                                                variant="outline"
+                                                size="icon"
+                                                onClick={() => updateApp.mutate(app.id, {
+                                                    onSuccess: () => {
+                                                        toast.success('Update started', `${app.name} update process has begun`)
+                                                    },
+                                                    onError: (error) => {
+                                                        toast.error('Failed to start update', error.message)
+                                                    }
+                                                })}
+                                                title="Update containers"
+                                                disabled={updateApp.isPending}
+                                                className="button-press"
+                                            >
+                                                {updateApp.isPending ? (
+                                                    <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                                ) : (
+                                                    <RefreshCw className="h-4 w-4" />
+                                                )}
+                                            </Button>
+                                        </>
                                     )}
-                                </Button>
-                            </div>
-                        </CardContent>
-                    </Card>
-                ))}
+                                    <Button
+                                        variant="outline"
+                                        size="icon"
+                                        onClick={() => handleDelete(app.id, app.name)}
+                                        title="Delete app"
+                                        className="text-destructive hover:text-destructive button-press"
+                                        disabled={deleteApp.isPending}
+                                    >
+                                        {deleteApp.isPending ? (
+                                            <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                        ) : (
+                                            <Trash2 className="h-4 w-4" />
+                                        )}
+                                    </Button>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )
+                })}
             </div>
 
             {/* Confirmation Dialog */}

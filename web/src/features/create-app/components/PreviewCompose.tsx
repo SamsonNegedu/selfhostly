@@ -1,10 +1,15 @@
 import Editor from '@monaco-editor/react'
 
-function PreviewCompose({ content }: { content: string }) {
+interface PreviewComposeProps {
+    content: string
+    height?: string
+}
+
+function PreviewCompose({ content, height = '300px' }: PreviewComposeProps) {
     return (
         <div className="border rounded-md overflow-hidden bg-muted">
             <Editor
-                height="300px"
+                height={height}
                 defaultLanguage="yaml"
                 language="yaml"
                 theme="vs-dark"

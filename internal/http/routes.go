@@ -66,6 +66,11 @@ func (s *Server) setupAppRoutes(api *gin.RouterGroup) {
 		apps.POST("/:id/update", s.updateAppContainers)
 		apps.GET("/:id/logs", s.getAppLogs)
 		apps.POST("/:id/repair", s.repairApp)
+
+		// Compose version routes
+		apps.GET("/:id/compose/versions", s.getComposeVersions)
+		apps.GET("/:id/compose/versions/:version", s.getComposeVersion)
+		apps.POST("/:id/compose/rollback/:version", s.rollbackToVersion)
 	}
 }
 
