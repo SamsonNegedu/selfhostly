@@ -152,6 +152,26 @@ func (m *Manager) CreateTunnel(appName string) (tunnelID, token string, err erro
 	}
 
 	if !respData.Success {
+		// Check if error is due to duplicate tunnel name (error code 1013)
+		for _, apiErr := range respData.Errors {
+			if apiErr.Code == 1013 {
+				slog.Warn("Tunnel with this name already exists, deleting and recreating", "name", appName)
+				// Find and delete the existing tunnel
+				existingTunnelID, err := m.findTunnelIDByName(appName)
+				if err != nil {
+					return "", "", fmt.Errorf("tunnel exists but failed to find it: %w", err)
+				}
+				
+				// Delete the existing tunnel
+				if err := m.DeleteTunnel(existingTunnelID); err != nil {
+					slog.Warn("Failed to delete existing tunnel, continuing anyway", "tunnelID", existingTunnelID, "error", err)
+				}
+				
+				// Retry creation
+				slog.Info("Retrying tunnel creation after cleanup", "name", appName)
+				return m.CreateTunnel(appName)
+			}
+		}
 		return "", "", fmt.Errorf("cloudflare API error: %v", respData.Errors)
 	}
 
@@ -592,4 +612,60 @@ func (m *Manager) GetTunnelToken(tunnelID string) (string, error) {
 	}
 
 	return respData.Result.Token, nil
+}
+
+// ListTunnelsResponse represents the response from listing tunnels
+type ListTunnelsResponse struct {
+	Success bool `json:"success"`
+	Errors  []struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	} `json:"errors"`
+	Messages []string `json:"messages"`
+	Result   []struct {
+		ID     string `json:"id"`
+		Name   string `json:"name"`
+		Status string `json:"status"`
+	} `json:"result"`
+}
+
+// findTunnelIDByName finds a tunnel ID by its name (internal helper)
+func (m *Manager) findTunnelIDByName(name string) (string, error) {
+	url := fmt.Sprintf("%s/accounts/%s/cfd_tunnel?name=%s", apiBaseURL, m.config.AccountID, name)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+m.config.APIToken)
+
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to list tunnels: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	var respData ListTunnelsResponse
+	if err := json.Unmarshal(body, &respData); err != nil {
+		return "", fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	if !respData.Success {
+		return "", fmt.Errorf("cloudflare API error: %v", respData.Errors)
+	}
+
+	// Find tunnel with matching name
+	for _, tunnel := range respData.Result {
+		if tunnel.Name == name {
+			return tunnel.ID, nil
+		}
+	}
+
+	return "", fmt.Errorf("tunnel with name '%s' not found", name)
 }

@@ -127,10 +127,10 @@ func initAuthService(cfg *config.Config) *auth.Service {
 }
 
 const (
-	maxBodySize  = 10 << 20 // 10MB max request body
-	readTimeout  = 15 * time.Second
-	writeTimeout = 15 * time.Second
-	idleTimeout  = 60 * time.Second
+	maxBodySize  = 10 << 20          // 10MB max request body
+	readTimeout  = 30 * time.Second  // 30s for reading request
+	writeTimeout = 120 * time.Second // 2 minutes for long operations (app creation, tunnel setup)
+	idleTimeout  = 120 * time.Second // 2 minutes idle
 )
 
 // Run starts the HTTP server
