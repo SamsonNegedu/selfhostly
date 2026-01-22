@@ -20,9 +20,6 @@ RUN npm run build
 # Stage 2: Build Backend
 FROM golang:1.24-alpine AS backend-builder
 
-# Install build dependencies
-RUN apk add --no-cache gcc musl-dev sqlite-dev
-
 WORKDIR /app
 
 # Copy go mod files
@@ -37,15 +34,15 @@ COPY . .
 # Copy frontend build from previous stage
 COPY --from=frontend-builder /app/web/dist ./web/dist
 
-# Build the application (detect architecture automatically)
+# Build the application (no CGO needed with modernc.org/sqlite)
 ARG TARGETARCH
-RUN CGO_ENABLED=1 GOOS=linux GOARCH=${TARGETARCH} go build -a -installsuffix cgo -o selfhostly cmd/server/main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -o selfhostly cmd/server/main.go
 
 # Stage 3: Production Image
 FROM alpine:latest
 
 # Install runtime dependencies (including Docker CLI and Compose plugin)
-RUN apk add --no-cache sqlite ca-certificates tzdata docker-cli docker-cli-compose
+RUN apk add --no-cache ca-certificates tzdata docker-cli docker-cli-compose
 
 # Create non-root user with fixed UID/GID (1000) for predictable permissions
 # Add to docker group for socket access

@@ -1,9 +1,6 @@
 # Multi-stage build optimized for ARM64 (Raspberry Pi)
 FROM golang:1.21-alpine as builder
 
-# Install build dependencies
-RUN apk add --no-cache gcc musl-dev sqlite-dev
-
 WORKDIR /app
 
 # Copy go mod files
@@ -15,14 +12,14 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the application for ARM64
-RUN CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build -a -installsuffix cgo -o automaton cmd/server/main.go
+# Build the application for ARM64 (no CGO needed with modernc.org/sqlite)
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o automaton cmd/server/main.go
 
 # Production stage
 FROM alpine:latest
 
 # Install runtime dependencies
-RUN apk add --no-cache sqlite
+RUN apk add --no-cache ca-certificates
 
 # Create app directory
 WORKDIR /app

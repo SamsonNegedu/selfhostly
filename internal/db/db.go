@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // DB wraps the database connection
@@ -27,7 +27,7 @@ func Init(dbPath string) (*DB, error) {
 	}
 
 	// Open database connection
-	sqlDB, err := sql.Open("sqlite3", dbPath+"?_foreign_keys=on")
+	sqlDB, err := sql.Open("sqlite", dbPath+"?_foreign_keys=on")
 	if err != nil {
 		return nil, err
 	}
