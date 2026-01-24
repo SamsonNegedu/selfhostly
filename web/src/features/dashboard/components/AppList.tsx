@@ -3,10 +3,11 @@ import { useAppStore } from '@/shared/stores/app-store'
 import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/card'
 import { Button } from '@/shared/components/ui/button'
 import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog'
-import { Play, Pause, RefreshCw, Trash2, ExternalLink, Clock, Search, Loader2 } from 'lucide-react'
+import { Play, Pause, RefreshCw, Trash2, ExternalLink, Clock, Search, Loader2, MoreVertical, TrendingUp } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useDeleteApp, useStartApp, useStopApp, useUpdateAppContainers } from '@/shared/services/api'
 import { useToast } from '@/shared/components/ui/Toast'
+import { SimpleDropdown, SimpleDropdownItem } from '@/shared/components/ui/simple-dropdown'
 import type { App } from '@/shared/types/api'
 
 interface AppToDelete {
@@ -149,10 +150,18 @@ function AppList({ filteredApps }: AppListProps) {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {apps.map((app, index) => {
                     const isDeleting = deletingAppId === app.id
+                    const statusColorMap = {
+                        running: 'border-l-green-500',
+                        stopped: 'border-l-gray-400',
+                        updating: 'border-l-blue-500',
+                        error: 'border-l-red-500'
+                    }
+                    const statusColor = statusColorMap[app.status as keyof typeof statusColorMap] || 'border-l-gray-400'
+                    
                     return (
                         <Card
                             key={app.id}
-                            className={`cursor-pointer card-hover fade-in stagger-${(index % 6) + 1} relative ${isDeleting ? 'opacity-60 pointer-events-none' : ''}`}
+                            className={`group cursor-pointer card-hover fade-in stagger-${(index % 6) + 1} relative overflow-hidden border-l-4 ${statusColor} ${isDeleting ? 'opacity-60 pointer-events-none' : ''}`}
                             onClick={() => !isDeleting && navigate(`/apps/${app.id}`)}
                         >
                             {/* Deletion Overlay */}
@@ -167,142 +176,120 @@ function AppList({ filteredApps }: AppListProps) {
                                     </div>
                                 </div>
                             )}
-                            <CardHeader>
-                                <div className="flex items-center justify-between">
-                                    <CardTitle className="text-xl truncate">{app.name}</CardTitle>
-                                    <div
-                                        className={`px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${getStatusColor(app.status)}`}
-                                    >
-                                        {getStatusIcon(app.status)}
-                                        {app.status}
+                            
+                            {/* Card Header */}
+                            <CardHeader className="pb-3">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="flex-1 min-w-0">
+                                        <CardTitle className="text-lg font-semibold truncate mb-1">{app.name}</CardTitle>
+                                        <div className="flex items-center gap-2">
+                                            <div
+                                                className={`px-2 py-0.5 rounded-md text-xs font-medium flex items-center gap-1 ${getStatusColor(app.status)}`}
+                                            >
+                                                {getStatusIcon(app.status)}
+                                                {app.status}
+                                            </div>
+                                            {app.public_url && (
+                                                <a
+                                                    href={app.public_url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-primary hover:text-primary/80 transition-colors"
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    title="Open app"
+                                                >
+                                                    <ExternalLink className="h-3.5 w-3.5" />
+                                                </a>
+                                            )}
+                                        </div>
+                                    </div>
+                                    
+                                    {/* Actions Menu */}
+                                    <div onClick={(e) => e.stopPropagation()}>
+                                        <SimpleDropdown
+                                            trigger={
+                                                <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <MoreVertical className="h-4 w-4" />
+                                                </Button>
+                                            }
+                                        >
+                                            <div className="py-1 min-w-[160px]">
+                                                {app.status === 'running' && (
+                                                    <SimpleDropdownItem
+                                                        onClick={() => stopApp.mutate(app.id, {
+                                                            onSuccess: () => toast.success('App stopped', `${app.name} has been stopped successfully`),
+                                                            onError: (error) => toast.error('Failed to stop app', error.message)
+                                                        })}
+                                                    >
+                                                        <div className="flex items-center">
+                                                            <Pause className="h-4 w-4 mr-2" />
+                                                            <span>Stop App</span>
+                                                        </div>
+                                                    </SimpleDropdownItem>
+                                                )}
+                                                {app.status === 'stopped' && (
+                                                    <SimpleDropdownItem
+                                                        onClick={() => startApp.mutate(app.id, {
+                                                            onSuccess: () => toast.success('App started', `${app.name} has been started successfully`),
+                                                            onError: (error) => toast.error('Failed to start app', error.message)
+                                                        })}
+                                                    >
+                                                        <div className="flex items-center">
+                                                            <Play className="h-4 w-4 mr-2" />
+                                                            <span>Start App</span>
+                                                        </div>
+                                                    </SimpleDropdownItem>
+                                                )}
+                                                <SimpleDropdownItem
+                                                    onClick={() => updateApp.mutate(app.id, {
+                                                        onSuccess: () => toast.success('Update started', `${app.name} update process has begun`),
+                                                        onError: (error) => toast.error('Failed to start update', error.message)
+                                                    })}
+                                                >
+                                                    <div className="flex items-center">
+                                                        <RefreshCw className="h-4 w-4 mr-2" />
+                                                        <span>Update</span>
+                                                    </div>
+                                                </SimpleDropdownItem>
+                                                <div className="border-t my-1"></div>
+                                                <SimpleDropdownItem
+                                                    onClick={() => handleDelete(app.id, app.name)}
+                                                >
+                                                    <div className="flex items-center text-destructive">
+                                                        <Trash2 className="h-4 w-4 mr-2" />
+                                                        <span>Delete</span>
+                                                    </div>
+                                                </SimpleDropdownItem>
+                                            </div>
+                                        </SimpleDropdown>
                                     </div>
                                 </div>
                             </CardHeader>
-                            <CardContent>
-                                <p className="text-sm text-muted-foreground mb-4 line-clamp-2 min-h-[2.5rem]">
-                                    {app.description || 'No description'}
+                            
+                            {/* Card Content */}
+                            <CardContent className="pt-0 pb-4">
+                                <p className="text-sm text-muted-foreground mb-3 line-clamp-2 min-h-[2.5rem]">
+                                    {app.description || 'No description provided'}
                                 </p>
 
-                                {app.public_url && (
-                                    <div className="text-sm mb-4">
-                                        <a
-                                            href={app.public_url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-primary hover:underline flex items-center gap-1 interactive-element"
-                                            onClick={(e) => e.stopPropagation()}
-                                        >
-                                            <ExternalLink className="h-3 w-3" />
-                                            <span className="truncate">{app.public_url}</span>
-                                        </a>
-                                    </div>
-                                )}
-
                                 {app.status === 'error' && app.error_message && (
-                                    <div className="text-sm text-red-600 dark:text-red-400 mb-4 p-2 bg-red-50 dark:bg-red-900/20 rounded">
+                                    <div className="text-xs text-red-600 dark:text-red-400 mb-3 p-2 bg-red-50 dark:bg-red-900/20 rounded border-l-2 border-red-500">
                                         <span className="font-medium">Error:</span> {app.error_message}
                                     </div>
                                 )}
-
-                                <div className="flex items-center justify-between text-xs text-muted-foreground mb-4">
-                                    <span className="flex items-center gap-1">
-                                        <Clock className="h-3 w-3" />
-                                        {new Date(app.updated_at).toLocaleDateString()}
-                                    </span>
-                                </div>
-
-                                <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-                                    {(stopApp.isPending && app.status === 'running') || (startApp.isPending && app.status === 'stopped') ? (
-                                        <Button variant="outline" size="icon" title="Processing" disabled className="button-press">
-                                            <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                        </Button>
-                                    ) : (
-                                        <>
-                                            {app.status === 'running' && (
-                                                <Button
-                                                    variant="outline"
-                                                    size="icon"
-                                                    onClick={() => stopApp.mutate(app.id, {
-                                                        onSuccess: () => {
-                                                            toast.success('App stopped', `${app.name} has been stopped successfully`)
-                                                        },
-                                                        onError: (error) => {
-                                                            toast.error('Failed to stop app', error.message)
-                                                        }
-                                                    })}
-                                                    title="Stop app"
-                                                    disabled={stopApp.isPending}
-                                                    className="button-press"
-                                                >
-                                                    {stopApp.isPending ? (
-                                                        <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                                    ) : (
-                                                        <Pause className="h-4 w-4" />
-                                                    )}
-                                                </Button>
-                                            )}
-                                            {app.status === 'stopped' && (
-                                                <Button
-                                                    variant="outline"
-                                                    size="icon"
-                                                    onClick={() => startApp.mutate(app.id, {
-                                                        onSuccess: () => {
-                                                            toast.success('App started', `${app.name} has been started successfully`)
-                                                        },
-                                                        onError: (error) => {
-                                                            toast.error('Failed to start app', error.message)
-                                                        }
-                                                    })}
-                                                    title="Start app"
-                                                    disabled={startApp.isPending}
-                                                    className="button-press"
-                                                >
-                                                    {startApp.isPending ? (
-                                                        <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                                    ) : (
-                                                        <Play className="h-4 w-4" />
-                                                    )}
-                                                </Button>
-                                            )}
-                                            <Button
-                                                variant="outline"
-                                                size="icon"
-                                                onClick={() => updateApp.mutate(app.id, {
-                                                    onSuccess: () => {
-                                                        toast.success('Update started', `${app.name} update process has begun`)
-                                                    },
-                                                    onError: (error) => {
-                                                        toast.error('Failed to start update', error.message)
-                                                    }
-                                                })}
-                                                title="Update containers"
-                                                disabled={updateApp.isPending}
-                                                className="button-press"
-                                            >
-                                                {updateApp.isPending ? (
-                                                    <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                                ) : (
-                                                    <RefreshCw className="h-4 w-4" />
-                                                )}
-                                            </Button>
-                                        </>
-                                    )}
-                                    <Button
-                                        variant="outline"
-                                        size="icon"
-                                        onClick={() => handleDelete(app.id, app.name)}
-                                        title="Delete app"
-                                        className="text-destructive hover:text-destructive button-press"
-                                        disabled={deleteApp.isPending}
-                                    >
-                                        {deleteApp.isPending ? (
-                                            <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                        ) : (
-                                            <Trash2 className="h-4 w-4" />
-                                        )}
-                                    </Button>
-                                </div>
                             </CardContent>
+                            
+                            {/* Card Footer */}
+                            <div className="px-6 py-3 bg-muted/30 border-t flex items-center justify-between text-xs text-muted-foreground">
+                                <span className="flex items-center gap-1.5">
+                                    <Clock className="h-3.5 w-3.5" />
+                                    Updated {new Date(app.updated_at).toLocaleDateString()}
+                                </span>
+                                <span className="flex items-center gap-1 text-primary">
+                                    <TrendingUp className="h-3.5 w-3.5" />
+                                    View Details
+                                </span>
+                            </div>
                         </Card>
                     )
                 })}

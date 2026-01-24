@@ -13,7 +13,7 @@ function Login() {
     // Check for error parameter in URL (from OAuth callback)
     const error = searchParams.get('error');
     const errorDescription = searchParams.get('error_description');
-    
+
     if (error) {
       // Set appropriate error message based on error type
       if (error === 'access_denied' || errorDescription?.includes('whitelist') || errorDescription?.includes('not authorized')) {
@@ -24,7 +24,7 @@ function Login() {
         setErrorMessage(`Authentication failed: ${errorDescription || 'Please try again'}`);
       }
       setShowError(true);
-      
+
       // Clear error params from URL
       searchParams.delete('error');
       searchParams.delete('error_description');
@@ -38,33 +38,33 @@ function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-background via-muted/20 to-background flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Error Alert */}
         {showError && errorMessage && (
-          <div className="mb-6 bg-red-900/20 border border-red-500/50 rounded-xl p-4 backdrop-blur-sm fade-in">
+          <div className="mb-6 bg-destructive/10 border border-destructive/50 rounded-xl p-4 backdrop-blur-sm fade-in">
             <div className="flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+              <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
               <div className="flex-1">
-                <h3 className="text-red-400 font-semibold mb-1">Access Denied</h3>
-                <p className="text-red-200/90 text-sm">{errorMessage}</p>
+                <h3 className="text-destructive font-semibold mb-1">Access Denied</h3>
+                <p className="text-destructive/90 text-sm">{errorMessage}</p>
                 {errorMessage.includes('not authorized') && (
-                  <div className="mt-3 p-3 bg-slate-900/50 rounded-lg border border-slate-700">
-                    <div className="flex items-center gap-2 text-slate-400 text-xs mb-2">
+                  <div className="mt-3 p-3 bg-muted/50 rounded-lg border border-border">
+                    <div className="flex items-center gap-2 text-muted-foreground text-xs mb-2">
                       <Shield className="w-4 h-4" />
                       <span className="font-medium">Security Notice</span>
                     </div>
-                    <p className="text-slate-400 text-xs leading-relaxed">
-                      Only specific GitHub accounts are authorized to access this system. 
-                      If you believe you should have access, contact your system administrator 
-                      to add your GitHub username to the whitelist.
+                    <p className="text-muted-foreground text-xs leading-relaxed">
+                      Only specific GitHub accounts are authorized to access this system.
+                      If you believe you should have access, contact your system administrator
+                      to add your GitHub username to whitelist.
                     </p>
                   </div>
                 )}
               </div>
               <button
                 onClick={dismissError}
-                className="text-red-400 hover:text-red-300 transition-colors"
+                className="text-destructive hover:text-destructive/80 transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -89,35 +89,35 @@ function Login() {
               />
             </svg>
           </div>
-          <h1 className="text-3xl font-bold text-white mb-2">
+          <h1 className="text-3xl font-bold text-foreground mb-2">
             Selfhostly
           </h1>
-          <p className="text-slate-400">
+          <p className="text-muted-foreground">
             Deploy and manage your self-hosted applications
           </p>
         </div>
 
         {/* Login card */}
-        <div className="bg-slate-800/50 backdrop-blur-xl rounded-2xl border border-slate-700/50 p-8 shadow-2xl">
-          <h2 className="text-xl font-semibold text-white text-center mb-6">
+        <div className="bg-card/50 backdrop-blur-xl rounded-2xl border border-border p-8 shadow-xl">
+          <h2 className="text-xl font-semibold text-foreground text-center mb-6">
             Sign in to continue
           </h2>
 
           <Button
             onClick={loginWithGitHub}
-            className="w-full h-12 bg-slate-700 hover:bg-slate-600 text-white border border-slate-600 rounded-xl transition-all duration-200 flex items-center justify-center gap-3"
+            className="w-full h-12 bg-muted hover:bg-muted/80 text-foreground border border-border rounded-xl transition-all duration-200 flex items-center justify-center gap-3"
           >
             <Github className="w-5 h-5" />
             <span>Continue with GitHub</span>
           </Button>
 
-          <p className="text-slate-500 text-sm text-center mt-6">
+          <p className="text-muted-foreground text-sm text-center mt-6">
             Sign in with your GitHub account to access the dashboard
           </p>
         </div>
 
         {/* Footer */}
-        <p className="text-slate-600 text-sm text-center mt-8">
+        <p className="text-muted-foreground text-sm text-center mt-8">
           Secure authentication powered by GitHub OAuth
         </p>
       </div>

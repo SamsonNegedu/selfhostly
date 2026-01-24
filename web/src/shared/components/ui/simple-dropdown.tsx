@@ -53,7 +53,7 @@ function SimpleDropdown({ children, trigger, className }: SimpleDropdownProps) {
                 {isOpen && (
                     <div
                         className={cn(
-                            "absolute right-0 z-50 mt-2 w-48 origin-top-right rounded-md border bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none",
+                            "absolute right-0 z-50 mt-2 w-48 origin-top-right rounded-md border bg-popover text-popover-foreground shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none dark:ring-white/10",
                             "animate-in fade-in-0 zoom-in-95",
                             className
                         )}
@@ -90,8 +90,9 @@ function SimpleDropdownItem({ children, onClick, className, href }: SimpleDropdo
 
     const content = (
         <div
+            onClick={handleClick}
             className={cn(
-                "block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900",
+                "block px-4 py-2 text-sm text-foreground hover:bg-accent hover:text-accent-foreground",
                 "cursor-pointer transition-colors duration-150 ease-in-out",
                 className
             )}

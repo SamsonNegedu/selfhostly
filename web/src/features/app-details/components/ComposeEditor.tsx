@@ -279,12 +279,12 @@ services:
                                 </div>
 
                                 {/* Code preview */}
-                                <div className="flex-1 border rounded-md overflow-hidden bg-[#1e1e1e]">
+                                <div className="flex-1 border rounded-md overflow-hidden bg-slate-950 dark:bg-[#1e1e1e]">
                                     <div className="h-[400px]">
                                         <textarea
                                             readOnly
                                             value={viewingVersion.compose_content}
-                                            className="w-full h-full p-4 font-mono text-sm bg-[#1e1e1e] text-gray-100 resize-none focus:outline-none"
+                                            className="w-full h-full p-4 font-mono text-sm bg-slate-950 dark:bg-[#1e1e1e] text-gray-100 resize-none focus:outline-none"
                                             style={{ tabSize: 2 }}
                                         />
                                     </div>

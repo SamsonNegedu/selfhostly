@@ -214,7 +214,7 @@ function CreateApp() {
                                     value={formData.name}
                                     onChange={(e) => handleFieldChange('name', e.target.value)}
                                     onBlur={() => handleFieldBlur('name')}
-                                    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-background transition-colors ${errors.name ? 'border-red-500 focus:ring-red-500' : ''}`}
+                                    className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 transition-colors ${errors.name ? 'border-destructive focus:ring-destructive' : ''}`}
                                     placeholder="my-awesome-app"
                                 />
                                 {errors.name && touched.name && (
@@ -233,7 +233,7 @@ function CreateApp() {
                                     id="description"
                                     value={formData.description}
                                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring min-h-[100px] bg-background resize-y"
+                                    className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-y"
                                     placeholder="A brief description of your app (optional)"
                                 />
                             </div>

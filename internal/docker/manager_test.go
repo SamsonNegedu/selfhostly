@@ -233,9 +233,9 @@ func TestUpdateApp(t *testing.T) {
 	appName := "test-app"
 	appPath := filepath.Join(appsDir, appName)
 	
-	// Mock successful command execution
-	mockExecutor.SetMockOutput("docker", []string{"compose", "-f", "docker-compose.yml", "pull"}, []byte("success"))
-	mockExecutor.SetMockOutput("docker", []string{"compose", "-f", "docker-compose.yml", "up", "-d"}, []byte("success"))
+	// Mock successful command execution with new flags
+	mockExecutor.SetMockOutput("docker", []string{"compose", "-f", "docker-compose.yml", "pull", "--ignore-buildable"}, []byte("success"))
+	mockExecutor.SetMockOutput("docker", []string{"compose", "-f", "docker-compose.yml", "up", "-d", "--build"}, []byte("success"))
 	
 	err := manager.UpdateApp(appName)
 	if err != nil {
@@ -243,12 +243,54 @@ func TestUpdateApp(t *testing.T) {
 	}
 	
 	// Verify commands were executed correctly
-	if !mockExecutor.AssertCommandExecuted("docker", []string{"compose", "-f", "docker-compose.yml", "pull"}) {
-		t.Error("Expected docker compose pull command to be executed")
+	if !mockExecutor.AssertCommandExecuted("docker", []string{"compose", "-f", "docker-compose.yml", "pull", "--ignore-buildable"}) {
+		t.Error("Expected docker compose pull --ignore-buildable command to be executed")
 	}
 	
-	if !mockExecutor.AssertCommandExecuted("docker", []string{"compose", "-f", "docker-compose.yml", "up", "-d"}) {
-		t.Error("Expected docker compose up command to be executed")
+	if !mockExecutor.AssertCommandExecuted("docker", []string{"compose", "-f", "docker-compose.yml", "up", "-d", "--build"}) {
+		t.Error("Expected docker compose up -d --build command to be executed")
+	}
+	
+	// Verify they were executed in the correct directory
+	commands := mockExecutor.GetExecutedCommands()
+	if len(commands) != 2 {
+		t.Errorf("Expected 2 commands to be executed, got %d", len(commands))
+	}
+	
+	for _, cmd := range commands {
+		if cmd.Dir != appPath {
+			t.Errorf("Expected command to be executed in %s, got %s", appPath, cmd.Dir)
+		}
+	}
+}
+
+// TestUpdateAppWithPullFailure tests UpdateApp when pull fails but build succeeds
+func TestUpdateAppWithPullFailure(t *testing.T) {
+	mockExecutor := NewMockCommandExecutor()
+	appsDir := "/tmp/apps"
+	manager := NewManagerWithExecutor(appsDir, mockExecutor)
+	
+	appName := "test-app-with-build"
+	appPath := filepath.Join(appsDir, appName)
+	
+	// Mock pull failure (e.g., all services use build:) but successful build
+	mockExecutor.SetMockError("docker", []string{"compose", "-f", "docker-compose.yml", "pull", "--ignore-buildable"}, 
+		fmt.Errorf("no services to pull"))
+	mockExecutor.SetMockOutput("docker", []string{"compose", "-f", "docker-compose.yml", "up", "-d", "--build"}, []byte("success"))
+	
+	// Update should succeed despite pull failure
+	err := manager.UpdateApp(appName)
+	if err != nil {
+		t.Errorf("Expected no error when pull fails but build succeeds, got %v", err)
+	}
+	
+	// Verify both commands were executed
+	if !mockExecutor.AssertCommandExecuted("docker", []string{"compose", "-f", "docker-compose.yml", "pull", "--ignore-buildable"}) {
+		t.Error("Expected docker compose pull --ignore-buildable command to be executed")
+	}
+	
+	if !mockExecutor.AssertCommandExecuted("docker", []string{"compose", "-f", "docker-compose.yml", "up", "-d", "--build"}) {
+		t.Error("Expected docker compose up -d --build command to be executed")
 	}
 	
 	// Verify they were executed in the correct directory

@@ -9,6 +9,9 @@ import Header from '@/shared/components/layout/Header';
 import MainLayout from '@/shared/components/layout/MainLayout';
 import { AuthProvider, useAuth } from '@/shared/components/auth/AuthProvider';
 import { useToast, ToastContainer } from '@/shared/components/ui/Toast';
+import { Agentation } from '@/shared/components/dev/Agentation';
+import { ThemeProvider } from '@/shared/components/theme/ThemeProvider';
+// import { Agentation, type Annotation } from 'agentation';
 
 // Protected route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -136,12 +139,17 @@ function App() {
     const { toasts, removeToast } = useToast();
 
     return (
-        <BrowserRouter>
-            <AuthProvider>
-                <AppRoutes />
-                <ToastContainer toasts={toasts} removeToast={removeToast} />
-            </AuthProvider>
-        </BrowserRouter>
+        <>
+            <BrowserRouter>
+                <ThemeProvider>
+                    <AuthProvider>
+                        <AppRoutes />
+                        <ToastContainer toasts={toasts} removeToast={removeToast} />
+                    </AuthProvider>
+                </ThemeProvider>
+            </BrowserRouter>
+            <Agentation />
+        </>
     );
 }
 

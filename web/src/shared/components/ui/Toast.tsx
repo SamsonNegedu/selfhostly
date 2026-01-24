@@ -46,12 +46,12 @@ export function ToastContainer({ toasts, removeToast }: { toasts: Toast[]; remov
                 <div
                     key={toast.id}
                     className={`max-w-sm p-4 rounded-lg shadow-lg border ${toast.variant === 'success'
-                            ? 'bg-green-50 border-green-200 text-green-900'
+                            ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-900 dark:text-green-100'
                             : toast.variant === 'destructive'
-                                ? 'bg-red-50 border-red-200 text-red-900'
+                                ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-900 dark:text-red-100'
                                 : toast.variant === 'warning'
-                                    ? 'bg-yellow-50 border-yellow-200 text-yellow-900'
-                                    : 'bg-blue-50 border-blue-200 text-blue-900'
+                                    ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800 text-yellow-900 dark:text-yellow-100'
+                                    : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-100'
                         } animate-in slide-in-from-right-2 duration-300 ease-out`}
                 >
                     <div className="flex items-start">

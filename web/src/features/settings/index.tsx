@@ -70,7 +70,7 @@ function Settings() {
                                     type="password"
                                     value={formData.cloudflare_api_token}
                                     onChange={(e) => setFormData({ ...formData, cloudflare_api_token: e.target.value })}
-                                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
+                                    className="w-full px-3 py-2 border border-input bg-background text-foreground rounded-md focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground"
                                     placeholder={settings?.cloudflare_api_token ? "Leave blank to keep current(" + settings?.cloudflare_api_token + ")" : "Enter new API token"}
                                 />
                             </div>
@@ -83,7 +83,7 @@ function Settings() {
                                     type="text"
                                     value={formData.cloudflare_account_id}
                                     onChange={(e) => setFormData({ ...formData, cloudflare_account_id: e.target.value })}
-                                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
+                                    className="w-full px-3 py-2 border border-input bg-background text-foreground rounded-md focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground"
                                     required
                                 />
                             </div>

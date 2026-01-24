@@ -18,7 +18,7 @@ const TooltipContent = ({
 }: { children: React.ReactNode; className?: string }) => (
     <div
         className={cn(
-            "absolute z-50 hidden group-hover:block bg-gray-900 text-white text-xs rounded py-1 px-2 -top-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap",
+            "absolute z-50 hidden group-hover:block bg-popover text-popover-foreground border shadow-lg text-xs rounded py-1 px-2 -top-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap",
             className
         )}
     >

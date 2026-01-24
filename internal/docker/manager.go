@@ -79,14 +79,18 @@ func (m *Manager) UpdateApp(name string) error {
 	// Use just the filename since cmd.Dir is set to the app directory
 	composeFile := "docker-compose.yml"
 
-	// Pull latest images
-	_, err := m.commandExecutor.ExecuteCommandInDir(appPath, "docker", "compose", "-f", composeFile, "pull")
+	// Try to pull latest images, ignoring services with build configurations
+	// The --ignore-buildable flag skips services that use 'build:' directives
+	_, err := m.commandExecutor.ExecuteCommandInDir(appPath, "docker", "compose", "-f", composeFile, "pull", "--ignore-buildable")
 	if err != nil {
-		return fmt.Errorf("failed to pull images: %w", err)
+		// If pull fails (e.g., older docker compose version, or all services use build),
+		// log but continue - the 'up' command will handle building if needed
+		// Don't fail the entire update just because of pull issues
 	}
 
-	// Update app services (cloudflared stays running)
-	_, err = m.commandExecutor.ExecuteCommandInDir(appPath, "docker", "compose", "-f", composeFile, "up", "-d")
+	// Update app services with --build flag to rebuild services that use 'build:' directives
+	// This handles both pulled images and locally built services
+	_, err = m.commandExecutor.ExecuteCommandInDir(appPath, "docker", "compose", "-f", composeFile, "up", "-d", "--build")
 	if err != nil {
 		return fmt.Errorf("failed to update app: %w", err)
 	}
