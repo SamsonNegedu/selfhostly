@@ -3,15 +3,14 @@ import Dashboard from '@/features/dashboard';
 import CreateApp from '@/features/create-app';
 import AppDetails from '@/features/app-details';
 import Cloudflare from '@/features/cloudflare';
+import Monitoring from '@/features/monitoring';
 import Settings from '@/features/settings';
 import Login from '@/features/login';
-import Header from '@/shared/components/layout/Header';
 import MainLayout from '@/shared/components/layout/MainLayout';
 import { AuthProvider, useAuth } from '@/shared/components/auth/AuthProvider';
 import { useToast, ToastContainer } from '@/shared/components/ui/Toast';
 import { Agentation } from '@/shared/components/dev/Agentation';
 import { ThemeProvider } from '@/shared/components/theme/ThemeProvider';
-// import { Agentation, type Annotation } from 'agentation';
 
 // Protected route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -40,10 +39,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     }
 
     return (
-        <div className="min-h-screen bg-background text-foreground">
-            <Header />
-            <MainLayout>{children}</MainLayout>
-        </div>
+        <MainLayout>{children}</MainLayout>
     );
 }
 
@@ -125,6 +121,14 @@ function AppRoutes() {
                 element={
                     <ProtectedRoute>
                         <Cloudflare />
+                    </ProtectedRoute>
+                }
+            />
+            <Route
+                path="/monitoring"
+                element={
+                    <ProtectedRoute>
+                        <Monitoring />
                     </ProtectedRoute>
                 }
             />

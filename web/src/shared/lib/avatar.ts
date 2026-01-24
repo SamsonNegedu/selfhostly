@@ -1,15 +1,8 @@
 /**
- * Generates a color based on a string (username)
+ * Returns the app's primary color for avatar backgrounds
  */
-export function stringToColor(str: string): string {
-  let hash = 0;
-  
-  for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  
-  const h = hash % 360;
-  return `hsl(${h}, 70%, 50%)`;
+export function stringToColor(): string {
+  return `hsl(var(--primary))`;
 }
 
 /**
@@ -29,7 +22,7 @@ export function getInitials(name: string): string {
  */
 export function generateAvatarSvg(name: string, size: number = 40): string {
   const initials = getInitials(name);
-  const bgColor = stringToColor(name);
+  const bgColor = stringToColor();
   
   return `
     <svg 

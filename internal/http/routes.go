@@ -42,12 +42,19 @@ func (s *Server) setupRoutes() {
 		// Cloudflare routes
 		s.setupCloudflareRoutes(api)
 
+		// System/monitoring routes
+		s.setupSystemRoutes(api)
+
 		// User info endpoint
 		api.GET("/me", s.getCurrentUser)
 	}
 
 	// Serve frontend static files
 	s.engine.Static("/assets", "./web/dist/assets")
+
+	// Serve favicon explicitly before NoRoute catches it
+	s.engine.StaticFile("/favicon.svg", "./web/dist/favicon.svg")
+
 	s.engine.NoRoute(func(c *gin.Context) {
 		c.File("./web/dist/index.html")
 	})
@@ -92,6 +99,16 @@ func (s *Server) setupSettingsRoutes(api *gin.RouterGroup) {
 	{
 		settings.GET("", s.getSettings)
 		settings.PUT("", s.updateSettings)
+	}
+}
+
+func (s *Server) setupSystemRoutes(api *gin.RouterGroup) {
+	systemGroup := api.Group("/system")
+	{
+		systemGroup.GET("/stats", s.getSystemStats)
+		systemGroup.GET("/debug/docker-stats/:id", s.getDebugDockerStats)
+		systemGroup.POST("/containers/:id/restart", s.restartContainer)
+		systemGroup.POST("/containers/:id/stop", s.stopContainer)
 	}
 }
 

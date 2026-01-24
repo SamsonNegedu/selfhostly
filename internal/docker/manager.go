@@ -30,6 +30,11 @@ func NewManagerWithExecutor(appsDir string, executor CommandExecutor) *Manager {
 	}
 }
 
+// GetCommandExecutor returns the command executor (for debugging purposes)
+func (m *Manager) GetCommandExecutor() CommandExecutor {
+	return m.commandExecutor
+}
+
 // CreateAppDirectory creates an app directory and writes compose file
 func (m *Manager) CreateAppDirectory(name, composeContent string) error {
 	appPath := filepath.Join(m.appsDir, name)
@@ -229,5 +234,33 @@ func (m *Manager) RestartCloudflared(name string) error {
 	}
 
 	slog.Info("cloudflared service restarted successfully", "app", name, "output", string(output))
+	return nil
+}
+
+// RestartContainer restarts a specific container by ID
+func (m *Manager) RestartContainer(containerID string) error {
+	slog.Info("restarting container", "containerID", containerID)
+
+	output, err := m.commandExecutor.ExecuteCommand("docker", "restart", containerID)
+	if err != nil {
+		slog.Error("failed to restart container", "containerID", containerID, "error", err, "output", string(output))
+		return fmt.Errorf("failed to restart container: %w\nOutput: %s", err, string(output))
+	}
+
+	slog.Info("container restarted successfully", "containerID", containerID, "output", string(output))
+	return nil
+}
+
+// StopContainer stops a specific container by ID
+func (m *Manager) StopContainer(containerID string) error {
+	slog.Info("stopping container", "containerID", containerID)
+
+	output, err := m.commandExecutor.ExecuteCommand("docker", "stop", containerID)
+	if err != nil {
+		slog.Error("failed to stop container", "containerID", containerID, "error", err, "output", string(output))
+		return fmt.Errorf("failed to stop container: %w\nOutput: %s", err, string(output))
+	}
+
+	slog.Info("container stopped successfully", "containerID", containerID, "output", string(output))
 	return nil
 }

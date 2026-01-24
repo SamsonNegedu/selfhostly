@@ -14,6 +14,7 @@ import type {
   CloudflareTunnelResponse,
   ComposeVersion,
   RollbackRequest,
+  SystemStats,
 } from '../types/api';
 
 interface IngressRule {
@@ -457,4 +458,40 @@ export async function logout() {
 export function loginWithGitHub() {
   const redirectTo = encodeURIComponent(`${FRONTEND_URL}/dashboard`);
   window.location.href = `${AUTH_URL}/auth/github/login?from=${redirectTo}`;
+}
+
+// System monitoring API
+export function useSystemStats(refreshInterval: number = 10000) {
+  return useQuery<SystemStats>({
+    queryKey: ['system', 'stats'],
+    queryFn: () => apiClient.get<SystemStats>('/api/system/stats'),
+    refetchInterval: refreshInterval,
+    refetchIntervalInBackground: false, // Only poll when tab is visible
+  });
+}
+
+export function useRestartContainer() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (containerId: string) => 
+      apiClient.post<{ message: string; container_id: string }>(`/api/system/containers/${containerId}/restart`),
+    onSuccess: () => {
+      // Refresh system stats after container action
+      queryClient.invalidateQueries({ queryKey: ['system', 'stats'] });
+    },
+  });
+}
+
+export function useStopContainer() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (containerId: string) => 
+      apiClient.post<{ message: string; container_id: string }>(`/api/system/containers/${containerId}/stop`),
+    onSuccess: () => {
+      // Refresh system stats after container action
+      queryClient.invalidateQueries({ queryKey: ['system', 'stats'] });
+    },
+  });
 }

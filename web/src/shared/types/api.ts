@@ -111,3 +111,62 @@ export interface ContainerStat {
   block_read_bytes: number;
   block_write_bytes: number;
 }
+
+// System monitoring types
+export interface SystemStats {
+  node_id: string;
+  node_name: string;
+  cpu: CPUStats;
+  memory: MemoryStats;
+  disk: DiskStats;
+  docker: DockerStats;
+  containers: ContainerInfo[];
+  timestamp: string;
+}
+
+export interface CPUStats {
+  usage_percent: number;
+  cores: number;
+}
+
+export interface MemoryStats {
+  total_bytes: number;
+  used_bytes: number;
+  free_bytes: number;
+  available_bytes: number;
+  usage_percent: number;
+}
+
+export interface DiskStats {
+  total_bytes: number;
+  used_bytes: number;
+  free_bytes: number;
+  usage_percent: number;
+  path: string;
+}
+
+export interface DockerStats {
+  total_containers: number;
+  running: number;
+  stopped: number;
+  paused: number;
+  images: number;
+  version: string;
+}
+
+export interface ContainerInfo {
+  id: string;
+  name: string;
+  app_name: string;
+  status: string;
+  state: 'running' | 'stopped' | 'paused';
+  cpu_percent: number;
+  memory_usage_bytes: number;
+  memory_limit_bytes: number;
+  network_rx_bytes: number;
+  network_tx_bytes: number;
+  block_read_bytes: number;
+  block_write_bytes: number;
+  created_at: string;
+  restart_count: number;
+}

@@ -1,5 +1,5 @@
 import { Avatar, AvatarFallback } from './avatar'
-import { getInitials, stringToColor } from '@/shared/lib/avatar'
+import { getInitials } from '@/shared/lib/avatar'
 import { User } from '@/shared/services/api'
 
 interface SmartAvatarProps {
@@ -25,11 +25,7 @@ function SmartAvatar({ user, size = 'md', className }: SmartAvatarProps) {
     // Create a simpler fallback component with background color
     const customFallback = (
         <div
-            className="h-full w-full rounded-full flex items-center justify-center text-xs font-medium text-white"
-            style={{
-                backgroundColor: stringToColor(user.name),
-                color: 'white'
-            }}
+            className="h-full w-full rounded-full flex items-center justify-center text-xs font-medium bg-primary text-primary-foreground"
         >
             {initials}
         </div>

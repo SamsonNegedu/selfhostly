@@ -1,5 +1,5 @@
 import React from 'react'
-import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/card'
+import { Card, CardContent } from '@/shared/components/ui/card'
 import { Button } from '@/shared/components/ui/button'
 import { Badge } from '@/shared/components/ui/badge'
 import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog'
@@ -288,61 +288,52 @@ function CloudflareManagement() {
     if (isLoading) {
         return (
             <div className="space-y-6 fade-in">
-                <Card>
-                    <CardHeader>
-                        <div className="flex items-center justify-between">
-                            <Skeleton className="h-8 w-64" />
-                            <Skeleton className="h-9 w-24" />
-                        </div>
-                    </CardHeader>
-                    <CardContent className="space-y-6">
-                        <Skeleton className="h-12 w-full" />
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                            {[1, 2, 3, 4].map((i) => (
-                                <Card key={i}>
-                                    <CardContent className="p-4">
-                                        <Skeleton className="h-8 w-8 mb-2 mx-auto" />
-                                        <Skeleton className="h-8 w-16 mb-1 mx-auto" />
-                                        <Skeleton className="h-4 w-24 mx-auto" />
-                                    </CardContent>
-                                </Card>
-                            ))}
-                        </div>
-                        <div className="space-y-4">
-                            {[1, 2, 3].map((i) => (
-                                <Card key={i}>
-                                    <CardContent className="p-6">
-                                        <div className="space-y-4">
-                                            <div className="flex items-start justify-between">
-                                                <div className="space-y-2 flex-1">
-                                                    <Skeleton className="h-6 w-48" />
-                                                    <Skeleton className="h-5 w-32" />
-                                                </div>
-                                                <Skeleton className="h-9 w-24" />
-                                            </div>
-                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                                {[1, 2, 3, 4].map((j) => (
-                                                    <div key={j}>
-                                                        <Skeleton className="h-4 w-20 mb-1" />
-                                                        <Skeleton className="h-5 w-32" />
-                                                    </div>
-                                                ))}
-                                            </div>
+                <div className="flex items-center justify-between">
+                    <Skeleton className="h-10 w-64" />
+                    <Skeleton className="h-9 w-24" />
+                </div>
+                <Skeleton className="h-12 w-full" />
+                <div className="space-y-4">
+                    {[1, 2, 3].map((i) => (
+                        <Card key={i} className="border-2">
+                            <CardContent className="p-6">
+                                <div className="space-y-4">
+                                    <div className="flex items-start justify-between">
+                                        <div className="space-y-2 flex-1">
+                                            <Skeleton className="h-6 w-48" />
+                                            <Skeleton className="h-5 w-32" />
                                         </div>
-                                    </CardContent>
-                                </Card>
-                            ))}
-                        </div>
-                    </CardContent>
-                </Card>
+                                        <Skeleton className="h-9 w-24" />
+                                    </div>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                        {[1, 2, 3, 4].map((j) => (
+                                            <div key={j}>
+                                                <Skeleton className="h-4 w-20 mb-1" />
+                                                <Skeleton className="h-5 w-32" />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    ))}
+                </div>
             </div>
         )
     }
 
     if (error) {
         return (
-            <div className="flex items-center justify-center min-h-[400px] fade-in">
-                <Card className="w-full max-w-md">
+            <div className="space-y-6 fade-in">
+                <div>
+                    <h1 className="flex items-center gap-3 text-3xl font-bold">
+                        <div className="p-2 rounded-lg bg-primary/10">
+                            <Activity className="h-6 w-6 text-primary" />
+                        </div>
+                        Cloudflare Tunnels
+                    </h1>
+                </div>
+                <Card className="border-2">
                     <CardContent className="py-12">
                         <div className="flex flex-col items-center gap-4">
                             <AlertCircle className="h-12 w-12 text-red-500" />
@@ -365,194 +356,189 @@ function CloudflareManagement() {
 
     return (
         <div className="space-y-6 fade-in">
-            <Card className="border-2">
-                <CardHeader className="pb-4">
-                    <div className="flex items-center justify-between flex-wrap gap-4">
-                        <div className="space-y-1">
-                            <CardTitle className="flex items-center gap-3 text-2xl">
-                                <div className="p-2 rounded-lg bg-primary/10">
-                                    <Activity className="h-6 w-6 text-primary" />
-                                </div>
-                                Cloudflare Tunnels
-                            </CardTitle>
+            {/* Header */}
+            <div className="flex items-center justify-between flex-wrap gap-4">
+                <div className="space-y-1">
+                    <h1 className="flex items-center gap-3 text-3xl font-bold">
+                        <div className="p-2 rounded-lg bg-primary/10">
+                            <Activity className="h-6 w-6 text-primary" />
+                        </div>
+                        Cloudflare Tunnels
+                    </h1>
+                </div>
+                <Button
+                    onClick={() => refetch()}
+                    variant="outline"
+                    size="sm"
+                    className="button-press"
+                >
+                    <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+                    Refresh
+                </Button>
+            </div>
+
+            <div className="space-y-6">
+                {/* Info Banner */}
+                {tunnels.length > 0 && (
+                    <div className="flex items-start gap-3 p-4 rounded-lg bg-muted/50 border-2">
+                        <Activity className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                            <p className="text-sm font-medium mb-1">
+                                Cloudflare Tunnel Status
+                            </p>
                             <p className="text-sm text-muted-foreground">
-                                Secure access to your self-hosted applications
+                                {activeCount > 0
+                                    ? `${activeCount} tunnel${activeCount !== 1 ? 's' : ''} actively routing traffic to your applications.`
+                                    : 'No active tunnels. Start your applications to establish secure connections.'
+                                }
                             </p>
                         </div>
-                        <Button
-                            onClick={() => refetch()}
-                            variant="outline"
-                            size="sm"
-                            className="button-press"
-                        >
-                            <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-                            Refresh
-                        </Button>
                     </div>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                    {/* Info Banner */}
-                    {tunnels.length > 0 && (
-                        <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-200 dark:border-blue-900/30">
-                            <Activity className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
-                            <div className="flex-1">
-                                <p className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-1">
-                                    Cloudflare Tunnel Status
-                                </p>
-                                <p className="text-sm text-blue-700 dark:text-blue-300">
-                                    {activeCount > 0
-                                        ? `${activeCount} tunnel${activeCount !== 1 ? 's' : ''} actively routing traffic to your applications.`
-                                        : 'No active tunnels. Start your applications to establish secure connections.'
-                                    }
-                                </p>
-                            </div>
-                        </div>
-                    )}
+                )}
 
-                    {/* Search and Filters */}
-                    <div className="flex flex-col sm:flex-row gap-3">
-                        <div className="relative flex-1">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                            <input
-                                type="text"
-                                placeholder="Search tunnels by name, ID, or URL..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="flex h-11 w-full rounded-lg border-2 border-input bg-background px-3 py-2 pl-10 pr-10 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-primary transition-colors"
-                            />
-                            {searchQuery && (
-                                <button
-                                    onClick={() => setSearchQuery('')}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                                    aria-label="Clear search"
-                                >
-                                    <span className="text-xl font-light">×</span>
-                                </button>
-                            )}
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                            {/* Status Filter */}
-                            <div className="flex items-center gap-1 border-2 rounded-lg p-1 bg-muted/50">
-                                <Button
-                                    variant={statusFilter === 'all' ? 'default' : 'ghost'}
-                                    size="sm"
-                                    onClick={() => setStatusFilter('all')}
-                                    className="h-8 px-3"
-                                >
-                                    All
-                                </Button>
-                                <Button
-                                    variant={statusFilter === 'active' ? 'default' : 'ghost'}
-                                    size="sm"
-                                    onClick={() => setStatusFilter('active')}
-                                    className="h-8 px-3"
-                                >
-                                    <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
-                                    Active
-                                </Button>
-                                <Button
-                                    variant={statusFilter === 'inactive' ? 'default' : 'ghost'}
-                                    size="sm"
-                                    onClick={() => setStatusFilter('inactive')}
-                                    className="h-8 px-3"
-                                >
-                                    <Clock className="h-3.5 w-3.5 mr-1" />
-                                    Inactive
-                                </Button>
-                                <Button
-                                    variant={statusFilter === 'error' ? 'default' : 'ghost'}
-                                    size="sm"
-                                    onClick={() => setStatusFilter('error')}
-                                    className="h-8 px-3"
-                                >
-                                    <AlertCircle className="h-3.5 w-3.5 mr-1" />
-                                    Error
-                                </Button>
-                            </div>
-
-                            {/* Sort */}
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => toggleSort('name')}
-                                className="h-11 border-2"
+                {/* Search and Filters */}
+                <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                        <input
+                            type="text"
+                            placeholder="Search tunnels by name, ID, or URL..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="flex h-11 w-full rounded-lg border-2 border-input bg-background px-3 py-2 pl-10 pr-10 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-primary transition-colors"
+                        />
+                        {searchQuery && (
+                            <button
+                                onClick={() => setSearchQuery('')}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                                aria-label="Clear search"
                             >
-                                <ArrowUpDown className="h-4 w-4 mr-2" />
-                                Sort
+                                <span className="text-xl font-light">×</span>
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        {/* Status Filter */}
+                        <div className="flex items-center gap-1 border-2 rounded-lg p-1 bg-muted/50">
+                            <Button
+                                variant={statusFilter === 'all' ? 'default' : 'ghost'}
+                                size="sm"
+                                onClick={() => setStatusFilter('all')}
+                                className="h-8 px-3"
+                            >
+                                All
+                            </Button>
+                            <Button
+                                variant={statusFilter === 'active' ? 'default' : 'ghost'}
+                                size="sm"
+                                onClick={() => setStatusFilter('active')}
+                                className="h-8 px-3"
+                            >
+                                <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                                Active
+                            </Button>
+                            <Button
+                                variant={statusFilter === 'inactive' ? 'default' : 'ghost'}
+                                size="sm"
+                                onClick={() => setStatusFilter('inactive')}
+                                className="h-8 px-3"
+                            >
+                                <Clock className="h-3.5 w-3.5 mr-1" />
+                                Inactive
+                            </Button>
+                            <Button
+                                variant={statusFilter === 'error' ? 'default' : 'ghost'}
+                                size="sm"
+                                onClick={() => setStatusFilter('error')}
+                                className="h-8 px-3"
+                            >
+                                <AlertCircle className="h-3.5 w-3.5 mr-1" />
+                                Error
                             </Button>
                         </div>
+
+                        {/* Sort */}
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => toggleSort('name')}
+                            className="h-9 border-2"
+                        >
+                            <ArrowUpDown className="h-4 w-4 mr-2" />
+                            Sort
+                        </Button>
                     </div>
+                </div>
 
-                    {/* Empty State */}
-                    {tunnels.length === 0 && (
-                        <Card className="border-2 border-dashed">
-                            <CardContent className="py-16 text-center">
-                                <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-primary/10 mb-6">
-                                    <Link2 className="h-10 w-10 text-primary" />
-                                </div>
-                                <h3 className="text-2xl font-semibold mb-3">No Tunnels Yet</h3>
-                                <p className="text-muted-foreground mb-6 max-w-md mx-auto text-base">
-                                    You don't have any Cloudflare tunnels configured. Create your first app with Cloudflare tunnel enabled to establish secure public access.
-                                </p>
-                                <Button onClick={() => window.location.href = '/apps/new'} size="lg" className="button-press">
-                                    <Plus className="h-5 w-5 mr-2" />
-                                    Create Your First App
-                                </Button>
-                            </CardContent>
-                        </Card>
-                    )}
-
-                    {/* No Search/Filter Results */}
-                    {tunnels.length > 0 && processedTunnels.length === 0 && (
-                        <Card className="border-2 border-dashed">
-                            <CardContent className="py-16 text-center">
-                                <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-muted mb-4">
-                                    <Search className="h-8 w-8 text-muted-foreground" />
-                                </div>
-                                <h3 className="text-xl font-semibold mb-2">No Matching Tunnels</h3>
-                                <p className="text-muted-foreground mb-4">
-                                    {searchQuery
-                                        ? `No tunnels found matching "${searchQuery}"`
-                                        : 'No tunnels match the selected filters'
-                                    }
-                                </p>
-                                <Button
-                                    variant="outline"
-                                    onClick={() => {
-                                        setSearchQuery('')
-                                        setStatusFilter('all')
-                                    }}
-                                    className="button-press"
-                                >
-                                    <Filter className="h-4 w-4 mr-2" />
-                                    Clear Filters
-                                </Button>
-                            </CardContent>
-                        </Card>
-                    )}
-
-                    {/* Tunnels List */}
-                    {processedTunnels.length > 0 && (
-                        <div className="space-y-4">
-                            <div className="flex items-center justify-between">
-                                <p className="text-sm font-medium text-muted-foreground">
-                                    Showing <span className="text-foreground font-semibold">{processedTunnels.length}</span> of <span className="text-foreground font-semibold">{tunnels.length}</span> tunnel{tunnels.length !== 1 ? 's' : ''}
-                                </p>
+                {/* Empty State */}
+                {tunnels.length === 0 && (
+                    <Card className="border-2 border-dashed">
+                        <CardContent className="py-16 text-center">
+                            <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-primary/10 mb-6">
+                                <Link2 className="h-10 w-10 text-primary" />
                             </div>
+                            <h3 className="text-2xl font-semibold mb-3">No Tunnels Yet</h3>
+                            <p className="text-muted-foreground mb-6 max-w-md mx-auto text-base">
+                                You don't have any Cloudflare tunnels configured. Create your first app with Cloudflare tunnel enabled to establish secure public access.
+                            </p>
+                            <Button onClick={() => window.location.href = '/apps/new'} size="lg" className="button-press">
+                                <Plus className="h-5 w-5 mr-2" />
+                                Create Your First App
+                            </Button>
+                        </CardContent>
+                    </Card>
+                )}
 
-                            <TunnelTable
-                                tunnels={processedTunnels}
-                                onSync={handleSync}
-                                onDelete={handleDelete}
-                                onCopy={copyToClipboard}
-                                isSyncing={syncTunnel.isPending}
-                                isDeleting={deleteTunnel.isPending}
-                            />
+                {/* No Search/Filter Results */}
+                {tunnels.length > 0 && processedTunnels.length === 0 && (
+                    <Card className="border-2 border-dashed">
+                        <CardContent className="py-16 text-center">
+                            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-muted mb-4">
+                                <Search className="h-8 w-8 text-muted-foreground" />
+                            </div>
+                            <h3 className="text-xl font-semibold mb-2">No Matching Tunnels</h3>
+                            <p className="text-muted-foreground mb-4">
+                                {searchQuery
+                                    ? `No tunnels found matching "${searchQuery}"`
+                                    : 'No tunnels match the selected filters'
+                                }
+                            </p>
+                            <Button
+                                variant="outline"
+                                onClick={() => {
+                                    setSearchQuery('')
+                                    setStatusFilter('all')
+                                }}
+                                className="button-press"
+                            >
+                                <Filter className="h-4 w-4 mr-2" />
+                                Clear Filters
+                            </Button>
+                        </CardContent>
+                    </Card>
+                )}
+
+                {/* Tunnels List */}
+                {processedTunnels.length > 0 && (
+                    <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                            <p className="text-sm font-medium text-muted-foreground">
+                                Showing <span className="text-foreground font-semibold">{processedTunnels.length}</span> of <span className="text-foreground font-semibold">{tunnels.length}</span> tunnel{tunnels.length !== 1 ? 's' : ''}
+                            </p>
                         </div>
-                    )}
-                </CardContent>
-            </Card>
+
+                        <TunnelTable
+                            tunnels={processedTunnels}
+                            onSync={handleSync}
+                            onDelete={handleDelete}
+                            onCopy={copyToClipboard}
+                            isSyncing={syncTunnel.isPending}
+                            isDeleting={deleteTunnel.isPending}
+                        />
+                    </div>
+                )}
+            </div>
 
             {/* Delete Confirmation Dialog */}
             <ConfirmationDialog

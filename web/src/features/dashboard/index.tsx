@@ -124,9 +124,9 @@ function Dashboard() {
         <div className="fade-in space-y-6">
             {/* Header */}
             <div>
-                <h1 className="text-3xl font-bold">Dashboard</h1>
+                <h1 className="text-3xl font-bold">Applications</h1>
                 <p className="text-muted-foreground mt-2">
-                    Manage your self-hosted applications
+                    Manage and monitor your self-hosted apps
                 </p>
             </div>
 
