@@ -13,242 +13,21 @@ import {
     Plus,
     Search,
     Filter,
-    Grid3x3,
-    List,
     Copy,
-    MoreVertical,
     Activity,
     Link2,
     Trash2,
     Eye,
     ArrowUpDown
 } from 'lucide-react'
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from '@/shared/components/ui/dropdown-menu'
 import { useCloudflareTunnels, useSyncCloudflareTunnel, useDeleteCloudflareTunnel } from '@/shared/services/api'
 import { useToast } from '@/shared/components/ui/Toast'
 import { useState } from 'react'
 import type { CloudflareTunnel } from '@/shared/types/api'
 
-type ViewMode = 'grid' | 'table'
 type SortField = 'name' | 'status' | 'created' | 'updated'
 type SortOrder = 'asc' | 'desc'
 type StatusFilter = 'all' | 'active' | 'inactive' | 'error'
-
-interface TunnelCardProps {
-    tunnel: CloudflareTunnel
-    onSync: (appId: string, appName: string) => void
-    onDelete: (appId: string, appName: string) => void
-    onCopy: (text: string, label: string) => void
-    isSyncing: boolean
-    isDeleting: boolean
-}
-
-function TunnelCard({ tunnel, onSync, onDelete, onCopy, isSyncing, isDeleting }: TunnelCardProps) {
-    const getStatusIcon = (status: string) => {
-        switch (status) {
-            case 'active':
-                return <CheckCircle2 className="h-4 w-4 text-green-500" />
-            case 'inactive':
-                return <Clock className="h-4 w-4 text-yellow-500" />
-            case 'error':
-                return <AlertCircle className="h-4 w-4 text-red-500" />
-            case 'deleted':
-                return <Clock className="h-4 w-4 text-gray-500" />
-            default:
-                return <Clock className="h-4 w-4 text-gray-500" />
-        }
-    }
-
-    const getStatusBadge = (isActive: boolean) => {
-        if (isActive) {
-            return (
-                <Badge variant="default" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 border-green-200 dark:border-green-800">
-                    <CheckCircle2 className="h-3 w-3 mr-1" />
-                    Active
-                </Badge>
-            )
-        }
-        return (
-            <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 border-yellow-200 dark:border-yellow-800">
-                <Clock className="h-3 w-3 mr-1" />
-                Inactive
-            </Badge>
-        )
-    }
-
-    return (
-        <Card className="card-hover border-2 hover:border-primary/50 transition-all group">
-            <CardContent className="p-6">
-                <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-start gap-3 flex-1 min-w-0">
-                        <div className="p-2 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors mt-1">
-                            {getStatusIcon(tunnel.status)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <h3 className="font-semibold text-lg mb-2 truncate" title={tunnel.tunnel_name}>
-                                {tunnel.tunnel_name}
-                            </h3>
-                            <div className="flex flex-wrap items-center gap-2 mb-2">
-                                {getStatusBadge(tunnel.is_active)}
-                                {tunnel.status === 'error' && (
-                                    <Badge variant="outline" className="bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300 border-red-200 dark:border-red-800">
-                                        <AlertCircle className="h-3 w-3 mr-1" />
-                                        Error
-                                    </Badge>
-                                )}
-                            </div>
-                            {tunnel.public_url && (
-                                <a
-                                    href={tunnel.public_url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1.5 text-sm text-blue-600 dark:text-blue-400 hover:underline group/link"
-                                    onClick={(e) => e.stopPropagation()}
-                                >
-                                    <ExternalLink className="h-3.5 w-3.5" />
-                                    <span className="truncate max-w-xs">{new URL(tunnel.public_url).hostname}</span>
-                                </a>
-                            )}
-                            {tunnel.error_details && (
-                                <div className="mt-2 p-2 rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
-                                    <p className="text-sm text-red-600 dark:text-red-400 flex items-start gap-2">
-                                        <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-                                        <span>{tunnel.error_details}</span>
-                                    </p>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 ml-4">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={(e) => {
-                                e.stopPropagation()
-                                onSync(tunnel.app_id, tunnel.tunnel_name)
-                            }}
-                            disabled={isSyncing}
-                            className="button-press"
-                            title="Sync tunnel configuration"
-                        >
-                            <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                        </Button>
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="button-press"
-                                >
-                                    <MoreVertical className="h-4 w-4" />
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-48">
-                                <DropdownMenuItem
-                                    onClick={(e) => {
-                                        e.stopPropagation()
-                                        onCopy(tunnel.tunnel_id, 'Tunnel ID')
-                                    }}
-                                >
-                                    <Copy className="h-4 w-4 mr-2" />
-                                    Copy Tunnel ID
-                                </DropdownMenuItem>
-                                {tunnel.public_url && (
-                                    <DropdownMenuItem
-                                        onClick={(e) => {
-                                            e.stopPropagation()
-                                            onCopy(tunnel.public_url, 'Public URL')
-                                        }}
-                                    >
-                                        <Link2 className="h-4 w-4 mr-2" />
-                                        Copy Public URL
-                                    </DropdownMenuItem>
-                                )}
-                                <DropdownMenuItem
-                                    onClick={(e) => {
-                                        e.stopPropagation()
-                                        window.location.href = `/apps/${tunnel.app_id}`
-                                    }}
-                                >
-                                    <Eye className="h-4 w-4 mr-2" />
-                                    View App Details
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                    onClick={(e) => {
-                                        e.stopPropagation()
-                                        onDelete(tunnel.app_id, tunnel.tunnel_name)
-                                    }}
-                                    disabled={isDeleting}
-                                    className="text-red-600 dark:text-red-400 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-900/20"
-                                >
-                                    <Trash2 className="h-4 w-4 mr-2" />
-                                    Delete Tunnel
-                                </DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
-                    </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4 pt-4 border-t">
-                    <div>
-                        <p className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1">
-                            <Link2 className="h-3 w-3" />
-                            Tunnel ID
-                        </p>
-                        <div className="flex items-center gap-2">
-                            <p className="text-sm font-mono truncate flex-1" title={tunnel.tunnel_id}>{tunnel.tunnel_id}</p>
-                            <button
-                                onClick={(e) => {
-                                    e.stopPropagation()
-                                    onCopy(tunnel.tunnel_id, 'Tunnel ID')
-                                }}
-                                className="opacity-0 group-hover:opacity-100 transition-opacity"
-                            >
-                                <Copy className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
-                            </button>
-                        </div>
-                    </div>
-                    <div>
-                        <p className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1">
-                            <Activity className="h-3 w-3" />
-                            Status
-                        </p>
-                        <p className="text-sm font-medium capitalize">{tunnel.status}</p>
-                    </div>
-                    <div>
-                        <p className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1">
-                            <Clock className="h-3 w-3" />
-                            Created
-                        </p>
-                        <p className="text-sm font-medium">
-                            {new Date(tunnel.created_at).toLocaleDateString()}
-                        </p>
-                    </div>
-                    <div>
-                        <p className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1">
-                            <RefreshCw className="h-3 w-3" />
-                            Last Synced
-                        </p>
-                        <p className="text-sm font-medium">
-                            {tunnel.last_synced_at
-                                ? new Date(tunnel.last_synced_at).toLocaleString()
-                                : 'Never'
-                            }
-                        </p>
-                    </div>
-                </div>
-            </CardContent>
-        </Card>
-    )
-}
 
 interface TunnelTableProps {
     tunnels: CloudflareTunnel[]
@@ -388,7 +167,6 @@ function CloudflareManagement() {
 
     const [searchQuery, setSearchQuery] = useState('')
     const [tunnelToDelete, setTunnelToDelete] = useState<{ id: string; name: string } | null>(null)
-    const [viewMode, setViewMode] = useState<ViewMode>('grid')
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
     const [sortField, setSortField] = useState<SortField>('name')
     const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
@@ -601,35 +379,15 @@ function CloudflareManagement() {
                                 Secure access to your self-hosted applications
                             </p>
                         </div>
-                        <div className="flex items-center gap-2">
-                            <div className="flex items-center border rounded-lg">
-                                <Button
-                                    variant={viewMode === 'grid' ? 'default' : 'ghost'}
-                                    size="sm"
-                                    onClick={() => setViewMode('grid')}
-                                    className="rounded-r-none"
-                                >
-                                    <Grid3x3 className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                    variant={viewMode === 'table' ? 'default' : 'ghost'}
-                                    size="sm"
-                                    onClick={() => setViewMode('table')}
-                                    className="rounded-l-none"
-                                >
-                                    <List className="h-4 w-4" />
-                                </Button>
-                            </div>
-                            <Button
-                                onClick={() => refetch()}
-                                variant="outline"
-                                size="sm"
-                                className="button-press"
-                            >
-                                <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-                                Refresh
-                            </Button>
-                        </div>
+                        <Button
+                            onClick={() => refetch()}
+                            variant="outline"
+                            size="sm"
+                            className="button-press"
+                        >
+                            <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+                            Refresh
+                        </Button>
                     </div>
                 </CardHeader>
                 <CardContent className="space-y-6">
@@ -783,35 +541,14 @@ function CloudflareManagement() {
                                 </p>
                             </div>
 
-                            {viewMode === 'grid' ? (
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                    {processedTunnels.map((tunnel, index) => (
-                                        <div
-                                            key={tunnel.id}
-                                            className="fade-in"
-                                            style={{ animationDelay: `${index * 0.05}s` }}
-                                        >
-                                            <TunnelCard
-                                                tunnel={tunnel}
-                                                onSync={handleSync}
-                                                onDelete={handleDelete}
-                                                onCopy={copyToClipboard}
-                                                isSyncing={syncTunnel.isPending}
-                                                isDeleting={deleteTunnel.isPending}
-                                            />
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <TunnelTable
-                                    tunnels={processedTunnels}
-                                    onSync={handleSync}
-                                    onDelete={handleDelete}
-                                    onCopy={copyToClipboard}
-                                    isSyncing={syncTunnel.isPending}
-                                    isDeleting={deleteTunnel.isPending}
-                                />
-                            )}
+                            <TunnelTable
+                                tunnels={processedTunnels}
+                                onSync={handleSync}
+                                onDelete={handleDelete}
+                                onCopy={copyToClipboard}
+                                isSyncing={syncTunnel.isPending}
+                                isDeleting={deleteTunnel.isPending}
+                            />
                         </div>
                     )}
                 </CardContent>
