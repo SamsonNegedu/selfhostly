@@ -3,10 +3,382 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui
 import { Button } from '@/shared/components/ui/button'
 import { Badge } from '@/shared/components/ui/badge'
 import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog'
-import { RefreshCw, ExternalLink, AlertCircle, CheckCircle2, Clock, Plus, Search } from 'lucide-react'
+import { Skeleton } from '@/shared/components/ui/Skeleton'
+import {
+    RefreshCw,
+    ExternalLink,
+    AlertCircle,
+    CheckCircle2,
+    Clock,
+    Plus,
+    Search,
+    Filter,
+    Grid3x3,
+    List,
+    Copy,
+    MoreVertical,
+    Activity,
+    Link2,
+    Trash2,
+    Eye,
+    ArrowUpDown
+} from 'lucide-react'
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/shared/components/ui/dropdown-menu'
 import { useCloudflareTunnels, useSyncCloudflareTunnel, useDeleteCloudflareTunnel } from '@/shared/services/api'
 import { useToast } from '@/shared/components/ui/Toast'
 import { useState } from 'react'
+import type { CloudflareTunnel } from '@/shared/types/api'
+
+type ViewMode = 'grid' | 'table'
+type SortField = 'name' | 'status' | 'created' | 'updated'
+type SortOrder = 'asc' | 'desc'
+type StatusFilter = 'all' | 'active' | 'inactive' | 'error'
+
+interface TunnelCardProps {
+    tunnel: CloudflareTunnel
+    onSync: (appId: string, appName: string) => void
+    onDelete: (appId: string, appName: string) => void
+    onCopy: (text: string, label: string) => void
+    isSyncing: boolean
+    isDeleting: boolean
+}
+
+function TunnelCard({ tunnel, onSync, onDelete, onCopy, isSyncing, isDeleting }: TunnelCardProps) {
+    const getStatusIcon = (status: string) => {
+        switch (status) {
+            case 'active':
+                return <CheckCircle2 className="h-4 w-4 text-green-500" />
+            case 'inactive':
+                return <Clock className="h-4 w-4 text-yellow-500" />
+            case 'error':
+                return <AlertCircle className="h-4 w-4 text-red-500" />
+            case 'deleted':
+                return <Clock className="h-4 w-4 text-gray-500" />
+            default:
+                return <Clock className="h-4 w-4 text-gray-500" />
+        }
+    }
+
+    const getStatusBadge = (isActive: boolean) => {
+        if (isActive) {
+            return (
+                <Badge variant="default" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 border-green-200 dark:border-green-800">
+                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                    Active
+                </Badge>
+            )
+        }
+        return (
+            <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 border-yellow-200 dark:border-yellow-800">
+                <Clock className="h-3 w-3 mr-1" />
+                Inactive
+            </Badge>
+        )
+    }
+
+    return (
+        <Card className="card-hover border-2 hover:border-primary/50 transition-all group">
+            <CardContent className="p-6">
+                <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-start gap-3 flex-1 min-w-0">
+                        <div className="p-2 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors mt-1">
+                            {getStatusIcon(tunnel.status)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <h3 className="font-semibold text-lg mb-2 truncate" title={tunnel.tunnel_name}>
+                                {tunnel.tunnel_name}
+                            </h3>
+                            <div className="flex flex-wrap items-center gap-2 mb-2">
+                                {getStatusBadge(tunnel.is_active)}
+                                {tunnel.status === 'error' && (
+                                    <Badge variant="outline" className="bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300 border-red-200 dark:border-red-800">
+                                        <AlertCircle className="h-3 w-3 mr-1" />
+                                        Error
+                                    </Badge>
+                                )}
+                            </div>
+                            {tunnel.public_url && (
+                                <a
+                                    href={tunnel.public_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1.5 text-sm text-blue-600 dark:text-blue-400 hover:underline group/link"
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    <ExternalLink className="h-3.5 w-3.5" />
+                                    <span className="truncate max-w-xs">{new URL(tunnel.public_url).hostname}</span>
+                                </a>
+                            )}
+                            {tunnel.error_details && (
+                                <div className="mt-2 p-2 rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+                                    <p className="text-sm text-red-600 dark:text-red-400 flex items-start gap-2">
+                                        <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                                        <span>{tunnel.error_details}</span>
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 ml-4">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                                e.stopPropagation()
+                                onSync(tunnel.app_id, tunnel.tunnel_name)
+                            }}
+                            disabled={isSyncing}
+                            className="button-press"
+                            title="Sync tunnel configuration"
+                        >
+                            <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                        </Button>
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="button-press"
+                                >
+                                    <MoreVertical className="h-4 w-4" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-48">
+                                <DropdownMenuItem
+                                    onClick={(e) => {
+                                        e.stopPropagation()
+                                        onCopy(tunnel.tunnel_id, 'Tunnel ID')
+                                    }}
+                                >
+                                    <Copy className="h-4 w-4 mr-2" />
+                                    Copy Tunnel ID
+                                </DropdownMenuItem>
+                                {tunnel.public_url && (
+                                    <DropdownMenuItem
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            onCopy(tunnel.public_url, 'Public URL')
+                                        }}
+                                    >
+                                        <Link2 className="h-4 w-4 mr-2" />
+                                        Copy Public URL
+                                    </DropdownMenuItem>
+                                )}
+                                <DropdownMenuItem
+                                    onClick={(e) => {
+                                        e.stopPropagation()
+                                        window.location.href = `/apps/${tunnel.app_id}`
+                                    }}
+                                >
+                                    <Eye className="h-4 w-4 mr-2" />
+                                    View App Details
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                    onClick={(e) => {
+                                        e.stopPropagation()
+                                        onDelete(tunnel.app_id, tunnel.tunnel_name)
+                                    }}
+                                    disabled={isDeleting}
+                                    className="text-red-600 dark:text-red-400 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-900/20"
+                                >
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    Delete Tunnel
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 pt-4 border-t">
+                    <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1">
+                            <Link2 className="h-3 w-3" />
+                            Tunnel ID
+                        </p>
+                        <div className="flex items-center gap-2">
+                            <p className="text-sm font-mono truncate flex-1" title={tunnel.tunnel_id}>{tunnel.tunnel_id}</p>
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation()
+                                    onCopy(tunnel.tunnel_id, 'Tunnel ID')
+                                }}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                                <Copy className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
+                            </button>
+                        </div>
+                    </div>
+                    <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1">
+                            <Activity className="h-3 w-3" />
+                            Status
+                        </p>
+                        <p className="text-sm font-medium capitalize">{tunnel.status}</p>
+                    </div>
+                    <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            Created
+                        </p>
+                        <p className="text-sm font-medium">
+                            {new Date(tunnel.created_at).toLocaleDateString()}
+                        </p>
+                    </div>
+                    <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1">
+                            <RefreshCw className="h-3 w-3" />
+                            Last Synced
+                        </p>
+                        <p className="text-sm font-medium">
+                            {tunnel.last_synced_at
+                                ? new Date(tunnel.last_synced_at).toLocaleString()
+                                : 'Never'
+                            }
+                        </p>
+                    </div>
+                </div>
+            </CardContent>
+        </Card>
+    )
+}
+
+interface TunnelTableProps {
+    tunnels: CloudflareTunnel[]
+    onSync: (appId: string, appName: string) => void
+    onDelete: (appId: string, appName: string) => void
+    onCopy: (text: string, label: string) => void
+    isSyncing: boolean
+    isDeleting: boolean
+}
+
+function TunnelTable({ tunnels, onSync, onDelete, onCopy, isSyncing, isDeleting }: TunnelTableProps) {
+    return (
+        <Card className="border-2">
+            <div className="overflow-x-auto">
+                <table className="w-full">
+                    <thead className="border-b-2 bg-muted/50">
+                        <tr>
+                            <th className="text-left p-4 text-sm font-semibold">Status</th>
+                            <th className="text-left p-4 text-sm font-semibold">Tunnel Name</th>
+                            <th className="text-left p-4 text-sm font-semibold">Public URL</th>
+                            <th className="text-left p-4 text-sm font-semibold">Tunnel ID</th>
+                            <th className="text-left p-4 text-sm font-semibold">Created</th>
+                            <th className="text-right p-4 text-sm font-semibold">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {tunnels.map((tunnel) => (
+                            <tr key={tunnel.id} className="border-b hover:bg-muted/30 transition-colors group">
+                                <td className="p-4">
+                                    <div className="flex items-center gap-2">
+                                        {tunnel.is_active ? (
+                                            <Badge variant="default" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 border-green-200">
+                                                <CheckCircle2 className="h-3 w-3 mr-1" />
+                                                Active
+                                            </Badge>
+                                        ) : (
+                                            <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 border-yellow-200">
+                                                <Clock className="h-3 w-3 mr-1" />
+                                                Inactive
+                                            </Badge>
+                                        )}
+                                    </div>
+                                </td>
+                                <td className="p-4">
+                                    <div className="font-medium">{tunnel.tunnel_name}</div>
+                                    {tunnel.error_details && (
+                                        <div className="text-xs text-red-600 dark:text-red-400 mt-1 flex items-center gap-1">
+                                            <AlertCircle className="h-3 w-3" />
+                                            {tunnel.error_details}
+                                        </div>
+                                    )}
+                                </td>
+                                <td className="p-4">
+                                    {tunnel.public_url ? (
+                                        <div className="flex items-center gap-2">
+                                            <a
+                                                href={tunnel.public_url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 text-sm"
+                                            >
+                                                <ExternalLink className="h-3.5 w-3.5" />
+                                                {new URL(tunnel.public_url).hostname}
+                                            </a>
+                                            <button
+                                                onClick={() => onCopy(tunnel.public_url, 'Public URL')}
+                                                className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                            >
+                                                <Copy className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <span className="text-muted-foreground text-sm">—</span>
+                                    )}
+                                </td>
+                                <td className="p-4">
+                                    <div className="flex items-center gap-2">
+                                        <code className="text-xs font-mono text-muted-foreground">{tunnel.tunnel_id.substring(0, 8)}...</code>
+                                        <button
+                                            onClick={() => onCopy(tunnel.tunnel_id, 'Tunnel ID')}
+                                            className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                        >
+                                            <Copy className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
+                                        </button>
+                                    </div>
+                                </td>
+                                <td className="p-4 text-sm text-muted-foreground">
+                                    {new Date(tunnel.created_at).toLocaleDateString()}
+                                </td>
+                                <td className="p-4">
+                                    <div className="flex items-center justify-end gap-2">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => onSync(tunnel.app_id, tunnel.tunnel_name)}
+                                            disabled={isSyncing}
+                                            className="button-press"
+                                            title="Sync tunnel"
+                                        >
+                                            <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => window.location.href = `/apps/${tunnel.app_id}`}
+                                            className="button-press"
+                                            title="View app"
+                                        >
+                                            <Eye className="h-3.5 w-3.5" />
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => onDelete(tunnel.app_id, tunnel.tunnel_name)}
+                                            disabled={isDeleting}
+                                            className="text-red-600 hover:text-red-700 button-press"
+                                            title="Delete tunnel"
+                                        >
+                                            <Trash2 className="h-3.5 w-3.5" />
+                                        </Button>
+                                    </div>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </Card>
+    )
+}
 
 function CloudflareManagement() {
     const { data: tunnelsData, isLoading, error, refetch } = useCloudflareTunnels()
@@ -16,19 +388,95 @@ function CloudflareManagement() {
 
     const [searchQuery, setSearchQuery] = useState('')
     const [tunnelToDelete, setTunnelToDelete] = useState<{ id: string; name: string } | null>(null)
+    const [viewMode, setViewMode] = useState<ViewMode>('grid')
+    const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+    const [sortField, setSortField] = useState<SortField>('name')
+    const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
 
     const tunnels = tunnelsData?.tunnels || []
 
-    // Filter tunnels by search
-    const filteredTunnels = React.useMemo(() => {
-        if (!searchQuery) return tunnels
-        const query = searchQuery.toLowerCase()
-        return tunnels.filter(tunnel =>
-            tunnel.tunnel_name.toLowerCase().includes(query) ||
-            tunnel.tunnel_id.toLowerCase().includes(query) ||
-            (tunnel.public_url && tunnel.public_url.toLowerCase().includes(query))
-        )
-    }, [tunnels, searchQuery])
+    // Copy to clipboard helper
+    const copyToClipboard = async (text: string, label: string) => {
+        try {
+            await navigator.clipboard.writeText(text)
+            toast.success('Copied!', `${label} copied to clipboard`)
+        } catch (err) {
+            toast.error('Copy Failed', 'Failed to copy to clipboard')
+        }
+    }
+
+    // Filter, sort, and search tunnels
+    const processedTunnels = React.useMemo(() => {
+        let result = [...tunnels]
+
+        // Apply status filter
+        if (statusFilter !== 'all') {
+            result = result.filter(tunnel => {
+                switch (statusFilter) {
+                    case 'active':
+                        return tunnel.is_active
+                    case 'inactive':
+                        return !tunnel.is_active
+                    case 'error':
+                        return tunnel.status === 'error'
+                    default:
+                        return true
+                }
+            })
+        }
+
+        // Apply search filter
+        if (searchQuery) {
+            const query = searchQuery.toLowerCase()
+            result = result.filter(tunnel =>
+                tunnel.tunnel_name.toLowerCase().includes(query) ||
+                tunnel.tunnel_id.toLowerCase().includes(query) ||
+                (tunnel.public_url && tunnel.public_url.toLowerCase().includes(query))
+            )
+        }
+
+        // Apply sorting
+        result.sort((a, b) => {
+            let aValue: any
+            let bValue: any
+
+            switch (sortField) {
+                case 'name':
+                    aValue = a.tunnel_name.toLowerCase()
+                    bValue = b.tunnel_name.toLowerCase()
+                    break
+                case 'status':
+                    aValue = a.is_active ? 1 : 0
+                    bValue = b.is_active ? 1 : 0
+                    break
+                case 'created':
+                    aValue = new Date(a.created_at).getTime()
+                    bValue = new Date(b.created_at).getTime()
+                    break
+                case 'updated':
+                    aValue = new Date(a.updated_at).getTime()
+                    bValue = new Date(b.updated_at).getTime()
+                    break
+                default:
+                    return 0
+            }
+
+            if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1
+            if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1
+            return 0
+        })
+
+        return result
+    }, [tunnels, searchQuery, statusFilter, sortField, sortOrder])
+
+    const toggleSort = (field: SortField) => {
+        if (sortField === field) {
+            setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+        } else {
+            setSortField(field)
+            setSortOrder('asc')
+        }
+    }
 
     const handleSync = (appId: string, appName: string) => {
         syncTunnel.mutate(appId, {
@@ -59,46 +507,53 @@ function CloudflareManagement() {
         })
     }
 
-    const getStatusIcon = (status: string) => {
-        switch (status) {
-            case 'active':
-                return <CheckCircle2 className="h-4 w-4 text-green-500" />
-            case 'inactive':
-                return <Clock className="h-4 w-4 text-yellow-500" />
-            case 'error':
-                return <AlertCircle className="h-4 w-4 text-red-500" />
-            case 'deleted':
-                return <Clock className="h-4 w-4 text-gray-500" />
-            default:
-                return <Clock className="h-4 w-4 text-gray-500" />
-        }
-    }
-
-    const getStatusBadge = (isActive: boolean) => {
-        if (isActive) {
-            return (
-                <Badge variant="default" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-                    <CheckCircle2 className="h-3 w-3 mr-1" />
-                    Active
-                </Badge>
-            )
-        }
-        return (
-            <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
-                <Clock className="h-3 w-3 mr-1" />
-                Inactive
-            </Badge>
-        )
-    }
-
     if (isLoading) {
         return (
-            <div className="flex items-center justify-center min-h-[400px] fade-in">
-                <Card className="w-full max-w-md">
-                    <CardContent className="py-12">
-                        <div className="flex flex-col items-center gap-4">
-                            <div className="h-12 w-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-                            <p className="text-muted-foreground">Loading Cloudflare tunnels...</p>
+            <div className="space-y-6 fade-in">
+                <Card>
+                    <CardHeader>
+                        <div className="flex items-center justify-between">
+                            <Skeleton className="h-8 w-64" />
+                            <Skeleton className="h-9 w-24" />
+                        </div>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                        <Skeleton className="h-12 w-full" />
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                            {[1, 2, 3, 4].map((i) => (
+                                <Card key={i}>
+                                    <CardContent className="p-4">
+                                        <Skeleton className="h-8 w-8 mb-2 mx-auto" />
+                                        <Skeleton className="h-8 w-16 mb-1 mx-auto" />
+                                        <Skeleton className="h-4 w-24 mx-auto" />
+                                    </CardContent>
+                                </Card>
+                            ))}
+                        </div>
+                        <div className="space-y-4">
+                            {[1, 2, 3].map((i) => (
+                                <Card key={i}>
+                                    <CardContent className="p-6">
+                                        <div className="space-y-4">
+                                            <div className="flex items-start justify-between">
+                                                <div className="space-y-2 flex-1">
+                                                    <Skeleton className="h-6 w-48" />
+                                                    <Skeleton className="h-5 w-32" />
+                                                </div>
+                                                <Skeleton className="h-9 w-24" />
+                                            </div>
+                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                                {[1, 2, 3, 4].map((j) => (
+                                                    <div key={j}>
+                                                        <Skeleton className="h-4 w-20 mb-1" />
+                                                        <Skeleton className="h-5 w-32" />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            ))}
                         </div>
                     </CardContent>
                 </Card>
@@ -129,191 +584,234 @@ function CloudflareManagement() {
     }
 
     const activeCount = tunnels.filter(t => t.is_active).length
-    const inactiveCount = tunnels.filter(t => !t.is_active).length
 
     return (
         <div className="space-y-6 fade-in">
-            <Card>
-                <CardHeader>
+            <Card className="border-2">
+                <CardHeader className="pb-4">
                     <div className="flex items-center justify-between flex-wrap gap-4">
-                        <CardTitle className="flex items-center gap-2">
-                            <RefreshCw className="h-5 w-5" />
-                            Cloudflare Tunnel Management
-                        </CardTitle>
-                        <Button
-                            onClick={() => refetch()}
-                            variant="outline"
-                            size="sm"
-                            className="button-press"
-                        >
-                            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-                            Refresh
-                        </Button>
+                        <div className="space-y-1">
+                            <CardTitle className="flex items-center gap-3 text-2xl">
+                                <div className="p-2 rounded-lg bg-primary/10">
+                                    <Activity className="h-6 w-6 text-primary" />
+                                </div>
+                                Cloudflare Tunnels
+                            </CardTitle>
+                            <p className="text-sm text-muted-foreground">
+                                Secure access to your self-hosted applications
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <div className="flex items-center border rounded-lg">
+                                <Button
+                                    variant={viewMode === 'grid' ? 'default' : 'ghost'}
+                                    size="sm"
+                                    onClick={() => setViewMode('grid')}
+                                    className="rounded-r-none"
+                                >
+                                    <Grid3x3 className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                    variant={viewMode === 'table' ? 'default' : 'ghost'}
+                                    size="sm"
+                                    onClick={() => setViewMode('table')}
+                                    className="rounded-l-none"
+                                >
+                                    <List className="h-4 w-4" />
+                                </Button>
+                            </div>
+                            <Button
+                                onClick={() => refetch()}
+                                variant="outline"
+                                size="sm"
+                                className="button-press"
+                            >
+                                <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+                                Refresh
+                            </Button>
+                        </div>
                     </div>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                    <p className="text-sm text-muted-foreground">
-                        Manage your Cloudflare tunnels for self-hosted applications. Active tunnels provide secure access to your applications via Cloudflare.
-                    </p>
+                    {/* Info Banner */}
+                    {tunnels.length > 0 && (
+                        <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-200 dark:border-blue-900/30">
+                            <Activity className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                            <div className="flex-1">
+                                <p className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-1">
+                                    Cloudflare Tunnel Status
+                                </p>
+                                <p className="text-sm text-blue-700 dark:text-blue-300">
+                                    {activeCount > 0
+                                        ? `${activeCount} tunnel${activeCount !== 1 ? 's' : ''} actively routing traffic to your applications.`
+                                        : 'No active tunnels. Start your applications to establish secure connections.'
+                                    }
+                                </p>
+                            </div>
+                        </div>
+                    )}
 
-                    {/* Stats */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <Card className="border-primary/20">
-                            <CardContent className="p-4 text-center">
-                                <RefreshCw className="h-8 w-8 text-primary mx-auto mb-2" />
-                                <div className="text-2xl font-bold">{tunnels.length}</div>
-                                <div className="text-sm text-muted-foreground">Total Tunnels</div>
-                            </CardContent>
-                        </Card>
-                        <Card className="border-green-200 dark:border-green-900/30">
-                            <CardContent className="p-4 text-center">
-                                <CheckCircle2 className="h-8 w-8 text-green-500 mx-auto mb-2" />
-                                <div className="text-2xl font-bold text-green-600 dark:text-green-400">{activeCount}</div>
-                                <div className="text-sm text-muted-foreground">Active</div>
-                            </CardContent>
-                        </Card>
-                        <Card className="border-yellow-200 dark:border-yellow-900/30">
-                            <CardContent className="p-4 text-center">
-                                <Clock className="h-8 w-8 text-yellow-500 mx-auto mb-2" />
-                                <div className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{inactiveCount}</div>
-                                <div className="text-sm text-muted-foreground">Inactive</div>
-                            </CardContent>
-                        </Card>
-                    </div>
+                    {/* Search and Filters */}
+                    <div className="flex flex-col sm:flex-row gap-3">
+                        <div className="relative flex-1">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                            <input
+                                type="text"
+                                placeholder="Search tunnels by name, ID, or URL..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="flex h-11 w-full rounded-lg border-2 border-input bg-background px-3 py-2 pl-10 pr-10 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-primary transition-colors"
+                            />
+                            {searchQuery && (
+                                <button
+                                    onClick={() => setSearchQuery('')}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                                    aria-label="Clear search"
+                                >
+                                    <span className="text-xl font-light">×</span>
+                                </button>
+                            )}
+                        </div>
 
-                    {/* Search */}
-                    <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <input
-                            type="text"
-                            placeholder="Search tunnels by name or ID..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pl-10 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                        />
-                        {searchQuery && (
-                            <button
-                                onClick={() => setSearchQuery('')}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        <div className="flex items-center gap-2">
+                            {/* Status Filter */}
+                            <div className="flex items-center gap-1 border-2 rounded-lg p-1 bg-muted/50">
+                                <Button
+                                    variant={statusFilter === 'all' ? 'default' : 'ghost'}
+                                    size="sm"
+                                    onClick={() => setStatusFilter('all')}
+                                    className="h-8 px-3"
+                                >
+                                    All
+                                </Button>
+                                <Button
+                                    variant={statusFilter === 'active' ? 'default' : 'ghost'}
+                                    size="sm"
+                                    onClick={() => setStatusFilter('active')}
+                                    className="h-8 px-3"
+                                >
+                                    <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                                    Active
+                                </Button>
+                                <Button
+                                    variant={statusFilter === 'inactive' ? 'default' : 'ghost'}
+                                    size="sm"
+                                    onClick={() => setStatusFilter('inactive')}
+                                    className="h-8 px-3"
+                                >
+                                    <Clock className="h-3.5 w-3.5 mr-1" />
+                                    Inactive
+                                </Button>
+                                <Button
+                                    variant={statusFilter === 'error' ? 'default' : 'ghost'}
+                                    size="sm"
+                                    onClick={() => setStatusFilter('error')}
+                                    className="h-8 px-3"
+                                >
+                                    <AlertCircle className="h-3.5 w-3.5 mr-1" />
+                                    Error
+                                </Button>
+                            </div>
+
+                            {/* Sort */}
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => toggleSort('name')}
+                                className="h-11 border-2"
                             >
-                                ×
-                            </button>
-                        )}
+                                <ArrowUpDown className="h-4 w-4 mr-2" />
+                                Sort
+                            </Button>
+                        </div>
                     </div>
 
                     {/* Empty State */}
                     {tunnels.length === 0 && (
-                        <div className="text-center py-12">
-                            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-muted mb-4">
-                                <AlertCircle className="h-8 w-8 text-muted-foreground" />
-                            </div>
-                            <h3 className="text-lg font-semibold mb-2">No Cloudflare Tunnels Found</h3>
-                            <p className="text-muted-foreground mb-4 max-w-md mx-auto">
-                                You don't have any Cloudflare tunnels configured yet. Create an app with Cloudflare tunnel enabled to get started.
-                            </p>
-                            <Button onClick={() => window.location.href = '/apps/new'} className="button-press">
-                                <Plus className="h-4 w-4 mr-2" />
-                                Create New App
-                            </Button>
-                        </div>
+                        <Card className="border-2 border-dashed">
+                            <CardContent className="py-16 text-center">
+                                <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-primary/10 mb-6">
+                                    <Link2 className="h-10 w-10 text-primary" />
+                                </div>
+                                <h3 className="text-2xl font-semibold mb-3">No Tunnels Yet</h3>
+                                <p className="text-muted-foreground mb-6 max-w-md mx-auto text-base">
+                                    You don't have any Cloudflare tunnels configured. Create your first app with Cloudflare tunnel enabled to establish secure public access.
+                                </p>
+                                <Button onClick={() => window.location.href = '/apps/new'} size="lg" className="button-press">
+                                    <Plus className="h-5 w-5 mr-2" />
+                                    Create Your First App
+                                </Button>
+                            </CardContent>
+                        </Card>
                     )}
 
-                    {/* No Search Results */}
-                    {tunnels.length > 0 && filteredTunnels.length === 0 && (
-                        <div className="text-center py-12">
-                            <Search className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                            <h3 className="text-lg font-semibold mb-2">No Matching Tunnels</h3>
-                            <p className="text-muted-foreground mb-4">
-                                No tunnels found matching "{searchQuery}". Try adjusting your search query.
-                            </p>
-                        </div>
+                    {/* No Search/Filter Results */}
+                    {tunnels.length > 0 && processedTunnels.length === 0 && (
+                        <Card className="border-2 border-dashed">
+                            <CardContent className="py-16 text-center">
+                                <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-muted mb-4">
+                                    <Search className="h-8 w-8 text-muted-foreground" />
+                                </div>
+                                <h3 className="text-xl font-semibold mb-2">No Matching Tunnels</h3>
+                                <p className="text-muted-foreground mb-4">
+                                    {searchQuery
+                                        ? `No tunnels found matching "${searchQuery}"`
+                                        : 'No tunnels match the selected filters'
+                                    }
+                                </p>
+                                <Button
+                                    variant="outline"
+                                    onClick={() => {
+                                        setSearchQuery('')
+                                        setStatusFilter('all')
+                                    }}
+                                    className="button-press"
+                                >
+                                    <Filter className="h-4 w-4 mr-2" />
+                                    Clear Filters
+                                </Button>
+                            </CardContent>
+                        </Card>
                     )}
 
                     {/* Tunnels List */}
-                    {filteredTunnels.length > 0 && (
+                    {processedTunnels.length > 0 && (
                         <div className="space-y-4">
-                            <div className="text-sm text-muted-foreground mb-2">
-                                Showing {filteredTunnels.length} of {tunnels.length} tunnel{tunnels.length !== 1 ? 's' : ''}
+                            <div className="flex items-center justify-between">
+                                <p className="text-sm font-medium text-muted-foreground">
+                                    Showing <span className="text-foreground font-semibold">{processedTunnels.length}</span> of <span className="text-foreground font-semibold">{tunnels.length}</span> tunnel{tunnels.length !== 1 ? 's' : ''}
+                                </p>
                             </div>
 
-                            {filteredTunnels.map((tunnel) => (
-                                <Card key={tunnel.id} className="card-hover border-2">
-                                    <CardContent className="p-4">
-                                        <div className="flex items-start justify-between mb-4">
-                                            <div className="flex items-center gap-3">
-                                                {getStatusIcon(tunnel.status)}
-                                                <div>
-                                                    <h3 className="font-semibold text-base">{tunnel.tunnel_name}</h3>
-                                                    <div className="flex items-center gap-2 mt-1">
-                                                        {getStatusBadge(tunnel.is_active)}
-                                                        {tunnel.public_url && (
-                                                            <Badge variant="outline" className="bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300 ml-2">
-                                                                <ExternalLink className="h-3 w-3 mr-1" />
-                                                                {new URL(tunnel.public_url).hostname}
-                                                            </Badge>
-                                                        )}
-                                                    </div>
-                                                    {tunnel.error_details && (
-                                                        <p className="text-sm text-red-600 dark:text-red-400 mt-1">
-                                                            <AlertCircle className="h-3 w-3 mr-1" />
-                                                            {tunnel.error_details}
-                                                        </p>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            <div className="flex items-center gap-2">
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    onClick={() => handleSync(tunnel.app_id, tunnel.tunnel_name)}
-                                                    disabled={syncTunnel.isPending}
-                                                    className="button-press"
-                                                >
-                                                    <RefreshCw className={`h-4 w-4 ${syncTunnel.isPending ? 'animate-spin' : ''}`} />
-                                                    Sync
-                                                </Button>
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    onClick={() => handleDelete(tunnel.app_id, tunnel.tunnel_name)}
-                                                    disabled={deleteTunnel.isPending}
-                                                    className="text-destructive hover:text-destructive button-press"
-                                                >
-                                                    <AlertCircle className="h-4 w-4" />
-                                                    Delete
-                                                </Button>
-                                            </div>
+                            {viewMode === 'grid' ? (
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                    {processedTunnels.map((tunnel, index) => (
+                                        <div
+                                            key={tunnel.id}
+                                            className="fade-in"
+                                            style={{ animationDelay: `${index * 0.05}s` }}
+                                        >
+                                            <TunnelCard
+                                                tunnel={tunnel}
+                                                onSync={handleSync}
+                                                onDelete={handleDelete}
+                                                onCopy={copyToClipboard}
+                                                isSyncing={syncTunnel.isPending}
+                                                isDeleting={deleteTunnel.isPending}
+                                            />
                                         </div>
-
-                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t">
-                                            <div>
-                                                <p className="text-xs text-muted-foreground mb-1">Tunnel ID</p>
-                                                <p className="text-sm font-medium font-mono truncate" title={tunnel.tunnel_id}>{tunnel.tunnel_id}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-xs text-muted-foreground mb-1">Status</p>
-                                                <p className="text-sm font-medium">{tunnel.status}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-xs text-muted-foreground mb-1">Created</p>
-                                                <p className="text-sm font-medium">
-                                                    {new Date(tunnel.created_at).toLocaleDateString()}
-                                                </p>
-                                            </div>
-                                            <div>
-                                                <p className="text-xs text-muted-foreground mb-1">Last Synced</p>
-                                                <p className="text-sm font-medium">
-                                                    {tunnel.last_synced_at
-                                                        ? new Date(tunnel.last_synced_at).toLocaleString()
-                                                        : 'Never'
-                                                    }
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </CardContent>
-                                </Card>
-                            ))}
+                                    ))}
+                                </div>
+                            ) : (
+                                <TunnelTable
+                                    tunnels={processedTunnels}
+                                    onSync={handleSync}
+                                    onDelete={handleDelete}
+                                    onCopy={copyToClipboard}
+                                    isSyncing={syncTunnel.isPending}
+                                    isDeleting={deleteTunnel.isPending}
+                                />
+                            )}
                         </div>
                     )}
                 </CardContent>

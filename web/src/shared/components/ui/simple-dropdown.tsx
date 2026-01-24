@@ -28,13 +28,14 @@ function SimpleDropdownProvider({ children, isOpen, setIsOpen }: {
 
 function SimpleDropdown({ children, trigger, className }: SimpleDropdownProps) {
     const [isOpen, setIsOpen] = React.useState(false)
+    const dropdownRef = React.useRef<HTMLDivElement>(null)
 
     const toggleDropdown = () => setIsOpen(!isOpen)
 
     // Close dropdown when clicking outside
     React.useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (isOpen && !event.composedPath().includes(document.getElementById('simple-dropdown-trigger') as Node)) {
+            if (isOpen && dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
                 setIsOpen(false)
             }
         }
@@ -45,7 +46,7 @@ function SimpleDropdown({ children, trigger, className }: SimpleDropdownProps) {
 
     return (
         <SimpleDropdownProvider isOpen={isOpen} setIsOpen={setIsOpen}>
-            <div className="relative" id="simple-dropdown-trigger">
+            <div className="relative" ref={dropdownRef}>
                 <div onClick={toggleDropdown} className="cursor-pointer">
                     {trigger}
                 </div>
@@ -79,6 +80,7 @@ function SimpleDropdownItem({ children, onClick, className, href }: SimpleDropdo
 
     const handleClick = (e: React.MouseEvent) => {
         e.preventDefault()
+        e.stopPropagation()
         if (onClick) {
             onClick()
         }

@@ -30,6 +30,8 @@ Thumbs.db
 # Build artifacts
 dist/
 build/
+tmp/
+build-errors.log
 
 # Environment
 .env

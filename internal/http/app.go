@@ -584,6 +584,12 @@ func (s *Server) updateAppContainers(c *gin.Context) {
 		return
 	}
 
+	slog.InfoContext(c.Request.Context(), "initiating app container update", 
+		"app", app.Name, 
+		"appID", id, 
+		"currentStatus", app.Status,
+		"appsDir", s.config.AppsDir)
+
 	// Update status to updating
 	app.Status = statusUpdating
 	app.UpdatedAt = time.Now()
@@ -593,34 +599,63 @@ func (s *Server) updateAppContainers(c *gin.Context) {
 		return
 	}
 
+	slog.InfoContext(c.Request.Context(), "app status set to updating, starting docker compose update", 
+		"app", app.Name, 
+		"appID", id)
+
 	dockerManager := docker.NewManager(s.config.AppsDir)
 	if err := dockerManager.UpdateApp(app.Name); err != nil {
 		// Update status to error
+		slog.ErrorContext(c.Request.Context(), "docker compose update failed", 
+			"app", app.Name, 
+			"appID", id, 
+			"error", err,
+			"errorDetails", err.Error())
+		
 		app.Status = statusError
 		errorMessage := err.Error()
 		app.ErrorMessage = &errorMessage
 		app.UpdatedAt = time.Now()
-		if err := s.database.UpdateApp(app); err != nil {
-			slog.ErrorContext(c.Request.Context(), "failed to update app status to error", "app", app.Name, "appID", id, "error", err)
+		if dbErr := s.database.UpdateApp(app); dbErr != nil {
+			slog.ErrorContext(c.Request.Context(), "failed to update app status to error after update failure", 
+				"app", app.Name, 
+				"appID", id, 
+				"updateError", err,
+				"dbError", dbErr)
 			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to update app status"})
 			return
 		}
-		slog.ErrorContext(c.Request.Context(), "failed to update app containers", "app", app.Name, "appID", id, "error", err)
+		
+		slog.ErrorContext(c.Request.Context(), "app status updated to error", 
+			"app", app.Name, 
+			"appID", id, 
+			"errorMessage", errorMessage)
+		
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to update app containers", Details: err.Error()})
 		return
 	}
 
 	// Update status to running
+	slog.InfoContext(c.Request.Context(), "docker compose update completed successfully, updating app status to running", 
+		"app", app.Name, 
+		"appID", id)
+	
 	app.Status = statusRunning
 	app.ErrorMessage = nil // Clear any previous error message
 	app.UpdatedAt = time.Now()
 	if err := s.database.UpdateApp(app); err != nil {
-		slog.ErrorContext(c.Request.Context(), "failed to update app status to running", "app", app.Name, "appID", id, "error", err)
+		slog.ErrorContext(c.Request.Context(), "failed to update app status to running after successful update", 
+			"app", app.Name, 
+			"appID", id, 
+			"error", err)
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to update app status"})
 		return
 	}
 
-	slog.InfoContext(c.Request.Context(), "app containers updated successfully", "app", app.Name, "appID", id)
+	slog.InfoContext(c.Request.Context(), "app containers updated successfully", 
+		"app", app.Name, 
+		"appID", id,
+		"finalStatus", app.Status)
 	c.JSON(http.StatusOK, app)
 }
 
@@ -649,6 +684,48 @@ func (s *Server) getAppLogs(c *gin.Context) {
 
 	c.Header("Content-Type", "text/plain")
 	c.Data(http.StatusOK, "text/plain", logs)
+}
+
+// getAppStats returns real-time resource statistics for an app
+func (s *Server) getAppStats(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
+		return
+	}
+
+	app, err := s.database.GetApp(id)
+	if err != nil {
+		slog.DebugContext(c.Request.Context(), "app not found for stats", "appID", id)
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "App not found"})
+		return
+	}
+
+	// Only fetch stats if app is running
+	if app.Status != statusRunning {
+		// Return empty stats for non-running apps
+		c.JSON(http.StatusOK, gin.H{
+			"app_name":              app.Name,
+			"total_cpu_percent":     0,
+			"total_memory_bytes":    0,
+			"memory_limit_bytes":    0,
+			"containers":            []interface{}{},
+			"timestamp":             time.Now(),
+			"status":                app.Status,
+			"message":               fmt.Sprintf("App is %s", app.Status),
+		})
+		return
+	}
+
+	dockerManager := docker.NewManager(s.config.AppsDir)
+	stats, err := dockerManager.GetAppStats(app.Name)
+	if err != nil {
+		slog.ErrorContext(c.Request.Context(), "failed to get app stats", "app", app.Name, "appID", id, "error", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to retrieve stats", Details: err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, stats)
 }
 
 // repairApp repairs an app's compose file if needed (e.g., adds missing cloudflared token)

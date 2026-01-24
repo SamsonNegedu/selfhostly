@@ -88,3 +88,26 @@ export interface ComposeVersion {
 export interface RollbackRequest {
   change_reason?: string;
 }
+
+export interface AppStats {
+  app_name: string;
+  total_cpu_percent: number;
+  total_memory_bytes: number;
+  memory_limit_bytes: number;
+  containers: ContainerStat[];
+  timestamp: string;
+  status?: string;
+  message?: string;
+}
+
+export interface ContainerStat {
+  container_id: string;
+  container_name: string;
+  cpu_percent: number;
+  memory_usage_bytes: number;
+  memory_limit_bytes: number;
+  network_rx_bytes: number;
+  network_tx_bytes: number;
+  block_read_bytes: number;
+  block_write_bytes: number;
+}

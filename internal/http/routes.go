@@ -65,6 +65,7 @@ func (s *Server) setupAppRoutes(api *gin.RouterGroup) {
 		apps.POST("/:id/stop", s.stopApp)
 		apps.POST("/:id/update", s.updateAppContainers)
 		apps.GET("/:id/logs", s.getAppLogs)
+		apps.GET("/:id/stats", s.getAppStats)
 		apps.POST("/:id/repair", s.repairApp)
 
 		// Compose version routes

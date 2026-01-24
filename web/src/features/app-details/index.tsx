@@ -6,9 +6,8 @@ import { useNavigate } from 'react-router-dom'
 import { useToast } from '@/shared/components/ui/Toast'
 import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/card'
 import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog'
-import { RefreshCw, Terminal, Settings, Cloud, Info, AlertTriangle } from 'lucide-react'
+import { Terminal, Settings, Cloud, Info, AlertTriangle, Activity } from 'lucide-react'
 import { Button } from '@/shared/components/ui/button'
-import UpdateProgress from './components/UpdateProgress'
 import LogViewer from './components/LogViewer'
 import ComposeEditor from './components/ComposeEditor'
 import CloudflareTab from './components/CloudflareTab'
@@ -16,8 +15,9 @@ import { AppActions } from './components/AppActions'
 import AppBreadcrumb from '@/shared/components/layout/Breadcrumb'
 import { AppDetailsSkeleton } from '@/shared/components/ui/Skeleton'
 import AppOverview from './components/AppOverview'
+import { ResourceMetrics } from './components/ResourceMetrics'
 
-type TabType = 'overview' | 'compose' | 'logs' | 'update' | 'cloudflare'
+type TabType = 'overview' | 'resources' | 'compose' | 'logs' | 'cloudflare'
 
 function AppDetails() {
     const { id } = useParams<{ id: string }>()
@@ -121,8 +121,8 @@ function AppDetails() {
 
     const tabs = [
         { id: 'overview' as TabType, label: 'Overview', icon: Info },
+        { id: 'resources' as TabType, label: 'Resources', icon: Activity },
         { id: 'compose' as TabType, label: 'Compose Editor', icon: Settings },
-        { id: 'update' as TabType, label: 'Deploy Updates', icon: RefreshCw },
         { id: 'logs' as TabType, label: 'Logs', icon: Terminal },
         { id: 'cloudflare' as TabType, label: 'Cloudflare', icon: Cloud },
     ]
@@ -253,14 +253,14 @@ function AppDetails() {
                     {activeTab === 'overview' && (
                         <AppOverview app={app} />
                     )}
+                    {activeTab === 'resources' && (
+                        <ResourceMetrics appId={app.id} appStatus={app.status} isFullPage={true} />
+                    )}
                     {activeTab === 'compose' && (
                         <ComposeEditor
                             appId={app.id}
                             initialComposeContent={app.compose_content}
                         />
-                    )}
-                    {activeTab === 'update' && (
-                        <UpdateProgress appId={app.id} />
                     )}
                     {activeTab === 'logs' && (
                         <LogViewer appId={app.id} />
