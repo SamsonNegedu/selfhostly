@@ -1,36 +1,18 @@
 package http
 
 import (
-	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/selfhostly/internal/docker"
-	"github.com/selfhostly/internal/system"
 )
 
 // getSystemStats returns comprehensive system and container statistics
 func (s *Server) getSystemStats(c *gin.Context) {
-	slog.DebugContext(c.Request.Context(), "fetching system statistics")
-
-	// Create system stats collector
-	collector := system.NewCollector(s.config.AppsDir, s.dockerManager)
-
-	// Get system stats
-	stats, err := collector.GetSystemStats()
+	stats, err := s.systemService.GetSystemStats(c.Request.Context())
 	if err != nil {
-		slog.ErrorContext(c.Request.Context(), "failed to get system stats", "error", err)
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:   "Failed to retrieve system statistics",
-			Details: err.Error(),
-		})
+		s.handleServiceError(c, "get system stats", err)
 		return
 	}
-
-	slog.DebugContext(c.Request.Context(), "system statistics retrieved successfully",
-		"cpu", stats.CPU.UsagePercent,
-		"memory", stats.Memory.UsagePercent,
-		"containers", len(stats.Containers))
 
 	c.JSON(http.StatusOK, stats)
 }
@@ -43,20 +25,11 @@ func (s *Server) restartContainer(c *gin.Context) {
 		return
 	}
 
-	slog.InfoContext(c.Request.Context(), "restarting container", "containerID", containerID)
-
-	dockerManager := docker.NewManager(s.config.AppsDir)
-	if err := dockerManager.RestartContainer(containerID); err != nil {
-		slog.ErrorContext(c.Request.Context(), "failed to restart container",
-			"containerID", containerID, "error", err)
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:   "Failed to restart container",
-			Details: err.Error(),
-		})
+	if err := s.systemService.RestartContainer(c.Request.Context(), containerID); err != nil {
+		s.handleServiceError(c, "restart container", err)
 		return
 	}
 
-	slog.InfoContext(c.Request.Context(), "container restarted successfully", "containerID", containerID)
 	c.JSON(http.StatusOK, gin.H{
 		"message":      "Container restarted successfully",
 		"container_id": containerID,
@@ -71,20 +44,11 @@ func (s *Server) stopContainer(c *gin.Context) {
 		return
 	}
 
-	slog.InfoContext(c.Request.Context(), "stopping container", "containerID", containerID)
-
-	dockerManager := docker.NewManager(s.config.AppsDir)
-	if err := dockerManager.StopContainer(containerID); err != nil {
-		slog.ErrorContext(c.Request.Context(), "failed to stop container",
-			"containerID", containerID, "error", err)
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:   "Failed to stop container",
-			Details: err.Error(),
-		})
+	if err := s.systemService.StopContainer(c.Request.Context(), containerID); err != nil {
+		s.handleServiceError(c, "stop container", err)
 		return
 	}
 
-	slog.InfoContext(c.Request.Context(), "container stopped successfully", "containerID", containerID)
 	c.JSON(http.StatusOK, gin.H{
 		"message":      "Container stopped successfully",
 		"container_id": containerID,
@@ -99,10 +63,7 @@ func (s *Server) getDebugDockerStats(c *gin.Context) {
 		return
 	}
 
-	slog.InfoContext(c.Request.Context(), "fetching debug docker stats", "containerID", containerID)
-
-	dockerManager := docker.NewManager(s.config.AppsDir)
-	executor := dockerManager.GetCommandExecutor()
+	executor := s.dockerManager.GetCommandExecutor()
 	
 	// Get raw docker stats output
 	statsOutput, err := executor.ExecuteCommand(
@@ -125,7 +86,7 @@ func (s *Server) getDebugDockerStats(c *gin.Context) {
 		"container_id":   containerID,
 		"container_name": string(inspectOutput),
 		"raw_output":     string(statsOutput),
-		"note":          "This shows the raw docker stats output to help debug parsing issues",
+		"note":           "This shows the raw docker stats output to help debug parsing issues",
 	})
 }
 
@@ -137,20 +98,11 @@ func (s *Server) deleteContainer(c *gin.Context) {
 		return
 	}
 
-	slog.InfoContext(c.Request.Context(), "deleting container", "containerID", containerID)
-
-	dockerManager := docker.NewManager(s.config.AppsDir)
-	if err := dockerManager.DeleteContainer(containerID); err != nil {
-		slog.ErrorContext(c.Request.Context(), "failed to delete container",
-			"containerID", containerID, "error", err)
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:   "Failed to delete container",
-			Details: err.Error(),
-		})
+	if err := s.systemService.DeleteContainer(c.Request.Context(), containerID); err != nil {
+		s.handleServiceError(c, "delete container", err)
 		return
 	}
 
-	slog.InfoContext(c.Request.Context(), "container deleted successfully", "containerID", containerID)
 	c.JSON(http.StatusOK, gin.H{
 		"message":      "Container deleted successfully",
 		"container_id": containerID,

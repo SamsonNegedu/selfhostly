@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/selfhostly/internal/cloudflare"
 	"github.com/selfhostly/internal/db"
+	"github.com/selfhostly/internal/domain"
 )
 
 // convertHostnamePtr converts a hostname string to a string pointer
@@ -146,23 +147,9 @@ type CloudflareTunnelResponse struct {
 
 // listCloudflareTunnels returns all active Cloudflare tunnels
 func (s *Server) listCloudflareTunnels(c *gin.Context) {
-	settings, err := s.database.GetSettings()
+	tunnels, err := s.tunnelService.ListActiveTunnels(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to get settings"})
-		return
-	}
-
-	if settings.CloudflareAPIToken == nil || settings.CloudflareAccountID == nil ||
-		*settings.CloudflareAPIToken == "" || *settings.CloudflareAccountID == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Cloudflare API credentials not configured"})
-		return
-	}
-
-	cfManager := cloudflare.NewTunnelManager(*settings.CloudflareAPIToken, *settings.CloudflareAccountID, s.database)
-	tunnels, err := cfManager.GetAllActiveTunnels()
-	if err != nil {
-		slog.ErrorContext(c.Request.Context(), "failed to get tunnels", "error", err)
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to get tunnels", Details: err.Error()})
+		s.handleServiceError(c, "list tunnels", err)
 		return
 	}
 
@@ -209,39 +196,14 @@ func (s *Server) getCloudflareTunnel(c *gin.Context) {
 		return
 	}
 
-	app, err := s.database.GetApp(appID)
+	tunnel, err := s.tunnelService.GetTunnelByAppID(c.Request.Context(), appID)
 	if err != nil {
-		slog.DebugContext(c.Request.Context(), "app not found", "appID", appID)
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "App not found"})
+		s.handleServiceError(c, "get tunnel", err)
 		return
 	}
 
-	settings, err := s.database.GetSettings()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to get settings"})
-		return
-	}
-
-	if settings.CloudflareAPIToken == nil || settings.CloudflareAccountID == nil ||
-		*settings.CloudflareAPIToken == "" || *settings.CloudflareAccountID == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Cloudflare API credentials not configured"})
-		return
-	}
-
-	// Check if the app has a tunnel configured
-	slog.DebugContext(c.Request.Context(), "checking tunnel configuration", "appID", appID, "tunnelID", app.TunnelID, "tunnelToken", app.TunnelToken)
-	if app.TunnelID == "" {
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "App has no Cloudflare tunnel configured"})
-		return
-	}
-
-	// Get the tunnel record from the database to get ingress rules
-	tunnel, err := s.database.GetCloudflareTunnelByAppID(app.ID)
-	if err != nil {
-		slog.ErrorContext(c.Request.Context(), "failed to get tunnel record", "appID", appID, "error", err)
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to get tunnel record", Details: err.Error()})
-		return
-	}
+	// Get app for public URL
+	app, _ := s.appService.GetApp(c.Request.Context(), appID)
 
 	var errorDetails string
 	if tunnel.ErrorDetails != nil {
@@ -294,63 +256,13 @@ func (s *Server) syncCloudflareTunnel(c *gin.Context) {
 		return
 	}
 
-	app, err := s.database.GetApp(appID)
-	if err != nil {
-		slog.DebugContext(c.Request.Context(), "app not found", "appID", appID)
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "App not found"})
+	if err := s.tunnelService.SyncTunnelStatus(c.Request.Context(), appID); err != nil {
+		s.handleServiceError(c, "sync tunnel", err)
 		return
-	}
-
-	settings, err := s.database.GetSettings()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to get settings"})
-		return
-	}
-
-	if settings.CloudflareAPIToken == nil || settings.CloudflareAccountID == nil ||
-		*settings.CloudflareAPIToken == "" || *settings.CloudflareAccountID == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Cloudflare API credentials not configured"})
-		return
-	}
-
-	if app.TunnelID == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "App has no Cloudflare tunnel"})
-		return
-	}
-
-	// Simple sync implementation - update last_synced_at in database
-	now := time.Now()
-
-	// Get the existing tunnel record first
-	existingTunnel, err := s.database.GetCloudflareTunnelByAppID(app.ID)
-	if err != nil {
-		slog.ErrorContext(c.Request.Context(), "failed to get tunnel for sync", "tunnelID", app.TunnelID, "error", err)
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to get tunnel record", Details: err.Error()})
-		return
-	}
-
-	// Update only the sync time and update timestamp
-	existingTunnel.LastSyncedAt = &now
-	existingTunnel.UpdatedAt = now
-
-	if err := s.database.UpdateCloudflareTunnel(existingTunnel); err != nil {
-		slog.ErrorContext(c.Request.Context(), "failed to update tunnel sync time", "tunnelID", app.TunnelID, "error", err)
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to sync tunnel", Details: err.Error()})
-		return
-	}
-
-	// Optionally, make a simple API call to verify Cloudflare connectivity
-	cfManager := cloudflare.NewTunnelManager(*settings.CloudflareAPIToken, *settings.CloudflareAccountID, s.database)
-	_, apiErr := cfManager.ApiManager.GetTunnelToken(app.TunnelID)
-	if apiErr != nil {
-		slog.WarnContext(c.Request.Context(), "Cloudflare API verification failed, but local sync completed", "tunnelID", app.TunnelID, "error", apiErr)
-	} else {
-		slog.InfoContext(c.Request.Context(), "Tunnel synchronized successfully", "tunnelID", app.TunnelID, "syncedAt", now.Format(time.RFC3339))
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":   "Tunnel synchronized successfully",
-		"tunnel_id": app.TunnelID,
 		"synced_at": time.Now().Format(time.RFC3339),
 	})
 }
@@ -363,53 +275,14 @@ func (s *Server) deleteCloudflareTunnel(c *gin.Context) {
 		return
 	}
 
-	app, err := s.database.GetApp(appID)
-	if err != nil {
-		slog.DebugContext(c.Request.Context(), "app not found", "appID", appID)
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "App not found"})
+	if err := s.tunnelService.DeleteTunnel(c.Request.Context(), appID); err != nil {
+		s.handleServiceError(c, "delete tunnel", err)
 		return
 	}
 
-	settings, err := s.database.GetSettings()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to get settings"})
-		return
-	}
-
-	if settings.CloudflareAPIToken == nil || settings.CloudflareAccountID == nil ||
-		*settings.CloudflareAPIToken == "" || *settings.CloudflareAccountID == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Cloudflare API credentials not configured"})
-		return
-	}
-
-	if app.TunnelID == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "App has no Cloudflare tunnel"})
-		return
-	}
-
-	cfManager := cloudflare.NewTunnelManager(*settings.CloudflareAPIToken, *settings.CloudflareAccountID, s.database)
-	if err := cfManager.DeleteTunnelByAppID(appID); err != nil {
-		slog.ErrorContext(c.Request.Context(), "failed to delete tunnel", "tunnelID", app.TunnelID, "error", err)
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to delete tunnel", Details: err.Error()})
-		return
-	}
-
-	// Update the app to remove tunnel references
-	app.TunnelID = ""
-	app.TunnelToken = ""
-	app.PublicURL = ""
-	app.UpdatedAt = time.Now()
-	if err := s.database.UpdateApp(app); err != nil {
-		slog.ErrorContext(c.Request.Context(), "failed to update app after tunnel deletion", "appID", appID, "error", err)
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to update app", Details: err.Error()})
-		return
-	}
-
-	slog.InfoContext(c.Request.Context(), "Cloudflare tunnel deleted successfully", "appID", appID, "tunnelID", app.TunnelID)
 	c.JSON(http.StatusOK, gin.H{
-		"message":   "Tunnel deleted successfully",
-		"app_id":    appID,
-		"tunnel_id": app.TunnelID,
+		"message": "Tunnel deleted successfully",
+		"app_id":  appID,
 	})
 }
 
@@ -421,69 +294,31 @@ func (s *Server) updateTunnelIngress(c *gin.Context) {
 		return
 	}
 
-	app, err := s.database.GetApp(appID)
-	if err != nil {
-		slog.DebugContext(c.Request.Context(), "app not found", "appID", appID)
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "App not found"})
-		return
-	}
-
-	settings, err := s.database.GetSettings()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to get settings"})
-		return
-	}
-
-	if settings.CloudflareAPIToken == nil || settings.CloudflareAccountID == nil ||
-		*settings.CloudflareAPIToken == "" || *settings.CloudflareAccountID == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Cloudflare API credentials not configured"})
-		return
-	}
-
-	if app.TunnelID == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "App has no Cloudflare tunnel"})
-		return
-	}
-
-	// Parse the ingress configuration from request body
-	var ingressConfig struct {
-		IngressRules []cloudflare.IngressRule `json:"ingress_rules"`
-		Hostname     string                   `json:"hostname,omitempty"`
-		TargetDomain string                   `json:"target_domain,omitempty"`
-	}
-
-	if err := c.ShouldBindJSON(&ingressConfig); err != nil {
+	var req domain.UpdateIngressRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid ingress configuration format"})
 		return
 	}
 
-	// Ensure there's a catch-all rule at the end if not provided
-	if len(ingressConfig.IngressRules) == 0 || ingressConfig.IngressRules[len(ingressConfig.IngressRules)-1].Service != "http_status:404" {
-		ingressConfig.IngressRules = append(ingressConfig.IngressRules, cloudflare.IngressRule{
-			Service: "http_status:404",
-		})
-	}
-
-	// Apply ingress rules using the shared helper (without DNS creation)
-	if err := s.applyIngressRulesInternal(app, app.TunnelID, ingressConfig.IngressRules, settings, false); err != nil {
-		slog.ErrorContext(c.Request.Context(), "failed to apply ingress rules", "appID", appID, "error", err)
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to apply ingress rules", Details: err.Error()})
+	if err := s.tunnelService.UpdateTunnelIngress(c.Request.Context(), appID, req); err != nil {
+		s.handleServiceError(c, "update tunnel ingress", err)
 		return
 	}
 
-	slog.InfoContext(c.Request.Context(), "Tunnel ingress configuration updated successfully", "appID", appID, "tunnelID", app.TunnelID)
+	app, _ := s.appService.GetApp(c.Request.Context(), appID)
 
 	response := gin.H{
 		"message":       "Tunnel ingress configuration updated successfully",
 		"app_id":        appID,
-		"tunnel_id":     app.TunnelID,
-		"ingress_rules": ingressConfig.IngressRules,
+		"ingress_rules": req.IngressRules,
 	}
 
-	// Add DNS information if a hostname was provided
-	if ingressConfig.Hostname != "" {
-		response["hostname"] = ingressConfig.Hostname
-		response["public_url"] = fmt.Sprintf("https://%s", ingressConfig.Hostname)
+	if req.Hostname != "" {
+		response["hostname"] = req.Hostname
+		response["public_url"] = fmt.Sprintf("https://%s", req.Hostname)
+	}
+	if app != nil {
+		response["tunnel_id"] = app.TunnelID
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -497,33 +332,8 @@ func (s *Server) createDNSRecord(c *gin.Context) {
 		return
 	}
 
-	app, err := s.database.GetApp(appID)
-	if err != nil {
-		slog.DebugContext(c.Request.Context(), "app not found", "appID", appID)
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "App not found"})
-		return
-	}
-
-	settings, err := s.database.GetSettings()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to get settings"})
-		return
-	}
-
-	if settings.CloudflareAPIToken == nil || settings.CloudflareAccountID == nil ||
-		*settings.CloudflareAPIToken == "" || *settings.CloudflareAccountID == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Cloudflare API credentials not configured"})
-		return
-	}
-
-	if app.TunnelID == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "App has no Cloudflare tunnel"})
-		return
-	}
-
-	// Parse the DNS record request
 	var dnsRequest struct {
-		Hostname string `json:"hostname"`
+		Hostname string `json:"hostname" binding:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&dnsRequest); err != nil {
@@ -531,59 +341,41 @@ func (s *Server) createDNSRecord(c *gin.Context) {
 		return
 	}
 
-	if dnsRequest.Hostname == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Hostname is required"})
-		return
-	}
-
-	cfManager := cloudflare.NewTunnelManager(*settings.CloudflareAPIToken, *settings.CloudflareAccountID, s.database)
-
-	// Extract domain from hostname (remove subdomain)
-	domain := dnsRequest.Hostname
+	// Extract domain from hostname
+	domainName := dnsRequest.Hostname
 	if strings.Contains(dnsRequest.Hostname, ".") {
 		parts := strings.Split(dnsRequest.Hostname, ".")
 		if len(parts) > 1 {
-			domain = strings.Join(parts[len(parts)-2:], ".")
+			domainName = strings.Join(parts[len(parts)-2:], ".")
 		}
 	}
 
-	// Get zone ID for the domain
-	zoneID, err := cfManager.ApiManager.GetZoneID(domain)
-	if err != nil {
-		slog.ErrorContext(c.Request.Context(), "failed to get zone ID", "domain", domain, "error", err)
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to get zone ID for domain", Details: err.Error()})
+	req := domain.CreateDNSRequest{
+		Hostname: dnsRequest.Hostname,
+		Domain:   domainName,
+	}
+
+	if err := s.tunnelService.CreateDNSRecord(c.Request.Context(), appID, req); err != nil {
+		s.handleServiceError(c, "create DNS record", err)
 		return
 	}
 
-	// Create DNS record
-	recordID, err := cfManager.ApiManager.CreateDNSRecord(zoneID, dnsRequest.Hostname, app.TunnelID)
-	if err != nil {
-		slog.ErrorContext(c.Request.Context(), "failed to create DNS record", "hostname", dnsRequest.Hostname, "tunnelID", app.TunnelID, "error", err)
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to create DNS record", Details: err.Error()})
-		return
-	}
-
-	// Update the app with the DNS hostname
-	app.TunnelDomain = dnsRequest.Hostname
-	app.PublicURL = fmt.Sprintf("https://%s", dnsRequest.Hostname)
-	app.UpdatedAt = time.Now()
-
-	// Update app record
-	if err := s.database.UpdateApp(app); err != nil {
-		slog.ErrorContext(c.Request.Context(), "failed to update app after DNS creation", "appID", appID, "error", err)
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to update app", Details: err.Error()})
-		return
-	}
-
-	slog.InfoContext(c.Request.Context(), "DNS record created successfully",
-		"appID", appID, "hostname", dnsRequest.Hostname, "tunnelID", app.TunnelID, "zoneID", zoneID, "recordID", recordID)
+	// Get updated app
+	app, _ := s.appService.GetApp(c.Request.Context(), appID)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":    "DNS record created successfully",
 		"app_id":     appID,
 		"hostname":   dnsRequest.Hostname,
-		"public_url": app.PublicURL,
-		"zone_id":    zoneID,
-		"record_id":  recordID,
+		"public_url": fmt.Sprintf("https://%s", dnsRequest.Hostname),
 	})
+	
+	if app != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"message":    "DNS record created successfully",
+			"app_id":     appID,
+			"hostname":   dnsRequest.Hostname,
+			"public_url": app.PublicURL,
+		})
+	}
 }

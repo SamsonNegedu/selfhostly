@@ -13,15 +13,21 @@ import (
 	"github.com/selfhostly/internal/config"
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/docker"
+	"github.com/selfhostly/internal/domain"
+	"github.com/selfhostly/internal/service"
 )
 
 // Server wraps the HTTP server
 type Server struct {
-	config        *config.Config
-	database      *db.DB
-	dockerManager *docker.Manager
-	engine        *gin.Engine
-	authService   *auth.Service
+	config         *config.Config
+	database       *db.DB // Kept temporarily for settings access
+	dockerManager  *docker.Manager // Kept temporarily for backward compatibility
+	appService     domain.AppService
+	tunnelService  domain.TunnelService
+	systemService  domain.SystemService
+	composeService domain.ComposeService
+	engine         *gin.Engine
+	authService    *auth.Service
 }
 
 // NewServer creates a new HTTP server
@@ -52,13 +58,26 @@ func NewServer(cfg *config.Config, database *db.DB) *Server {
 	// Initialize docker manager
 	dockerManager := docker.NewManager(cfg.AppsDir)
 
+	// Initialize logger
+	logger := slog.Default()
+
+	// Initialize services (Phase 2 integration)
+	appService := service.NewAppService(database, dockerManager, cfg, logger)
+	tunnelService := service.NewTunnelService(database, logger)
+	systemService := service.NewSystemService(database, dockerManager, cfg, logger)
+	composeService := service.NewComposeService(database, dockerManager, logger)
+
 	// Initialize server
 	server := &Server{
-		config:        cfg,
-		database:      database,
-		dockerManager: dockerManager,
-		engine:        engine,
-		authService:   authService,
+		config:         cfg,
+		database:       database,
+		dockerManager:  dockerManager,
+		appService:     appService,
+		tunnelService:  tunnelService,
+		systemService:  systemService,
+		composeService: composeService,
+		engine:         engine,
+		authService:    authService,
 	}
 
 	// Setup routes
