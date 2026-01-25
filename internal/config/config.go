@@ -60,6 +60,7 @@ func Load() (*Config, error) {
 		},
 		Auth: AuthConfig{
 			Enabled:      getEnv("AUTH_ENABLED", "false") == "true",
+			JWTSecret:    getEnv("JWT_SECRET", "change-me-in-production-secret-key"),
 			CookieDomain: getEnv("AUTH_COOKIE_DOMAIN", "localhost"),
 			SecureCookie: getEnv("AUTH_SECURE_COOKIE", "false") == "true",
 			BaseURL:      getEnv("AUTH_BASE_URL", "http://localhost:8080"),

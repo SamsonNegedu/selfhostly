@@ -227,17 +227,33 @@ func TestStopApp(t *testing.T) {
 // TestUpdateApp tests the UpdateApp function with mock command executor
 func TestUpdateApp(t *testing.T) {
 	mockExecutor := NewMockCommandExecutor()
-	appsDir := "/tmp/apps"
-	manager := NewManagerWithExecutor(appsDir, mockExecutor)
+	
+	// Create temp directory
+	tmpDir, err := ioutil.TempDir("", "docker-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+	
+	manager := NewManagerWithExecutor(tmpDir, mockExecutor)
 	
 	appName := "test-app"
-	appPath := filepath.Join(appsDir, appName)
+	appPath := filepath.Join(tmpDir, appName)
+	
+	// Create app directory and compose file for the test
+	if err := os.MkdirAll(appPath, 0755); err != nil {
+		t.Fatalf("Failed to create app directory: %v", err)
+	}
+	composePath := filepath.Join(appPath, "docker-compose.yml")
+	if err := ioutil.WriteFile(composePath, []byte("version: '3'\nservices:\n  test:\n    image: nginx"), 0644); err != nil {
+		t.Fatalf("Failed to create compose file: %v", err)
+	}
 	
 	// Mock successful command execution with new flags
 	mockExecutor.SetMockOutput("docker", []string{"compose", "-f", "docker-compose.yml", "pull", "--ignore-buildable"}, []byte("success"))
 	mockExecutor.SetMockOutput("docker", []string{"compose", "-f", "docker-compose.yml", "up", "-d", "--build"}, []byte("success"))
 	
-	err := manager.UpdateApp(appName)
+	err = manager.UpdateApp(appName)
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
@@ -267,11 +283,27 @@ func TestUpdateApp(t *testing.T) {
 // TestUpdateAppWithPullFailure tests UpdateApp when pull fails but build succeeds
 func TestUpdateAppWithPullFailure(t *testing.T) {
 	mockExecutor := NewMockCommandExecutor()
-	appsDir := "/tmp/apps"
-	manager := NewManagerWithExecutor(appsDir, mockExecutor)
+	
+	// Create temp directory
+	tmpDir, err := ioutil.TempDir("", "docker-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+	
+	manager := NewManagerWithExecutor(tmpDir, mockExecutor)
 	
 	appName := "test-app-with-build"
-	appPath := filepath.Join(appsDir, appName)
+	appPath := filepath.Join(tmpDir, appName)
+	
+	// Create app directory and compose file for the test
+	if err := os.MkdirAll(appPath, 0755); err != nil {
+		t.Fatalf("Failed to create app directory: %v", err)
+	}
+	composePath := filepath.Join(appPath, "docker-compose.yml")
+	if err := ioutil.WriteFile(composePath, []byte("version: '3'\nservices:\n  test:\n    build: ."), 0644); err != nil {
+		t.Fatalf("Failed to create compose file: %v", err)
+	}
 	
 	// Mock pull failure (e.g., all services use build:) but successful build
 	mockExecutor.SetMockError("docker", []string{"compose", "-f", "docker-compose.yml", "pull", "--ignore-buildable"}, 
@@ -279,7 +311,7 @@ func TestUpdateAppWithPullFailure(t *testing.T) {
 	mockExecutor.SetMockOutput("docker", []string{"compose", "-f", "docker-compose.yml", "up", "-d", "--build"}, []byte("success"))
 	
 	// Update should succeed despite pull failure
-	err := manager.UpdateApp(appName)
+	err = manager.UpdateApp(appName)
 	if err != nil {
 		t.Errorf("Expected no error when pull fails but build succeeds, got %v", err)
 	}
