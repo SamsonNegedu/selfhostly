@@ -10,9 +10,10 @@ interface ContainerActionsProps {
   containerName: string;
   containerState: string;
   appName: string;
+  isManaged: boolean;
 }
 
-function ContainerActions({ containerId, containerName, containerState, appName }: ContainerActionsProps) {
+function ContainerActions({ containerId, containerName, containerState, appName, isManaged }: ContainerActionsProps) {
   const [restartDialogOpen, setRestartDialogOpen] = useState(false);
   const [stopDialogOpen, setStopDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -55,7 +56,6 @@ function ContainerActions({ containerId, containerName, containerState, appName 
 
   const isRunning = containerState === 'running';
   const isStopped = containerState === 'stopped';
-  const isUnmanaged = appName === 'unmanaged';
 
   return (
     <div className="flex items-center gap-2">
@@ -81,14 +81,14 @@ function ContainerActions({ containerId, containerName, containerState, appName 
         <Square className="h-4 w-4" />
       </Button>
 
-      {/* Delete Button - Only show for unmanaged containers */}
-      {isUnmanaged && (
+      {/* Delete Button - Only show for non-managed containers */}
+      {!isManaged && (
         <Button
           variant="outline"
           size="sm"
           onClick={() => setDeleteDialogOpen(true)}
           disabled={deleteMutation.isPending}
-          title="Delete unmanaged container"
+          title="Delete container (not managed by system)"
           className="text-destructive hover:text-destructive"
         >
           <Trash2 className="h-4 w-4" />
@@ -125,8 +125,8 @@ function ContainerActions({ containerId, containerName, containerState, appName 
       <ConfirmationDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
-        title="Delete Unmanaged Container"
-        description={`Are you sure you want to permanently delete "${containerName}"? This action cannot be undone and will remove the container and any data stored in it (volumes may persist depending on configuration).`}
+        title="Delete Container"
+        description={`Are you sure you want to permanently delete "${containerName}"? This action cannot be undone and will remove the container and any data stored in it (volumes may persist depending on configuration).${appName !== 'unmanaged' ? `\n\nNote: This is an external container (${appName}) not managed by this system.` : ''}`}
         confirmText="Delete Container"
         onConfirm={handleDelete}
         variant="destructive"

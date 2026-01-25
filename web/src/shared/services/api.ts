@@ -456,7 +456,7 @@ export async function logout() {
 // Login with GitHub - redirect to OAuth endpoint
 // Pass 'from' parameter so go-pkgz/auth redirects back to frontend after login
 export function loginWithGitHub() {
-  const redirectTo = encodeURIComponent(`${FRONTEND_URL}/dashboard`);
+  const redirectTo = encodeURIComponent(`${FRONTEND_URL}/apps`);
   window.location.href = `${AUTH_URL}/auth/github/login?from=${redirectTo}`;
 }
 

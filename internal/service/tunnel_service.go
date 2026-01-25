@@ -116,6 +116,7 @@ func (s *tunnelService) UpdateTunnelIngress(ctx context.Context, appID string, r
 		return err
 	}
 
+	s.logger.InfoContext(ctx, "tunnel ingress updated successfully", "tunnelID", tunnel.TunnelID, "appID", appID)
 	return nil
 }
 

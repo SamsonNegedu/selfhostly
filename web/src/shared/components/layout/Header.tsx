@@ -37,7 +37,7 @@ function Header({ onMenuToggle }: HeaderProps) {
                 </Button>
 
                 {/* Logo */}
-                <Link to="/dashboard" className="flex items-center space-x-2 hover:opacity-80 transition-opacity">
+                <Link to="/apps" className="flex items-center space-x-2 hover:opacity-80 transition-opacity">
                     <Server className="h-6 w-6 text-primary" />
                     <span className="font-bold text-xl">Selfhostly</span>
                 </Link>

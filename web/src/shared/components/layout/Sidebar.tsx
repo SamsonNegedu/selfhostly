@@ -11,8 +11,8 @@ interface SidebarProps {
 }
 
 const navItems = [
-  { path: '/dashboard', label: 'Apps', icon: Server },
   { path: '/apps/new', label: 'New App', icon: Plus },
+  { path: '/apps', label: 'Apps', icon: Server },
   { path: '/cloudflare', label: 'Cloudflare', icon: Cloud },
   { path: '/monitoring', label: 'Monitoring', icon: Activity },
   { path: '/settings', label: 'Settings', icon: Settings },
@@ -46,8 +46,8 @@ function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse }: SidebarProp
   }, [isOpen]);
 
   const isActive = (path: string) => {
-    if (path === '/dashboard') {
-      return location.pathname === '/dashboard' || location.pathname === '/';
+    if (path === '/apps') {
+      return location.pathname === '/apps' || location.pathname === '/';
     }
     return location.pathname.startsWith(path);
   };

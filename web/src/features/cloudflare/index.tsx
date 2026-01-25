@@ -8,7 +8,7 @@ function Cloudflare() {
             <div>
                 <AppBreadcrumb
                     items={[
-                        { label: 'Home', path: '/dashboard' },
+                        { label: 'Home', path: '/apps' },
                         { label: 'Cloudflare', isCurrentPage: true }
                     ]}
                 />

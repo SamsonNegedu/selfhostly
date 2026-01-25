@@ -56,7 +56,7 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
     }
 
     if (isAuthenticated) {
-        return <Navigate to="/dashboard" replace />;
+        return <Navigate to="/apps" replace />;
     }
 
     return <>{children}</>;
@@ -80,12 +80,12 @@ function AppRoutes() {
                 path="/"
                 element={
                     <ProtectedRoute>
-                        <Navigate to="/dashboard" replace />
+                        <Navigate to="/apps" replace />
                     </ProtectedRoute>
                 }
             />
             <Route
-                path="/dashboard"
+                path="/apps"
                 element={
                     <ProtectedRoute>
                         <Dashboard />
@@ -134,7 +134,7 @@ function AppRoutes() {
             />
 
             {/* Catch all - redirect to dashboard */}
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            <Route path="*" element={<Navigate to="/apps" replace />} />
         </Routes>
     );
 }

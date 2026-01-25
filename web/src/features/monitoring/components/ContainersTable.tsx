@@ -164,18 +164,40 @@ function ContainersTable({ containers }: ContainersTableProps) {
               {/* Header Row */}
               <div className="flex items-start justify-between mb-4">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-3 mb-2">
+                  {/* Container Name and State */}
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
                     <h3 className="font-mono text-sm font-medium truncate">{container.name}</h3>
                     <Badge className={getStateBadgeColor(container.state)}>{container.state}</Badge>
-                  </div>
-                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                    <span>App: <span className="font-medium">{container.app_name}</span></span>
-                    <span className="font-mono">{container.id.substring(0, 12)}</span>
                     {container.restart_count > 0 && (
-                      <span className="text-yellow-600 dark:text-yellow-400">
+                      <Badge variant="outline" className="text-xs px-1.5 py-0 h-5 bg-yellow-50 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800">
                         Restarts: {container.restart_count}
-                      </span>
+                      </Badge>
                     )}
+                  </div>
+                  
+                  {/* App and Container Info */}
+                  <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground">
+                    {/* App Name with Management Badge */}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-muted-foreground/70">App:</span>
+                      <span className="font-medium text-foreground">{container.app_name}</span>
+                      {container.is_managed && (
+                        <Badge variant="outline" className="text-xs px-1.5 py-0 h-5 bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800">
+                          Managed
+                        </Badge>
+                      )}
+                      {!container.is_managed && container.app_name !== 'unmanaged' && (
+                        <Badge variant="outline" className="text-xs px-1.5 py-0 h-5 bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800">
+                          External
+                        </Badge>
+                      )}
+                    </div>
+                    
+                    {/* Container ID */}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-muted-foreground/70">ID:</span>
+                      <span className="font-mono text-foreground">{container.id.substring(0, 12)}</span>
+                    </div>
                   </div>
                 </div>
                 <ContainerActions
@@ -183,6 +205,7 @@ function ContainersTable({ containers }: ContainersTableProps) {
                   containerName={container.name}
                   containerState={container.state}
                   appName={container.app_name}
+                  isManaged={container.is_managed}
                 />
               </div>
 

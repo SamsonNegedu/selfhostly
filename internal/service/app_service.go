@@ -608,3 +608,23 @@ func (s *appService) RepairApp(ctx context.Context, appID string) (*db.App, erro
 	s.logger.InfoContext(ctx, "app repaired successfully", "app", app.Name, "appID", appID)
 	return app, nil
 }
+
+// RestartCloudflared restarts the cloudflared container for an app
+// This is typically called after updating ingress rules to apply the new configuration
+func (s *appService) RestartCloudflared(ctx context.Context, appID string) error {
+	s.logger.InfoContext(ctx, "restarting cloudflared container", "appID", appID)
+
+	app, err := s.database.GetApp(appID)
+	if err != nil {
+		s.logger.DebugContext(ctx, "app not found for cloudflared restart", "appID", appID)
+		return domain.WrapAppNotFound(appID, err)
+	}
+
+	if err := s.dockerManager.RestartCloudflared(app.Name); err != nil {
+		s.logger.ErrorContext(ctx, "failed to restart cloudflared container", "app", app.Name, "error", err)
+		return domain.WrapContainerOperationFailed("restart cloudflared", err)
+	}
+
+	s.logger.InfoContext(ctx, "cloudflared container restarted successfully", "app", app.Name, "appID", appID)
+	return nil
+}

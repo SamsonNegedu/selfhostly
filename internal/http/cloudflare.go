@@ -8,118 +8,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/selfhostly/internal/cloudflare"
-	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/domain"
 )
-
-// convertHostnamePtr converts a hostname string to a string pointer
-func convertHostnamePtr(hostname string) *string {
-	if hostname == "" {
-		return nil
-	}
-	return &hostname
-}
-
-// convertPathPtr converts a path string to a string pointer
-func convertPathPtr(path string) *string {
-	if path == "" {
-		return nil
-	}
-	return &path
-}
-
-// applyIngressRulesInternal is an internal helper that applies ingress rules to a tunnel
-// It handles: updating tunnel ingress config, storing to DB, creating DNS records, and restarting cloudflared
-func (s *Server) applyIngressRulesInternal(app *db.App, tunnelID string, ingressRules []cloudflare.IngressRule, settings *db.Settings, createDNS bool) error {
-	tunnelManager := cloudflare.NewTunnelManager(*settings.CloudflareAPIToken, *settings.CloudflareAccountID, s.database)
-
-	// Extract hostname for backward compatibility
-	var hostname, targetDomain string
-	if len(ingressRules) > 0 && ingressRules[0].Hostname != "" {
-		hostname = ingressRules[0].Hostname
-	}
-
-	// Update tunnel ingress configuration
-	if err := tunnelManager.UpdateTunnelIngress(tunnelID, ingressRules, hostname, targetDomain); err != nil {
-		return fmt.Errorf("failed to update tunnel ingress: %w", err)
-	}
-
-	// Get and update tunnel record
-	tunnel, err := s.database.GetCloudflareTunnelByAppID(app.ID)
-	if err != nil {
-		return fmt.Errorf("failed to get tunnel record: %w", err)
-	}
-
-	// Convert ingress rules to db format
-	dbIngressRules := make([]db.IngressRule, len(ingressRules))
-	for i, cfRule := range ingressRules {
-		dbIngressRules[i] = db.IngressRule{
-			Hostname:      convertHostnamePtr(cfRule.Hostname),
-			Service:       cfRule.Service,
-			Path:          convertPathPtr(cfRule.Path),
-			OriginRequest: cfRule.OriginRequest,
-		}
-	}
-
-	tunnel.IngressRules = &dbIngressRules
-	if err := s.database.UpdateCloudflareTunnel(tunnel); err != nil {
-		return fmt.Errorf("failed to update tunnel record: %w", err)
-	}
-
-	// Create DNS records if requested
-	if createDNS {
-		initialPublicURL := app.PublicURL
-		for _, rule := range ingressRules {
-			if rule.Hostname != "" {
-				// Extract domain from hostname
-				domain := rule.Hostname
-				if strings.Contains(rule.Hostname, ".") {
-					parts := strings.Split(rule.Hostname, ".")
-					if len(parts) > 1 {
-						domain = strings.Join(parts[len(parts)-2:], ".")
-					}
-				}
-
-				// Get zone ID for the domain
-				zoneID, err := tunnelManager.ApiManager.GetZoneID(domain)
-				if err != nil {
-					slog.Error("failed to get zone ID for DNS record", "hostname", rule.Hostname, "domain", domain, "error", err)
-					continue
-				}
-
-				// Create DNS record
-				_, err = tunnelManager.ApiManager.CreateDNSRecord(zoneID, rule.Hostname, tunnelID)
-				if err != nil {
-					slog.Error("failed to create DNS record", "hostname", rule.Hostname, "tunnelID", tunnelID, "error", err)
-					continue
-				}
-
-				slog.Info("DNS record created successfully", "appID", app.ID, "hostname", rule.Hostname, "tunnelID", tunnelID)
-
-				// Update app with first hostname as public URL
-				if app.PublicURL == "" || app.PublicURL == initialPublicURL {
-					app.TunnelDomain = rule.Hostname
-					app.PublicURL = fmt.Sprintf("https://%s", rule.Hostname)
-					app.UpdatedAt = time.Now()
-					if err := s.database.UpdateApp(app); err != nil {
-						slog.Error("failed to update app with custom hostname", "appID", app.ID, "error", err)
-					}
-				}
-			}
-		}
-	}
-
-	// Restart cloudflared to pick up the new ingress configuration
-	if err := s.dockerManager.RestartCloudflared(app.Name); err != nil {
-		slog.Warn("failed to restart cloudflared after ingress update", "appID", app.ID, "error", err)
-		// Don't fail - config is already saved
-	} else {
-		slog.Info("cloudflared restarted to apply new ingress configuration", "appID", app.ID)
-	}
-
-	return nil
-}
 
 // IngressRule represents a single ingress rule for a Cloudflare tunnel
 type IngressRule struct {
@@ -300,9 +190,16 @@ func (s *Server) updateTunnelIngress(c *gin.Context) {
 		return
 	}
 
+	// Update the tunnel ingress configuration (Cloudflare API)
 	if err := s.tunnelService.UpdateTunnelIngress(c.Request.Context(), appID, req); err != nil {
 		s.handleServiceError(c, "update tunnel ingress", err)
 		return
+	}
+
+	// Restart the cloudflared container to pick up new ingress rules
+	// This is a best-effort operation - we don't fail the request if it fails
+	if err := s.appService.RestartCloudflared(c.Request.Context(), appID); err != nil {
+		slog.WarnContext(c.Request.Context(), "failed to restart cloudflared container, ingress rules updated but container restart required", "appID", appID, "error", err)
 	}
 
 	app, _ := s.appService.GetApp(c.Request.Context(), appID)
@@ -363,19 +260,19 @@ func (s *Server) createDNSRecord(c *gin.Context) {
 	// Get updated app
 	app, _ := s.appService.GetApp(c.Request.Context(), appID)
 
-	c.JSON(http.StatusOK, gin.H{
-		"message":    "DNS record created successfully",
-		"app_id":     appID,
-		"hostname":   dnsRequest.Hostname,
-		"public_url": fmt.Sprintf("https://%s", dnsRequest.Hostname),
-	})
-	
-	if app != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"message":    "DNS record created successfully",
-			"app_id":     appID,
-			"hostname":   dnsRequest.Hostname,
-			"public_url": app.PublicURL,
-		})
+	// Build response
+	response := gin.H{
+		"message":  "DNS record created successfully",
+		"app_id":   appID,
+		"hostname": dnsRequest.Hostname,
 	}
+
+	// Use app's public URL if available, otherwise construct it
+	if app != nil && app.PublicURL != "" {
+		response["public_url"] = app.PublicURL
+	} else {
+		response["public_url"] = fmt.Sprintf("https://%s", dnsRequest.Hostname)
+	}
+
+	c.JSON(http.StatusOK, response)
 }

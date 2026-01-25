@@ -52,7 +52,7 @@ function AppDetails() {
                     useAppStore.getState().removeApp(app.id)
                     toast.success('App deleted', `"${appName}" has been deleted successfully`)
                     // Redirect to dashboard after deletion
-                    navigate('/dashboard')
+                    navigate('/apps')
                 },
                 onError: (error) => {
                     toast.error('Failed to delete app', error.message)
@@ -80,7 +80,7 @@ function AppDetails() {
                         The application you're looking for doesn't exist or has been deleted.
                     </p>
                     <Button
-                        onClick={() => navigate('/dashboard')}
+                        onClick={() => navigate('/apps')}
                         className="button-press"
                     >
                         Return to Dashboard
@@ -148,7 +148,7 @@ function AppDetails() {
             <div>
                 <AppBreadcrumb
                     items={[
-                        { label: 'Home', path: '/dashboard' },
+                        { label: 'Home', path: '/apps' },
                         { label: 'Apps', path: '/apps' },
                         { label: app.name, isCurrentPage: true }
                     ]}

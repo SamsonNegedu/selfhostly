@@ -46,14 +46,6 @@ var (
 		Code:    "APP_NOT_FOUND",
 		Message: "app not found",
 	}
-	ErrAppAlreadyExists = &DomainError{
-		Code:    "APP_ALREADY_EXISTS",
-		Message: "app with this name already exists",
-	}
-	ErrAppInvalidState = &DomainError{
-		Code:    "APP_INVALID_STATE",
-		Message: "invalid app state transition",
-	}
 	ErrAppNameInvalid = &DomainError{
 		Code:    "APP_NAME_INVALID",
 		Message: "app name is invalid",
@@ -114,10 +106,6 @@ var (
 		Code:    "DATABASE_OPERATION_FAILED",
 		Message: "database operation failed",
 	}
-	ErrFileSystem = &DomainError{
-		Code:    "FILESYSTEM_ERROR",
-		Message: "filesystem operation failed",
-	}
 	ErrNetworkOperation = &DomainError{
 		Code:    "NETWORK_OPERATION_FAILED",
 		Message: "network operation failed",
@@ -133,15 +121,6 @@ func WrapAppNotFound(appID string, cause error) error {
 	return &DomainError{
 		Code:    ErrAppNotFound.Code,
 		Message: fmt.Sprintf("app not found: %s", appID),
-		Cause:   cause,
-	}
-}
-
-// WrapAppAlreadyExists wraps an error as an app already exists error
-func WrapAppAlreadyExists(appName string, cause error) error {
-	return &DomainError{
-		Code:    ErrAppAlreadyExists.Code,
-		Message: fmt.Sprintf("app already exists: %s", appName),
 		Cause:   cause,
 	}
 }
@@ -207,18 +186,6 @@ func IsValidationError(err error) bool {
 			domainErr.Code == ErrRequiredFieldMissing.Code ||
 			domainErr.Code == ErrAppNameInvalid.Code ||
 			domainErr.Code == ErrComposeInvalid.Code
-	}
-	return false
-}
-
-// IsInfrastructureError checks if an error is an infrastructure error
-func IsInfrastructureError(err error) bool {
-	var domainErr *DomainError
-	if errors.As(err, &domainErr) {
-		return domainErr.Code == ErrDatabaseOperation.Code ||
-			domainErr.Code == ErrFileSystem.Code ||
-			domainErr.Code == ErrNetworkOperation.Code ||
-			domainErr.Code == ErrContainerOperationFailed.Code
 	}
 	return false
 }

@@ -41,7 +41,7 @@ function Settings() {
             <div className="mb-6">
                 <AppBreadcrumb
                     items={[
-                        { label: 'Home', path: '/dashboard' },
+                        { label: 'Home', path: '/apps' },
                         { label: 'Settings', isCurrentPage: true }
                     ]}
                 />

@@ -9,13 +9,6 @@ import (
 	"github.com/selfhostly/internal/domain"
 )
 
-const (
-	statusStopped  = "stopped"
-	statusRunning  = "running"
-	statusUpdating = "updating"
-	statusError    = "error"
-)
-
 // ErrorResponse represents a standardized error response
 type ErrorResponse struct {
 	Error   string `json:"error"`

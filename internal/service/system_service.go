@@ -27,7 +27,7 @@ func NewSystemService(
 	cfg *config.Config,
 	logger *slog.Logger,
 ) domain.SystemService {
-	collector := system.NewCollector(cfg.AppsDir, dockerManager)
+	collector := system.NewCollector(cfg.AppsDir, dockerManager, database)
 	return &systemService{
 		database:      database,
 		dockerManager: dockerManager,
@@ -37,7 +37,7 @@ func NewSystemService(
 }
 
 // GetSystemStats retrieves system-wide statistics
-func (s *systemService) GetSystemStats(ctx context.Context) (*domain.SystemStats, error) {
+func (s *systemService) GetSystemStats(ctx context.Context) (*system.SystemStats, error) {
 	s.logger.DebugContext(ctx, "getting system stats")
 
 	sysStats, err := s.collector.GetSystemStats()
@@ -46,37 +46,12 @@ func (s *systemService) GetSystemStats(ctx context.Context) (*domain.SystemStats
 		return nil, domain.WrapContainerOperationFailed("get system stats", err)
 	}
 
-	// Convert system.SystemStats to domain.SystemStats
-	containers := make([]domain.ContainerInfo, len(sysStats.Containers))
-	for i, c := range sysStats.Containers {
-		containers[i] = domain.ContainerInfo{
-			ID:      c.ID,
-			Name:    c.Name,
-			Image:   "", // Not available in system.ContainerInfo
-			Status:  c.Status,
-			State:   c.State,
-			Created: 0, // Convert c.CreatedAt if needed
-		}
-	}
+	s.logger.DebugContext(ctx, "system stats retrieved successfully",
+		"total_containers", sysStats.Docker.TotalContainers,
+		"running", sysStats.Docker.Running,
+		"cpu_usage", sysStats.CPU.UsagePercent)
 
-	domainStats := &domain.SystemStats{
-		Containers:      containers,
-		TotalContainers: sysStats.Docker.TotalContainers,
-		RunningCount:    sysStats.Docker.Running,
-		StoppedCount:    sysStats.Docker.Stopped,
-		CPUUsage:        sysStats.CPU.UsagePercent,
-		MemoryUsage:     int64(sysStats.Memory.Used),
-		MemoryLimit:     int64(sysStats.Memory.Total),
-		DiskUsage: &domain.DiskUsage{
-			Path:        sysStats.Disk.Path,
-			Total:       sysStats.Disk.Total,
-			Used:        sysStats.Disk.Used,
-			Available:   sysStats.Disk.Free,
-			UsedPercent: sysStats.Disk.UsagePercent,
-		},
-	}
-
-	return domainStats, nil
+	return sysStats, nil
 }
 
 // GetAppStats retrieves resource statistics for a specific app

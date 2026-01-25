@@ -6,8 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/docker"
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/disk"
@@ -65,6 +67,7 @@ type ContainerInfo struct {
 	ID           string  `json:"id"`
 	Name         string  `json:"name"`
 	AppName      string  `json:"app_name"`
+	IsManaged    bool    `json:"is_managed"`     // Whether container belongs to an app managed by our system
 	Status       string  `json:"status"`
 	State        string  `json:"state"`
 	CPUPercent   float64 `json:"cpu_percent"`
@@ -83,14 +86,16 @@ type Collector struct {
 	appsDir         string
 	dockerManager   *docker.Manager
 	commandExecutor docker.CommandExecutor
+	database        *db.DB
 }
 
 // NewCollector creates a new system stats collector
-func NewCollector(appsDir string, dockerManager *docker.Manager) *Collector {
+func NewCollector(appsDir string, dockerManager *docker.Manager, database *db.DB) *Collector {
 	return &Collector{
 		appsDir:         appsDir,
 		dockerManager:   dockerManager,
 		commandExecutor: docker.NewRealCommandExecutor(),
+		database:        database,
 	}
 }
 
@@ -101,12 +106,44 @@ func (c *Collector) GetSystemStats() (*SystemStats, error) {
 	// Get node information
 	nodeID, nodeName := c.getNodeInfo()
 
-	// Collect all stats in parallel for performance
-	cpuStats := c.getCPUStats()
-	memStats := c.getMemoryStats()
-	diskStats := c.getDiskStats("/")
-	dockerStats := c.getDockerDaemonStats()
-	containers := c.getAllContainerStats()
+	// Collect all stats in parallel using goroutines for better performance
+	var cpuStats CPUStats
+	var memStats MemoryStats
+	var diskStats DiskStats
+	var dockerStats DockerStats
+	var containers []ContainerInfo
+
+	// Use sync.WaitGroup for proper synchronization
+	var wg sync.WaitGroup
+	wg.Add(5)
+
+	go func() {
+		defer wg.Done()
+		cpuStats = c.getCPUStats()
+	}()
+
+	go func() {
+		defer wg.Done()
+		memStats = c.getMemoryStats()
+	}()
+
+	go func() {
+		defer wg.Done()
+		diskStats = c.getDiskStats("/")
+	}()
+
+	go func() {
+		defer wg.Done()
+		dockerStats = c.getDockerDaemonStats()
+	}()
+
+	go func() {
+		defer wg.Done()
+		containers = c.getAllContainerStats()
+	}()
+
+	// Wait for all goroutines to complete
+	wg.Wait()
 
 	stats := &SystemStats{
 		NodeID:     nodeID,
@@ -152,8 +189,10 @@ func (c *Collector) getCPUStats() CPUStats {
 		cores = 1
 	}
 
-	// Get CPU usage percentage (averaged over 1 second)
-	percentages, err := cpu.Percent(time.Second, false)
+	// Get CPU usage percentage (instant measurement, no blocking)
+	// Using 0 duration returns the percentage calculated since the last call
+	// This is much faster than blocking for 1 second
+	percentages, err := cpu.Percent(0, false)
 	if err != nil {
 		slog.Warn("failed to get CPU usage", "error", err)
 		return CPUStats{UsagePercent: 0, Cores: cores}
@@ -257,7 +296,8 @@ func (c *Collector) getDockerDaemonStats() DockerStats {
 
 // getAllContainerStats retrieves statistics for all containers system-wide
 func (c *Collector) getAllContainerStats() []ContainerInfo {
-	var allContainers []ContainerInfo
+	// Initialize as empty slice (not nil) so it serializes as [] instead of null in JSON
+	allContainers := []ContainerInfo{}
 
 	// Get all container IDs on the system
 	output, err := c.commandExecutor.ExecuteCommand("docker", "ps", "-a", "-q")
@@ -267,23 +307,45 @@ func (c *Collector) getAllContainerStats() []ContainerInfo {
 	}
 
 	containerIDs := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(containerIDs) == 0 || (len(containerIDs) == 1 && strings.TrimSpace(containerIDs[0]) == "") {
+		return allContainers
+	}
+
+	// Clean up container IDs
+	var validContainerIDs []string
+	for _, id := range containerIDs {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			validContainerIDs = append(validContainerIDs, id)
+		}
+	}
+
+	if len(validContainerIDs) == 0 {
+		return allContainers
+	}
 
 	// Build a map of Selfhostly-managed apps
 	managedApps := c.getManagedAppsMap()
 
+	// OPTIMIZATION: Batch all docker inspect calls into a single command
+	// This is MUCH faster than calling docker inspect for each container individually
+	inspectData := c.batchGetContainerInspectData(validContainerIDs)
+	slog.Debug("batch inspect completed", "requested", len(validContainerIDs), "received", len(inspectData))
+
 	// Get stats for ALL running containers in ONE command (much faster)
 	statsMap := c.getAllRunningContainerStats()
 
-	for _, containerID := range containerIDs {
-		containerID = strings.TrimSpace(containerID)
-		if containerID == "" {
+	for _, containerID := range validContainerIDs {
+		inspect, hasInspect := inspectData[containerID]
+		if !hasInspect {
+			slog.Debug("container not found in inspect data", "containerID", containerID)
 			continue
 		}
 
-		// Get container project/app name from labels
-		appName := c.getContainerAppName(containerID, managedApps)
+		// Determine app name from inspect data
+		appName := c.determineAppNameFromInspect(inspect, managedApps)
 
-		containerInfo := c.getContainerInfo(containerID, appName)
+		containerInfo := c.buildContainerInfo(containerID, appName, inspect, managedApps)
 		if containerInfo != nil {
 			// Apply pre-fetched stats if container is running
 			if stats, found := statsMap[containerID]; found {
@@ -299,7 +361,7 @@ func (c *Collector) getAllContainerStats() []ContainerInfo {
 		}
 	}
 
-	slog.Debug("collected container stats", "count", len(allContainers))
+	slog.Debug("collected container stats", "count", len(allContainers), "inspected", len(inspectData))
 	return allContainers
 }
 
@@ -314,13 +376,133 @@ type ContainerStats struct {
 	BlockWrite  uint64
 }
 
+// ContainerInspectData holds data from docker inspect
+type ContainerInspectData struct {
+	Name         string
+	ProjectLabel string
+	ServiceLabel string
+	Status       string
+	IsRunning    bool
+	CreatedAt    string
+	RestartCount int
+}
+
+// batchGetContainerInspectData gets inspect data for all containers in a single command
+func (c *Collector) batchGetContainerInspectData(containerIDs []string) map[string]ContainerInspectData {
+	inspectMap := make(map[string]ContainerInspectData)
+
+	if len(containerIDs) == 0 {
+		return inspectMap
+	}
+
+	// Build docker inspect command for all containers at once
+	// Note: Using slice of .Id to get short ID (first 12 chars) to match with docker ps -q output
+	args := []string{"inspect", "--format", 
+		"{{slice .Id 0 12}}|{{.Name}}|{{index .Config.Labels \"com.docker.compose.project\"}}|{{index .Config.Labels \"com.docker.compose.service\"}}|{{.State.Status}}|{{.State.Running}}|{{.Created}}|{{.RestartCount}}"}
+	args = append(args, containerIDs...)
+
+	output, err := c.commandExecutor.ExecuteCommand("docker", args...)
+	if err != nil {
+		slog.Warn("failed to batch inspect containers", "error", err, "containerCount", len(containerIDs))
+		return inspectMap
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	slog.Debug("parsed batch inspect output", "lineCount", len(lines), "containerCount", len(containerIDs))
+	
+	for _, line := range lines {
+		parts := strings.Split(line, "|")
+		if len(parts) < 8 {
+			slog.Debug("skipping invalid inspect line", "line", line, "partCount", len(parts))
+			continue
+		}
+
+		containerID := strings.TrimSpace(parts[0])
+		name := strings.TrimPrefix(strings.TrimSpace(parts[1]), "/")
+		projectLabel := strings.TrimSpace(parts[2])
+		serviceLabel := strings.TrimSpace(parts[3])
+		status := strings.TrimSpace(parts[4])
+		isRunning := strings.TrimSpace(parts[5]) == "true"
+		createdAt := strings.TrimSpace(parts[6])
+		restartCount := 0
+		fmt.Sscanf(parts[7], "%d", &restartCount)
+
+		inspectMap[containerID] = ContainerInspectData{
+			Name:         name,
+			ProjectLabel: projectLabel,
+			ServiceLabel: serviceLabel,
+			Status:       status,
+			IsRunning:    isRunning,
+			CreatedAt:    createdAt,
+			RestartCount: restartCount,
+		}
+	}
+
+	return inspectMap
+}
+
+// determineAppNameFromInspect determines the app/project name from inspect data
+func (c *Collector) determineAppNameFromInspect(inspect ContainerInspectData, managedApps map[string]bool) string {
+	// Check if container has Docker Compose labels
+	hasComposeLabels := inspect.ServiceLabel != "" && inspect.ServiceLabel != "<no value>"
+
+	// Strategy 1: Check Docker Compose project label (most reliable)
+	if inspect.ProjectLabel != "" && inspect.ProjectLabel != "<no value>" {
+		// Check if this is a managed app
+		if managedApps[inspect.ProjectLabel] {
+			return inspect.ProjectLabel
+		}
+		// Return project name even if not managed (external compose project)
+		return inspect.ProjectLabel
+	}
+
+	// Strategy 2: Match container name pattern, but ONLY if container has Compose labels
+	if hasComposeLabels {
+		for appName := range managedApps {
+			// Check if container name starts with app name followed by a hyphen
+			if strings.HasPrefix(inspect.Name, appName+"-") {
+				return appName
+			}
+			// Also check exact match (for containers with explicit container_name)
+			if inspect.Name == appName {
+				return appName
+			}
+		}
+	}
+
+	// No match found - container is unmanaged
+	return "unmanaged"
+}
+
+// buildContainerInfo builds a ContainerInfo from inspect data
+func (c *Collector) buildContainerInfo(containerID, appName string, inspect ContainerInspectData, managedApps map[string]bool) *ContainerInfo {
+	state := "stopped"
+	if inspect.IsRunning {
+		state = "running"
+	} else if inspect.Status == "paused" {
+		state = "paused"
+	}
+
+	return &ContainerInfo{
+		ID:           containerID,
+		Name:         inspect.Name,
+		AppName:      appName,
+		IsManaged:    managedApps[appName],
+		Status:       inspect.Status,
+		State:        state,
+		CreatedAt:    inspect.CreatedAt,
+		RestartCount: inspect.RestartCount,
+	}
+}
+
 // getAllRunningContainerStats gets stats for ALL running containers in one command
 func (c *Collector) getAllRunningContainerStats() map[string]ContainerStats {
 	statsMap := make(map[string]ContainerStats)
 
 	// Get stats for ALL containers at once (much faster than per-container)
+	// Note: NOT using --no-trunc so we get short IDs (12 chars) to match with docker ps -q
 	statsOutput, err := c.commandExecutor.ExecuteCommand(
-		"docker", "stats", "--no-stream", "--no-trunc", "--format",
+		"docker", "stats", "--no-stream", "--format",
 		"{{.ID}}|{{.CPUPerc}}|{{.MemUsage}}|{{.NetIO}}|{{.BlockIO}}")
 	if err != nil {
 		slog.Warn("failed to get bulk container stats", "error", err)
@@ -328,6 +510,8 @@ func (c *Collector) getAllRunningContainerStats() map[string]ContainerStats {
 	}
 
 	lines := strings.Split(strings.TrimSpace(string(statsOutput)), "\n")
+	slog.Debug("parsed bulk stats output", "lineCount", len(lines))
+	
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -371,10 +555,24 @@ func (c *Collector) getAllRunningContainerStats() map[string]ContainerStats {
 	return statsMap
 }
 
-// getManagedAppsMap returns a set of Selfhostly-managed app names
+// getManagedAppsMap returns a set of Selfhostly-managed app names from the database
 func (c *Collector) getManagedAppsMap() map[string]bool {
 	managedApps := make(map[string]bool)
 
+	// Use database as source of truth for managed apps
+	if c.database != nil {
+		apps, err := c.database.GetAllApps()
+		if err == nil {
+			for _, app := range apps {
+				managedApps[app.Name] = true
+			}
+			slog.Debug("loaded managed apps from database", "count", len(managedApps))
+			return managedApps
+		}
+		slog.Warn("failed to get apps from database, falling back to directory scan", "error", err)
+	}
+
+	// Fallback to directory structure if database is unavailable
 	entries, err := os.ReadDir(c.appsDir)
 	if err != nil {
 		return managedApps
@@ -392,73 +590,6 @@ func (c *Collector) getManagedAppsMap() map[string]bool {
 	return managedApps
 }
 
-// getContainerAppName determines the app/project name for a container
-func (c *Collector) getContainerAppName(containerID string, managedApps map[string]bool) string {
-	// Try to get the compose project name from labels
-	output, err := c.commandExecutor.ExecuteCommand(
-		"docker", "inspect", "--format", "{{index .Config.Labels \"com.docker.compose.project\"}}", containerID)
-	if err == nil {
-		projectName := strings.TrimSpace(string(output))
-		if projectName != "" && projectName != "<no value>" {
-			// Check if this is a managed app
-			if managedApps[projectName] {
-				return projectName
-			}
-			// Return project name with indicator it's external
-			return projectName
-		}
-	}
-
-	// If no project label, mark as unmanaged
-	return "unmanaged"
-}
-
-// getContainerInfo retrieves detailed information for a specific container
-func (c *Collector) getContainerInfo(containerID, appName string) *ContainerInfo {
-	// Get container inspect data
-	inspectOutput, err := c.commandExecutor.ExecuteCommand(
-		"docker", "inspect", "--format",
-		"{{.Name}}|{{.State.Status}}|{{.State.Running}}|{{.Created}}|{{.RestartCount}}",
-		containerID)
-	if err != nil {
-		slog.Debug("failed to inspect container", "containerID", containerID, "error", err)
-		return nil
-	}
-
-	parts := strings.Split(strings.TrimSpace(string(inspectOutput)), "|")
-	if len(parts) < 5 {
-		return nil
-	}
-
-	containerName := strings.TrimPrefix(parts[0], "/")
-	status := parts[1]
-	isRunning := parts[2] == "true"
-	createdAt := parts[3]
-	restartCount := 0
-	fmt.Sscanf(parts[4], "%d", &restartCount)
-
-	state := "stopped"
-	if isRunning {
-		state = "running"
-	} else if status == "paused" {
-		state = "paused"
-	}
-
-	containerInfo := &ContainerInfo{
-		ID:           containerID,
-		Name:         containerName,
-		AppName:      appName,
-		Status:       status,
-		State:        state,
-		CreatedAt:    createdAt,
-		RestartCount: restartCount,
-	}
-
-	// Resource stats are now fetched in bulk by getAllRunningContainerStats()
-	// and applied in getAllContainerStats()
-
-	return containerInfo
-}
 
 // Helper functions from docker/stats.go
 func parsePercentage(s string) float64 {

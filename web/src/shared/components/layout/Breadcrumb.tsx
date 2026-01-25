@@ -25,8 +25,8 @@ function AppBreadcrumb({ items, className }: AppBreadcrumbProps) {
   const location = useLocation()
 
   // Use provided items or generate from location path
-  const breadcrumbItems = items.length > 0 
-    ? items 
+  const breadcrumbItems = items.length > 0
+    ? items
     : generateBreadcrumbsFromPath(location.pathname)
 
   return (
@@ -66,19 +66,19 @@ function AppBreadcrumb({ items, className }: AppBreadcrumbProps) {
 function generateBreadcrumbsFromPath(pathname: string): BreadcrumbItem[] {
   const pathSegments = pathname.split('/').filter(Boolean)
   const items: BreadcrumbItem[] = []
-  
+
   // Add home link
   items.push({
     label: 'Home',
-    path: '/dashboard',
+    path: '/apps',
   })
-  
+
   // Build breadcrumbs from path segments
   let currentPath = ''
-  
+
   pathSegments.forEach((segment, index) => {
     currentPath += `/${segment}`
-    
+
     if (segment === 'apps' && index === pathSegments.length - 1) {
       // This is likely an app details page
       const appId = pathSegments[index + 1]
@@ -108,7 +108,7 @@ function generateBreadcrumbsFromPath(pathname: string): BreadcrumbItem[] {
       })
     }
   })
-  
+
   return items
 }
 

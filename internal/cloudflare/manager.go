@@ -150,8 +150,8 @@ func (tm *TunnelManager) GetTunnelConfig(tunnelID string) (map[string]interface{
 
 // UpdateTunnelIngress updates the ingress configuration for a tunnel
 func (tm *TunnelManager) UpdateTunnelIngress(tunnelID string, ingressRules []IngressRule, hostname string, targetDomain string) error {
-	// First, validate that the tunnel exists
-	_, err := tm.database.GetCloudflareTunnelByTunnelID(tunnelID)
+	// First, validate that the tunnel exists and get the app ID
+	tunnel, err := tm.database.GetCloudflareTunnelByTunnelID(tunnelID)
 	if err != nil {
 		return fmt.Errorf("failed to validate tunnel: %w", err)
 	}
@@ -162,12 +162,50 @@ func (tm *TunnelManager) UpdateTunnelIngress(tunnelID string, ingressRules []Ing
 		return fmt.Errorf("failed to update ingress configuration: %w", err)
 	}
 
+	// Determine the primary hostname from either the provided hostname or the ingress rules
+	primaryHostname := hostname
+	if primaryHostname == "" {
+		// Extract first hostname from ingress rules if available
+		for _, rule := range ingressRules {
+			if rule.Hostname != "" {
+				primaryHostname = rule.Hostname
+				break
+			}
+		}
+	}
+
+	// Update the app record with the tunnel domain and public URL
+	app, err := tm.database.GetApp(tunnel.AppID)
+	if err != nil {
+		slog.Warn("Failed to get app for tunnel domain update", "appID", tunnel.AppID, "error", err)
+	} else {
+		// Update tunnel domain and public URL
+		if primaryHostname != "" {
+			app.TunnelDomain = primaryHostname
+			app.PublicURL = fmt.Sprintf("https://%s", primaryHostname)
+		} else {
+			// Use default tunnel URL if no custom hostname
+			app.TunnelDomain = fmt.Sprintf("%s.cfargotunnel.com", tunnelID)
+			app.PublicURL = fmt.Sprintf("https://%s.cfargotunnel.com", tunnelID)
+		}
+		app.UpdatedAt = time.Now()
+
+		if err := tm.database.UpdateApp(app); err != nil {
+			slog.Warn("Failed to update app with tunnel domain", "appID", tunnel.AppID, "error", err)
+		} else {
+			slog.Info("Updated app with tunnel domain",
+				"appID", tunnel.AppID,
+				"tunnelDomain", app.TunnelDomain,
+				"publicURL", app.PublicURL)
+		}
+	}
+
 	// If hostname is provided, create a DNS record
-	if hostname != "" {
+	if primaryHostname != "" {
 		// Extract domain from hostname (remove subdomain)
-		domain := hostname
-		if strings.Contains(hostname, ".") {
-			parts := strings.Split(hostname, ".")
+		domain := primaryHostname
+		if strings.Contains(primaryHostname, ".") {
+			parts := strings.Split(primaryHostname, ".")
 			if len(parts) > 1 {
 				domain = strings.Join(parts[len(parts)-2:], ".")
 			}
@@ -180,14 +218,14 @@ func (tm *TunnelManager) UpdateTunnelIngress(tunnelID string, ingressRules []Ing
 		}
 
 		// Create DNS record
-		recordID, err := tm.ApiManager.CreateDNSRecord(zoneID, hostname, tunnelID)
+		recordID, err := tm.ApiManager.CreateDNSRecord(zoneID, primaryHostname, tunnelID)
 		if err != nil {
 			return fmt.Errorf("failed to create DNS record: %w", err)
 		}
 
 		slog.Info("DNS record created successfully",
 			"zoneID", zoneID,
-			"hostname", hostname,
+			"hostname", primaryHostname,
 			"targetDomain", targetDomain,
 			"recordID", recordID)
 	}

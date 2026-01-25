@@ -158,6 +158,7 @@ export interface ContainerInfo {
   id: string;
   name: string;
   app_name: string;
+  is_managed: boolean; // Whether container belongs to an app managed by our system
   status: string;
   state: 'running' | 'stopped' | 'paused';
   cpu_percent: number;
