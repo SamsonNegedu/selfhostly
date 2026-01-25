@@ -271,6 +271,9 @@ func (c *Collector) getAllContainerStats() []ContainerInfo {
 	// Build a map of Selfhostly-managed apps
 	managedApps := c.getManagedAppsMap()
 
+	// Get stats for ALL running containers in ONE command (much faster)
+	statsMap := c.getAllRunningContainerStats()
+
 	for _, containerID := range containerIDs {
 		containerID = strings.TrimSpace(containerID)
 		if containerID == "" {
@@ -282,12 +285,90 @@ func (c *Collector) getAllContainerStats() []ContainerInfo {
 
 		containerInfo := c.getContainerInfo(containerID, appName)
 		if containerInfo != nil {
+			// Apply pre-fetched stats if container is running
+			if stats, found := statsMap[containerID]; found {
+				containerInfo.CPUPercent = stats.CPUPercent
+				containerInfo.MemoryUsage = stats.MemoryUsage
+				containerInfo.MemoryLimit = stats.MemoryLimit
+				containerInfo.NetworkRx = stats.NetworkRx
+				containerInfo.NetworkTx = stats.NetworkTx
+				containerInfo.BlockRead = stats.BlockRead
+				containerInfo.BlockWrite = stats.BlockWrite
+			}
 			allContainers = append(allContainers, *containerInfo)
 		}
 	}
 
 	slog.Debug("collected container stats", "count", len(allContainers))
 	return allContainers
+}
+
+// ContainerStats holds resource usage statistics
+type ContainerStats struct {
+	CPUPercent  float64
+	MemoryUsage uint64
+	MemoryLimit uint64
+	NetworkRx   uint64
+	NetworkTx   uint64
+	BlockRead   uint64
+	BlockWrite  uint64
+}
+
+// getAllRunningContainerStats gets stats for ALL running containers in one command
+func (c *Collector) getAllRunningContainerStats() map[string]ContainerStats {
+	statsMap := make(map[string]ContainerStats)
+
+	// Get stats for ALL containers at once (much faster than per-container)
+	statsOutput, err := c.commandExecutor.ExecuteCommand(
+		"docker", "stats", "--no-stream", "--no-trunc", "--format",
+		"{{.ID}}|{{.CPUPerc}}|{{.MemUsage}}|{{.NetIO}}|{{.BlockIO}}")
+	if err != nil {
+		slog.Warn("failed to get bulk container stats", "error", err)
+		return statsMap
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(statsOutput)), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		parts := strings.Split(line, "|")
+		if len(parts) < 5 {
+			continue
+		}
+
+		containerID := parts[0]
+		stats := ContainerStats{
+			CPUPercent: parsePercentage(parts[1]),
+		}
+
+		// Parse memory usage (e.g., "100MiB / 2GiB")
+		memParts := strings.Split(parts[2], " / ")
+		if len(memParts) == 2 {
+			stats.MemoryUsage = parseBytes(strings.TrimSpace(memParts[0]))
+			stats.MemoryLimit = parseBytes(strings.TrimSpace(memParts[1]))
+		}
+
+		// Parse network I/O (e.g., "1.2MB / 3.4MB")
+		netParts := strings.Split(parts[3], " / ")
+		if len(netParts) == 2 {
+			stats.NetworkRx = parseBytes(strings.TrimSpace(netParts[0]))
+			stats.NetworkTx = parseBytes(strings.TrimSpace(netParts[1]))
+		}
+
+		// Parse block I/O (e.g., "5.6MB / 7.8MB")
+		blockParts := strings.Split(parts[4], " / ")
+		if len(blockParts) == 2 {
+			stats.BlockRead = parseBytes(strings.TrimSpace(blockParts[0]))
+			stats.BlockWrite = parseBytes(strings.TrimSpace(blockParts[1]))
+		}
+
+		statsMap[containerID] = stats
+	}
+
+	return statsMap
 }
 
 // getManagedAppsMap returns a set of Selfhostly-managed app names
@@ -373,56 +454,10 @@ func (c *Collector) getContainerInfo(containerID, appName string) *ContainerInfo
 		RestartCount: restartCount,
 	}
 
-	// Only get resource stats for running containers
-	if isRunning {
-		c.populateContainerStats(containerInfo, containerID)
-	}
+	// Resource stats are now fetched in bulk by getAllRunningContainerStats()
+	// and applied in getAllContainerStats()
 
 	return containerInfo
-}
-
-// populateContainerStats adds resource usage statistics to container info
-func (c *Collector) populateContainerStats(containerInfo *ContainerInfo, containerID string) {
-	// Get stats (no-stream for single snapshot)
-	statsOutput, err := c.commandExecutor.ExecuteCommand(
-		"docker", "stats", containerID, "--no-stream", "--no-trunc", "--format",
-		"{{.CPUPerc}}|{{.MemUsage}}|{{.NetIO}}|{{.BlockIO}}")
-	if err != nil {
-		slog.Debug("failed to get container stats", "containerID", containerID, "error", err)
-		return
-	}
-
-	rawStats := strings.TrimSpace(string(statsOutput))
-	parts := strings.Split(rawStats, "|")
-	
-	if len(parts) < 4 {
-		slog.Warn("unexpected stats format", "containerID", containerID, "parts", len(parts), "output", rawStats)
-		return
-	}
-
-	// Parse CPU percentage
-	containerInfo.CPUPercent = parsePercentage(parts[0])
-
-	// Parse memory usage (e.g., "100MiB / 2GiB")
-	memParts := strings.Split(parts[1], " / ")
-	if len(memParts) == 2 {
-		containerInfo.MemoryUsage = parseBytes(strings.TrimSpace(memParts[0]))
-		containerInfo.MemoryLimit = parseBytes(strings.TrimSpace(memParts[1]))
-	}
-
-	// Parse network I/O (e.g., "1.2MB / 3.4MB")
-	netParts := strings.Split(parts[2], " / ")
-	if len(netParts) == 2 {
-		containerInfo.NetworkRx = parseBytes(strings.TrimSpace(netParts[0]))
-		containerInfo.NetworkTx = parseBytes(strings.TrimSpace(netParts[1]))
-	}
-
-	// Parse block I/O (e.g., "5.6MB / 7.8MB")
-	blockParts := strings.Split(parts[3], " / ")
-	if len(blockParts) == 2 {
-		containerInfo.BlockRead = parseBytes(strings.TrimSpace(blockParts[0]))
-		containerInfo.BlockWrite = parseBytes(strings.TrimSpace(blockParts[1]))
-	}
 }
 
 // Helper functions from docker/stats.go
@@ -442,7 +477,7 @@ func parseBytes(s string) uint64 {
 	// Handle formats like "0B", "123.4MiB", "1.2GB", etc.
 	var numStr string
 	var unit string
-	
+
 	// Extract numeric part (including decimal point)
 	for i, ch := range s {
 		if (ch >= '0' && ch <= '9') || ch == '.' {
@@ -465,7 +500,7 @@ func parseBytes(s string) uint64 {
 
 	// Normalize unit (remove spaces and convert to uppercase)
 	unit = strings.ToUpper(strings.TrimSpace(unit))
-	
+
 	// Handle both SI (MB, GB) and binary (MiB, GiB) units
 	var multiplier float64
 	switch unit {

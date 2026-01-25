@@ -264,3 +264,17 @@ func (m *Manager) StopContainer(containerID string) error {
 	slog.Info("container stopped successfully", "containerID", containerID, "output", string(output))
 	return nil
 }
+
+// DeleteContainer removes a container by ID (force remove)
+func (m *Manager) DeleteContainer(containerID string) error {
+	slog.Info("deleting container", "containerID", containerID)
+
+	output, err := m.commandExecutor.ExecuteCommand("docker", "rm", "-f", containerID)
+	if err != nil {
+		slog.Error("failed to delete container", "containerID", containerID, "error", err, "output", string(output))
+		return fmt.Errorf("failed to delete container: %w\nOutput: %s", err, string(output))
+	}
+
+	slog.Info("container deleted successfully", "containerID", containerID, "output", string(output))
+	return nil
+}

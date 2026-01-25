@@ -109,6 +109,7 @@ func (s *Server) setupSystemRoutes(api *gin.RouterGroup) {
 		systemGroup.GET("/debug/docker-stats/:id", s.getDebugDockerStats)
 		systemGroup.POST("/containers/:id/restart", s.restartContainer)
 		systemGroup.POST("/containers/:id/stop", s.stopContainer)
+		systemGroup.DELETE("/containers/:id", s.deleteContainer)
 	}
 }
 

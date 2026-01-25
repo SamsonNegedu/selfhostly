@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { RotateCw, Square } from 'lucide-react';
+import { RotateCw, Square, Trash2 } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
-import { useRestartContainer, useStopContainer } from '@/shared/services/api';
+import { useRestartContainer, useStopContainer, useDeleteContainer } from '@/shared/services/api';
 import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog';
 import { useToast } from '@/shared/components/ui/Toast';
 
@@ -9,15 +9,18 @@ interface ContainerActionsProps {
   containerId: string;
   containerName: string;
   containerState: string;
+  appName: string;
 }
 
-function ContainerActions({ containerId, containerName, containerState }: ContainerActionsProps) {
+function ContainerActions({ containerId, containerName, containerState, appName }: ContainerActionsProps) {
   const [restartDialogOpen, setRestartDialogOpen] = useState(false);
   const [stopDialogOpen, setStopDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const { toast } = useToast();
 
   const restartMutation = useRestartContainer();
   const stopMutation = useStopContainer();
+  const deleteMutation = useDeleteContainer();
 
   const handleRestart = async () => {
     try {
@@ -40,8 +43,19 @@ function ContainerActions({ containerId, containerName, containerState }: Contai
     }
   };
 
+  const handleDelete = async () => {
+    try {
+      await deleteMutation.mutateAsync(containerId);
+      toast.success(`Container "${containerName}" deleted successfully`);
+      setDeleteDialogOpen(false);
+    } catch (error) {
+      toast.error(`Failed to delete container: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
   const isRunning = containerState === 'running';
   const isStopped = containerState === 'stopped';
+  const isUnmanaged = appName === 'unmanaged';
 
   return (
     <div className="flex items-center gap-2">
@@ -67,6 +81,20 @@ function ContainerActions({ containerId, containerName, containerState }: Contai
         <Square className="h-4 w-4" />
       </Button>
 
+      {/* Delete Button - Only show for unmanaged containers */}
+      {isUnmanaged && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setDeleteDialogOpen(true)}
+          disabled={deleteMutation.isPending}
+          title="Delete unmanaged container"
+          className="text-destructive hover:text-destructive"
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      )}
+
       {/* Restart/Start Confirmation Dialog */}
       <ConfirmationDialog
         open={restartDialogOpen}
@@ -91,6 +119,18 @@ function ContainerActions({ containerId, containerName, containerState }: Contai
         confirmText="Stop"
         onConfirm={handleStop}
         variant="destructive"
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmationDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        title="Delete Unmanaged Container"
+        description={`Are you sure you want to permanently delete "${containerName}"? This action cannot be undone and will remove the container and any data stored in it (volumes may persist depending on configuration).`}
+        confirmText="Delete Container"
+        onConfirm={handleDelete}
+        variant="destructive"
+        isLoading={deleteMutation.isPending}
       />
     </div>
   );

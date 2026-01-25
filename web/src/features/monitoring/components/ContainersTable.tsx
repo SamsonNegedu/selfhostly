@@ -182,6 +182,7 @@ function ContainersTable({ containers }: ContainersTableProps) {
                   containerId={container.id}
                   containerName={container.name}
                   containerState={container.state}
+                  appName={container.app_name}
                 />
               </div>
 

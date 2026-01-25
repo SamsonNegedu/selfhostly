@@ -495,3 +495,16 @@ export function useStopContainer() {
     },
   });
 }
+
+export function useDeleteContainer() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (containerId: string) => 
+      apiClient.delete<{ message: string; container_id: string }>(`/api/system/containers/${containerId}`),
+    onSuccess: () => {
+      // Refresh system stats after container deletion
+      queryClient.invalidateQueries({ queryKey: ['system', 'stats'] });
+    },
+  });
+}

@@ -128,3 +128,31 @@ func (s *Server) getDebugDockerStats(c *gin.Context) {
 		"note":          "This shows the raw docker stats output to help debug parsing issues",
 	})
 }
+
+// deleteContainer removes a container by ID
+func (s *Server) deleteContainer(c *gin.Context) {
+	containerID := c.Param("id")
+	if containerID == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid container ID"})
+		return
+	}
+
+	slog.InfoContext(c.Request.Context(), "deleting container", "containerID", containerID)
+
+	dockerManager := docker.NewManager(s.config.AppsDir)
+	if err := dockerManager.DeleteContainer(containerID); err != nil {
+		slog.ErrorContext(c.Request.Context(), "failed to delete container",
+			"containerID", containerID, "error", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Failed to delete container",
+			Details: err.Error(),
+		})
+		return
+	}
+
+	slog.InfoContext(c.Request.Context(), "container deleted successfully", "containerID", containerID)
+	c.JSON(http.StatusOK, gin.H{
+		"message":      "Container deleted successfully",
+		"container_id": containerID,
+	})
+}
