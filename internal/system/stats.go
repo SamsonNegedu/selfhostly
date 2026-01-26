@@ -26,6 +26,8 @@ type SystemStats struct {
 	Docker     DockerStats     `json:"docker"`
 	Containers []ContainerInfo `json:"containers"`
 	Timestamp  time.Time       `json:"timestamp"`
+	Error      string          `json:"error,omitempty"` // Error message if stats couldn't be fetched
+	Status     string          `json:"status"`          // "online", "offline", or "error"
 }
 
 // CPUStats represents CPU usage statistics
@@ -171,6 +173,7 @@ func (c *Collector) GetSystemStats() (*SystemStats, error) {
 		Docker:     dockerStats,
 		Containers: containers,
 		Timestamp:  time.Now(),
+		Status:     "online", // Node is online since we successfully collected stats
 	}
 
 	slog.Debug("system statistics collected successfully",

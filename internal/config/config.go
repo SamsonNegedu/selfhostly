@@ -25,12 +25,13 @@ type Config struct {
 
 // NodeConfig holds node-specific configuration for multi-node support
 type NodeConfig struct {
-	ID              string // This node's UUID (generated on first run if not set)
-	Name            string // This node's name
-	IsPrimary       bool   // Whether this is the primary node
-	APIKey          string // API key for other nodes to authenticate with this node
-	PrimaryNodeURL  string // URL of primary node (only for secondary nodes)
-	PrimaryNodeKey  string // API key to authenticate with primary (only for secondary nodes)
+	ID             string // This node's UUID (generated on first run if not set)
+	Name           string // This node's name
+	IsPrimary      bool   // Whether this is the primary node
+	APIEndpoint    string // This node's API endpoint URL for inter-node communication
+	APIKey         string // API key for other nodes to authenticate with this node
+	PrimaryNodeURL string // URL of primary node (only for secondary nodes)
+	PrimaryNodeKey string // API key to authenticate with primary (only for secondary nodes)
 }
 
 // CORSConfig holds CORS configuration
@@ -98,6 +99,7 @@ func Load() (*Config, error) {
 		apiKey = generateSecureAPIKey()
 	}
 
+	nodeAPIEndpoint := getEnv("NODE_API_ENDPOINT", "http://localhost:8080")
 	cfg := &Config{
 		ServerAddress: getEnv("SERVER_ADDRESS", ":8080"),
 		DatabasePath:  getEnv("DATABASE_PATH", "./data/selfhostly.db"),
@@ -111,7 +113,7 @@ func Load() (*Config, error) {
 			Enabled:      authEnabled,
 			JWTSecret:    jwtSecret,
 			SecureCookie: getEnv("AUTH_SECURE_COOKIE", "false") == "true",
-			BaseURL:      getEnv("AUTH_BASE_URL", "http://localhost:8080"),
+			BaseURL:      nodeAPIEndpoint,
 			GitHub: GitHubOAuthConfig{
 				ClientID:     os.Getenv("GITHUB_CLIENT_ID"),
 				ClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"),
@@ -126,6 +128,7 @@ func Load() (*Config, error) {
 			ID:             nodeID,
 			Name:           nodeName,
 			IsPrimary:      getEnv("NODE_IS_PRIMARY", "true") == "true", // Default to primary for backward compatibility
+			APIEndpoint:    nodeAPIEndpoint,
 			APIKey:         apiKey,
 			PrimaryNodeURL: getEnv("PRIMARY_NODE_URL", ""),
 			PrimaryNodeKey: getEnv("PRIMARY_NODE_API_KEY", ""),

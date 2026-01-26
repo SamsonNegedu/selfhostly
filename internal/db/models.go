@@ -13,15 +13,17 @@ import (
 
 // Node represents a node in the cluster
 type Node struct {
-	ID          string     `json:"id" db:"id"`
-	Name        string     `json:"name" db:"name"`
-	APIEndpoint string     `json:"api_endpoint" db:"api_endpoint"`
-	APIKey      string     `json:"api_key" db:"api_key"` // For authenticating requests to this node
-	IsPrimary   bool       `json:"is_primary" db:"is_primary"`
-	Status      string     `json:"status" db:"status"` // online, offline, unreachable
-	LastSeen    *time.Time `json:"last_seen" db:"last_seen"`
-	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at" db:"updated_at"`
+	ID                 string     `json:"id" db:"id"`
+	Name               string     `json:"name" db:"name"`
+	APIEndpoint        string     `json:"api_endpoint" db:"api_endpoint"`
+	APIKey             string     `json:"api_key" db:"api_key"` // For authenticating requests to this node
+	IsPrimary          bool       `json:"is_primary" db:"is_primary"`
+	Status             string     `json:"status" db:"status"` // online, offline, unreachable
+	LastSeen           *time.Time `json:"last_seen" db:"last_seen"`
+	ConsecutiveFailures int       `json:"consecutive_failures" db:"consecutive_failures"` // Track health check failures
+	LastHealthCheck    *time.Time `json:"last_health_check" db:"last_health_check"`      // When we last checked this node
+	CreatedAt          time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at" db:"updated_at"`
 }
 
 // App represents a self-hosted application
@@ -83,11 +85,27 @@ type Settings struct {
 	UpdatedAt           time.Time `json:"updated_at" db:"updated_at"`
 }
 
-// NewNode creates a new Node with a generated UUID
+// NewNode creates a new Node with a generated UUID (or uses provided ID if not empty)
 func NewNode(name, apiEndpoint, apiKey string, isPrimary bool) *Node {
 	now := time.Now()
 	return &Node{
 		ID:          uuid.New().String(),
+		Name:        name,
+		APIEndpoint: apiEndpoint,
+		APIKey:      apiKey,
+		IsPrimary:   isPrimary,
+		Status:      "online",
+		LastSeen:    &now,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+}
+
+// NewNodeWithID creates a new Node with a specified ID (for registration of existing nodes)
+func NewNodeWithID(id, name, apiEndpoint, apiKey string, isPrimary bool) *Node {
+	now := time.Now()
+	return &Node{
+		ID:          id,
 		Name:        name,
 		APIEndpoint: apiEndpoint,
 		APIKey:      apiKey,

@@ -20,7 +20,7 @@ services:
       AUTH_ENABLED: ${AUTH_ENABLED:-true}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
-      AUTH_BASE_URL: ${AUTH_BASE_URL:-http://localhost:8080}
+      NODE_API_ENDPOINT: ${NODE_API_ENDPOINT:-http://localhost:8080}
     volumes:
       - selfhostly-data:/app/data
       - selfhostly-apps:/app/apps

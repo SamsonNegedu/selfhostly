@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/system"
@@ -58,6 +59,20 @@ func (a *StatsAggregator) AggregateStats(
 				remoteStatsMap, err := remoteFetcher(n)
 				if err != nil {
 					a.logger.WarnContext(ctx, "failed to fetch system stats from remote node", "nodeID", n.ID, "nodeName", n.Name, "error", err)
+					
+					// Create an error stat object so the UI knows the node is offline
+					errorStats := &system.SystemStats{
+						NodeID:     n.ID,
+						NodeName:   n.Name,
+						Status:     "offline",
+						Error:      err.Error(),
+						Timestamp:  time.Now(),
+						Containers: []system.ContainerInfo{}, // Empty slice, not nil
+					}
+					
+					mu.Lock()
+					allStats = append(allStats, errorStats)
+					mu.Unlock()
 					return
 				}
 
@@ -65,6 +80,20 @@ func (a *StatsAggregator) AggregateStats(
 				remoteStats, err := mapConverter(remoteStatsMap, n.ID, n.Name)
 				if err != nil {
 					a.logger.WarnContext(ctx, "failed to convert remote stats", "nodeID", n.ID, "error", err)
+					
+					// Create an error stat object
+					errorStats := &system.SystemStats{
+						NodeID:     n.ID,
+						NodeName:   n.Name,
+						Status:     "error",
+						Error:      err.Error(),
+						Timestamp:  time.Now(),
+						Containers: []system.ContainerInfo{},
+					}
+					
+					mu.Lock()
+					allStats = append(allStats, errorStats)
+					mu.Unlock()
 					return
 				}
 

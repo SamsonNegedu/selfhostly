@@ -36,7 +36,7 @@ AUTH_ENABLED=true
 GITHUB_CLIENT_ID=your_github_client_id
 GITHUB_CLIENT_SECRET=your_github_client_secret
 GITHUB_ALLOWED_USERS=your-username,trusted-friend,family-member
-AUTH_BASE_URL=https://your-domain.com
+NODE_API_ENDPOINT=https://your-domain.com
 AUTH_SECURE_COOKIE=true
 ```
 

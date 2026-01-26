@@ -62,6 +62,7 @@ type NodeService interface {
 	DeleteNode(ctx context.Context, nodeID string) error
 	HealthCheckNode(ctx context.Context, nodeID string) error
 	HealthCheckAllNodes(ctx context.Context) error
+	NodeHeartbeat(ctx context.Context, nodeID string) error
 	SyncSettingsFromPrimary(ctx context.Context) error
 	GetCurrentNodeInfo(ctx context.Context) (*db.Node, error)
 }
@@ -160,6 +161,7 @@ type ComposeVolume struct {
 
 // RegisterNodeRequest represents the request to register a new node
 type RegisterNodeRequest struct {
+	ID          string `json:"id" binding:"required"`            // Required: Secondary's existing node ID for heartbeat auth
 	Name        string `json:"name" binding:"required"`
 	APIEndpoint string `json:"api_endpoint" binding:"required"`
 	APIKey      string `json:"api_key" binding:"required"`

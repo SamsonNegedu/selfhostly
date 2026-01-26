@@ -128,6 +128,9 @@ func (db *DB) migrate() error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_compose_versions_app_id ON compose_versions(app_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_compose_versions_is_current ON compose_versions(app_id, is_current)`,
+		// Add health check tracking columns to nodes table
+		`ALTER TABLE nodes ADD COLUMN consecutive_failures INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE nodes ADD COLUMN last_health_check DATETIME`,
 	}
 
 	for _, migration := range migrations {

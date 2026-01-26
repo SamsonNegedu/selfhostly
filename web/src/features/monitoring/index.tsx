@@ -1,13 +1,14 @@
 import { useState, useMemo } from 'react';
 import { useSystemStats } from '@/shared/services/api';
 import { useNodeContext } from '@/shared/contexts/NodeContext';
-import { AlertCircle, Search, X } from 'lucide-react';
+import { AlertCircle, Search, X, WifiOff, ServerCrash } from 'lucide-react';
 import { DashboardSkeleton } from '@/shared/components/ui/Skeleton';
 import { Button } from '@/shared/components/ui/button';
+import { Card, CardContent } from '@/shared/components/ui/card';
 import SystemOverview from './components/SystemOverview';
 import ContainersTable from './components/ContainersTable';
 import ResourceAlerts from './components/ResourceAlerts';
-import type { ContainerInfo } from '@/shared/types/api';
+import type { ContainerInfo, SystemStats } from '@/shared/types/api';
 
 function Monitoring() {
   // Get global node context for filtering stats by selected nodes
@@ -17,25 +18,38 @@ function Monitoring() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'running' | 'stopped'>('all');
 
-  // Handle backward compatibility: if statsArray is a single object (old API), convert to array
-  const stats = useMemo(() => {
-    if (!statsArray) return null;
-    // Check if it's an array or single object
-    if (Array.isArray(statsArray)) {
-      return statsArray.length > 0 ? statsArray[0] : null; // For now, show first node's stats
+  // Separate online and offline/error nodes
+  const { onlineNodes, offlineNodes } = useMemo(() => {
+    if (!statsArray || !Array.isArray(statsArray)) {
+      return { onlineNodes: [], offlineNodes: [] };
     }
-    // Backward compatibility: single object
-    return statsArray as any;
+    const online: SystemStats[] = [];
+    const offline: SystemStats[] = [];
+    
+    statsArray.forEach(stat => {
+      if (stat.status === 'online') {
+        online.push(stat);
+      } else {
+        offline.push(stat);
+      }
+    });
+    
+    return { onlineNodes: online, offlineNodes: offline };
   }, [statsArray]);
 
-  // Aggregate containers from all nodes
+  // For now, show first online node's stats (or null if none)
+  const stats = useMemo(() => {
+    return onlineNodes.length > 0 ? onlineNodes[0] : null;
+  }, [onlineNodes]);
+
+  // Aggregate containers from all ONLINE nodes only
   const allContainers: ContainerInfo[] = useMemo(() => {
     if (!statsArray || !Array.isArray(statsArray)) {
       return (stats?.containers || []) as ContainerInfo[];
     }
-    // Combine containers from all nodes
-    return statsArray.flatMap(nodeStats => (nodeStats.containers || []) as ContainerInfo[]);
-  }, [statsArray, stats]);
+    // Combine containers from all online nodes only
+    return onlineNodes.flatMap(nodeStats => (nodeStats.containers || []) as ContainerInfo[]);
+  }, [onlineNodes, stats]);
 
   // Filter containers based on search and status
   const filteredContainers: ContainerInfo[] = useMemo(() => {
@@ -62,13 +76,13 @@ function Monitoring() {
     return filtered;
   }, [allContainers, searchQuery, statusFilter]);
 
-  // Get node names for display (must be before early returns)
+  // Get node names for display (must be before early returns) - include both online and offline
   const nodeNames = useMemo(() => {
     if (!statsArray || !Array.isArray(statsArray)) {
       return stats?.node_name ? [stats.node_name] : [];
     }
     return statsArray.map(s => s.node_name).filter(Boolean);
-  }, [statsArray, stats]);
+  }, [statsArray]);
 
   // Calculate seconds ago (must be before early returns)
   const secondsAgo = useMemo(() => {
@@ -78,7 +92,7 @@ function Monitoring() {
   }, [dataUpdatedAt]);
 
   // Early returns after all hooks
-  if (isLoading && !stats) {
+  if (isLoading && !statsArray) {
     return <DashboardSkeleton />;
   }
 
@@ -102,19 +116,20 @@ function Monitoring() {
     );
   }
 
-  if (!stats) {
+  // If there are no stats at all (not even offline nodes), return null
+  if (!stats && offlineNodes.length === 0) {
     return null;
   }
 
-  // Ensure stats has required properties with defaults
-  const safeStats = {
+  // Ensure stats has required properties with defaults (if we have online nodes)
+  const safeStats = stats ? {
     ...stats,
     containers: stats.containers || [],
     cpu: stats.cpu || { usage_percent: 0, cores: 0 },
     memory: stats.memory || { usage_percent: 0, total_bytes: 0, used_bytes: 0, free_bytes: 0, available_bytes: 0 },
     disk: stats.disk || { usage_percent: 0, total_bytes: 0, used_bytes: 0, free_bytes: 0, path: '/' },
     docker: stats.docker || { total_containers: 0, running: 0, stopped: 0, paused: 0, images: 0, version: '' },
-  };
+  } : null;
 
   return (
     <div className="fade-in space-y-6">
@@ -129,22 +144,69 @@ function Monitoring() {
         </p>
       </div>
 
-      {/* Resource Alerts */}
-      <ResourceAlerts stats={safeStats} />
-
-      {/* System Overview Cards */}
-      <SystemOverview stats={safeStats} />
-
-      {/* Containers Section */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-bold">
-            All Containers ({filteredContainers.length})
-          </h2>
+      {/* Offline/Error Nodes Alert */}
+      {offlineNodes.length > 0 && (
+        <div className="space-y-2">
+          {offlineNodes.map(node => (
+            <Card key={node.node_id} className="border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/30">
+              <CardContent className="pt-6">
+                <div className="flex items-start gap-3">
+                  {node.status === 'offline' ? (
+                    <WifiOff className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+                  ) : (
+                    <ServerCrash className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-red-900 dark:text-red-100">
+                      {node.status === 'offline' ? 'Node Unreachable' : 'Error Fetching Stats'}: {node.node_name}
+                    </h3>
+                    <p className="text-sm text-red-800 dark:text-red-200 mt-1">
+                      {node.error || 'Unable to connect to this node. Please check if the node is running and accessible.'}
+                    </p>
+                    {node.status === 'offline' && (
+                      <p className="text-xs text-red-700 dark:text-red-300 mt-2">
+                        💡 Tip: Verify the node's API endpoint is correct and the node service is running.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
+      )}
 
-        {/* Search and Filters */}
-        {allContainers.length > 0 && (
+      {/* Resource Alerts - Only show if we have online nodes */}
+      {stats && safeStats && <ResourceAlerts stats={safeStats} />}
+
+      {/* System Overview Cards - Only show if we have online nodes */}
+      {stats && safeStats ? (
+        <SystemOverview stats={safeStats} />
+      ) : onlineNodes.length === 0 && offlineNodes.length > 0 ? (
+        <Card className="border-gray-200 dark:border-gray-700">
+          <CardContent className="pt-6">
+            <div className="text-center py-8">
+              <ServerCrash className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-semibold mb-2">No Online Nodes</h3>
+              <p className="text-muted-foreground">
+                All selected nodes are currently offline or unreachable. Please check the alerts above for details.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {/* Containers Section - Only show if we have online nodes */}
+      {stats && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-bold">
+              All Containers ({filteredContainers.length})
+            </h2>
+          </div>
+
+          {/* Search and Filters */}
+          {allContainers.length > 0 && (
           <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
             {/* Search Bar */}
             <div className="relative flex-1 max-w-md w-full">
@@ -193,9 +255,10 @@ function Monitoring() {
           </div>
         )}
 
-        {/* Containers Table */}
-        <ContainersTable containers={filteredContainers} />
-      </div>
+          {/* Containers Table */}
+          <ContainersTable containers={filteredContainers} />
+        </div>
+      )}
     </div>
   );
 }

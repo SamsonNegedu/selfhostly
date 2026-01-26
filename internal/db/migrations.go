@@ -13,12 +13,52 @@ import (
 // bootstrapSingleNode handles the initial setup for primary node creation
 // and migration of existing apps to multi-node architecture
 func bootstrapSingleNode(db *sql.DB, cfg *config.Config) error {
-	log.Println("🚀 Bootstrapping single node setup...")
+	log.Println("🚀 Bootstrapping node...")
 
-	// Safety check: Only bootstrap if NODE_IS_PRIMARY is true
+	// Check if this node already has a record
+	var existingNodeCount int
+	if err := db.QueryRow("SELECT COUNT(*) FROM nodes WHERE id = ?", cfg.Node.ID).Scan(&existingNodeCount); err != nil {
+		return fmt.Errorf("failed to check for existing node: %w", err)
+	}
+
+	// If this node already exists in the database, skip bootstrap
+	if existingNodeCount > 0 {
+		log.Printf("ℹ️  Node %s already exists in database - skipping bootstrap", cfg.Node.Name)
+		return nil
+	}
+
+	// Handle SECONDARY nodes: Create their own local node record
 	if !cfg.Node.IsPrimary {
 		log.Println("ℹ️  Skipping bootstrap - not configured as primary node")
 		log.Println("💡 To register this as a secondary node, use the /nodes API on the primary")
+
+		// Determine API endpoint - prefer NODE_API_ENDPOINT for multi-node setups
+		apiEndpoint := cfg.Node.APIEndpoint
+		if apiEndpoint == "" {
+			// Fallback: use localhost (only for single-machine testing)
+			apiEndpoint = "http://localhost" + cfg.ServerAddress
+			log.Printf("⚠️  WARNING: NODE_API_ENDPOINT not set - using %s", apiEndpoint)
+			log.Println("💡 For multi-node setups, set NODE_API_ENDPOINT to this node's reachable URL")
+		}
+
+		// Create a local node record for this secondary node
+		secondaryNode := NewNode(cfg.Node.Name, apiEndpoint, cfg.Node.APIKey, false)
+		// CRITICAL: Use the node ID from config, not the auto-generated one
+		secondaryNode.ID = cfg.Node.ID
+
+		_, err := db.Exec(
+			`INSERT INTO nodes (id, name, api_endpoint, api_key, is_primary, status, created_at, updated_at, last_seen)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			secondaryNode.ID, secondaryNode.Name, secondaryNode.APIEndpoint,
+			secondaryNode.APIKey, 0, secondaryNode.Status,
+			secondaryNode.CreatedAt, secondaryNode.UpdatedAt, secondaryNode.LastSeen,
+		)
+		if err != nil {
+			log.Printf("⚠️  Failed to create local node record: %v", err)
+		} else {
+			log.Printf("✓ Created local node record for: %s (endpoint: %s)", secondaryNode.Name, apiEndpoint)
+		}
+
 		return nil
 	}
 
@@ -30,7 +70,7 @@ func bootstrapSingleNode(db *sql.DB, cfg *config.Config) error {
 
 	if nodeCount > 0 {
 		log.Printf("ℹ️  Found %d existing node(s) - skipping bootstrap", nodeCount)
-		
+
 		// Even though we're not bootstrapping, check if any apps need node assignment
 		var primaryNodeID string
 		if err := db.QueryRow("SELECT id FROM nodes WHERE is_primary = 1 LIMIT 1").Scan(&primaryNodeID); err == nil {
@@ -41,7 +81,7 @@ func bootstrapSingleNode(db *sql.DB, cfg *config.Config) error {
 		} else {
 			log.Printf("⚠️  Could not find primary node to assign apps: %v", err)
 		}
-		
+
 		return nil
 	}
 
@@ -76,17 +116,19 @@ func bootstrapSingleNode(db *sql.DB, cfg *config.Config) error {
 		log.Println("🔄 Initializing primary node for new installation...")
 	}
 
+	// Determine API endpoint - prefer NODE_API_ENDPOINT for multi-node setups
+	apiEndpoint := cfg.Node.APIEndpoint
+	if apiEndpoint == "" {
+		// Fallback: use localhost (only for single-machine testing)
+		apiEndpoint = "http://localhost" + cfg.ServerAddress
+		log.Printf("⚠️  WARNING: NODE_API_ENDPOINT not set - using %s", apiEndpoint)
+		log.Println("💡 For multi-node setups, set NODE_API_ENDPOINT to this node's reachable URL")
+	}
+
 	// Create the primary node for this installation using the config's node ID
-	primaryNode := NewNode(cfg.Node.Name, cfg.Node.APIKey, cfg.Node.APIKey, true)
+	primaryNode := NewNode(cfg.Node.Name, apiEndpoint, cfg.Node.APIKey, true)
 	// CRITICAL: Use the node ID from config, not the auto-generated one
 	primaryNode.ID = cfg.Node.ID
-	
-	// Set API endpoint from config
-	if cfg.Auth.BaseURL != "" {
-		primaryNode.APIEndpoint = cfg.Auth.BaseURL
-	} else {
-		primaryNode.APIEndpoint = "http://localhost" + cfg.ServerAddress
-	}
 
 	// Insert the primary node
 	_, err := db.Exec(

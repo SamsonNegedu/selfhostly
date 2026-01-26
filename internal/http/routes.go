@@ -58,6 +58,9 @@ func (s *Server) setupRoutes() {
 	{
 		internal.GET("/settings", s.getSettingsForNode)
 
+		// Node heartbeat - allows nodes to announce they're online
+		internal.POST("/nodes/:id/heartbeat", s.sendNodeHeartbeat)
+
 		// App management for inter-node communication (local only, no aggregation)
 		internal.GET("/apps", s.listLocalApps)
 		internal.GET("/apps/:id", s.getLocalApp)
@@ -163,6 +166,7 @@ func (s *Server) setupNodeRoutes(api *gin.RouterGroup) {
 		nodes.PUT("/:id", s.updateNode)
 		nodes.DELETE("/:id", s.deleteNode)
 		nodes.GET("/:id/health", s.checkNodeHealth)
+		nodes.POST("/:id/check", s.manualCheckNode) // Manual health check trigger (for UI)
 	}
 
 	// Current node info

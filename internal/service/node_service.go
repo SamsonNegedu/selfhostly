@@ -36,7 +36,18 @@ func NewNodeService(
 
 // RegisterNode registers a new node in the cluster
 func (s *nodeService) RegisterNode(ctx context.Context, req domain.RegisterNodeRequest) (*db.Node, error) {
-	s.logger.InfoContext(ctx, "registering new node", "name", req.Name)
+	s.logger.InfoContext(ctx, "registering new node", "name", req.Name, "id", req.ID)
+
+	// Validate node ID is provided
+	if req.ID == "" {
+		return nil, fmt.Errorf("node ID is required for registration")
+	}
+
+	// Check if node with this ID already exists
+	existingNodeByID, err := s.database.GetNode(req.ID)
+	if err == nil && existingNodeByID != nil {
+		return nil, fmt.Errorf("node with ID %s already exists", req.ID)
+	}
 
 	// Check if node with this name already exists
 	existingNode, err := s.database.GetNodeByName(req.Name)
@@ -44,8 +55,8 @@ func (s *nodeService) RegisterNode(ctx context.Context, req domain.RegisterNodeR
 		return nil, fmt.Errorf("node with name %s already exists", req.Name)
 	}
 
-	// Create new node
-	newNode := db.NewNode(req.Name, req.APIEndpoint, req.APIKey, false) // Secondary nodes are never primary
+	// Create new node with the provided ID
+	newNode := db.NewNodeWithID(req.ID, req.Name, req.APIEndpoint, req.APIKey, false)
 
 	// Perform initial health check
 	if err := s.nodeClient.HealthCheck(newNode); err != nil {
@@ -177,13 +188,28 @@ func (s *nodeService) HealthCheckNode(ctx context.Context, nodeID string) error 
 
 	if err != nil {
 		// Health check failed
-		node.Status = "unreachable"
-		node.LastSeen = nil
-		s.logger.WarnContext(ctx, "node health check failed", "nodeID", nodeID, "error", err)
+		node.ConsecutiveFailures++
+		node.LastHealthCheck = &now
+		
+		// After 3 consecutive failures, mark as offline
+		// After 10 consecutive failures, mark as unreachable (will be checked less frequently)
+		if node.ConsecutiveFailures >= 10 {
+			node.Status = "unreachable"
+		} else if node.ConsecutiveFailures >= 3 {
+			node.Status = "offline"
+		}
+		
+		s.logger.WarnContext(ctx, "node health check failed", 
+			"nodeID", nodeID, 
+			"consecutive_failures", node.ConsecutiveFailures,
+			"status", node.Status,
+			"error", err)
 	} else {
-		// Health check succeeded
+		// Health check succeeded - reset failure counter
+		node.ConsecutiveFailures = 0
 		node.Status = "online"
 		node.LastSeen = &now
+		node.LastHealthCheck = &now
 		s.logger.DebugContext(ctx, "node health check succeeded", "nodeID", nodeID)
 	}
 
@@ -197,24 +223,78 @@ func (s *nodeService) HealthCheckNode(ctx context.Context, nodeID string) error 
 	return err
 }
 
-// HealthCheckAllNodes performs health checks on all nodes
+// HealthCheckAllNodes performs health checks on all nodes with exponential backoff
 func (s *nodeService) HealthCheckAllNodes(ctx context.Context) error {
 	nodes, err := s.database.GetAllNodes()
 	if err != nil {
 		return err
 	}
 
+	now := time.Now()
+
 	for _, node := range nodes {
-		// Skip health check on self (current node)
+		// Update current node's status as online (it's alive if we're running this)
 		if node.ID == s.config.Node.ID {
+			node.Status = "online"
+			node.LastSeen = &now
+			node.LastHealthCheck = &now
+			node.ConsecutiveFailures = 0
+			node.UpdatedAt = now
+			if dbErr := s.database.UpdateNode(node); dbErr != nil {
+				s.logger.WarnContext(ctx, "failed to update current node status", "nodeID", node.ID, "error", dbErr)
+			}
 			continue
 		}
 
-		// Perform health check (ignore individual errors)
-		_ = s.HealthCheckNode(ctx, node.ID)
+		// Implement exponential backoff based on consecutive failures
+		// 0 failures: check every cycle (30s)
+		// 1-2 failures: check every cycle (30s)
+		// 3-5 failures: check every 2 minutes
+		// 6-9 failures: check every 5 minutes
+		// 10+ failures: check every 15 minutes
+		shouldCheck := s.shouldCheckNode(node, now)
+		
+		if shouldCheck {
+			// Perform health check on remote nodes (ignore individual errors)
+			_ = s.HealthCheckNode(ctx, node.ID)
+		} else {
+			s.logger.DebugContext(ctx, "skipping health check due to backoff", 
+				"nodeID", node.ID,
+				"nodeName", node.Name,
+				"consecutive_failures", node.ConsecutiveFailures)
+		}
 	}
 
 	return nil
+}
+
+// shouldCheckNode determines if a node should be checked based on its failure history
+func (s *nodeService) shouldCheckNode(node *db.Node, now time.Time) bool {
+	// If never checked, always check
+	if node.LastHealthCheck == nil {
+		return true
+	}
+
+	timeSinceLastCheck := now.Sub(*node.LastHealthCheck)
+
+	// Exponential backoff based on consecutive failures
+	switch {
+	case node.ConsecutiveFailures == 0:
+		// Online node - check every cycle
+		return true
+	case node.ConsecutiveFailures <= 2:
+		// Recently failed - check every cycle (30s)
+		return true
+	case node.ConsecutiveFailures <= 5:
+		// Multiple failures - check every 2 minutes
+		return timeSinceLastCheck >= 2*time.Minute
+	case node.ConsecutiveFailures <= 9:
+		// Many failures - check every 5 minutes
+		return timeSinceLastCheck >= 5*time.Minute
+	default:
+		// Persistent failures - check every 15 minutes
+		return timeSinceLastCheck >= 15*time.Minute
+	}
 }
 
 // SyncSettingsFromPrimary fetches settings from primary node and updates local settings
@@ -285,7 +365,7 @@ func (s *nodeService) GetCurrentNodeInfo(ctx context.Context) (*db.Node, error) 
 	return &db.Node{
 		ID:          s.config.Node.ID,
 		Name:        s.config.Node.Name,
-		APIEndpoint: s.config.Auth.BaseURL,
+		APIEndpoint: s.config.Node.APIEndpoint,
 		APIKey:      s.config.Node.APIKey,
 		IsPrimary:   s.config.Node.IsPrimary,
 		Status:      "online",
@@ -293,4 +373,31 @@ func (s *nodeService) GetCurrentNodeInfo(ctx context.Context) (*db.Node, error) 
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}, nil
+}
+
+// NodeHeartbeat handles a heartbeat from a node announcing it's online
+// This resets the failure counter and triggers an immediate health check
+func (s *nodeService) NodeHeartbeat(ctx context.Context, nodeID string) error {
+	s.logger.InfoContext(ctx, "received heartbeat from node", "nodeID", nodeID)
+
+	node, err := s.database.GetNode(nodeID)
+	if err != nil {
+		return fmt.Errorf("node not found: %w", err)
+	}
+
+	// Reset failure counter and mark as online
+	now := time.Now()
+	node.ConsecutiveFailures = 0
+	node.Status = "online"
+	node.LastSeen = &now
+	node.LastHealthCheck = &now
+	node.UpdatedAt = now
+
+	if err := s.database.UpdateNode(node); err != nil {
+		s.logger.ErrorContext(ctx, "failed to update node after heartbeat", "nodeID", nodeID, "error", err)
+		return err
+	}
+
+	s.logger.InfoContext(ctx, "node heartbeat processed successfully", "nodeID", nodeID, "nodeName", node.Name)
+	return nil
 }

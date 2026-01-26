@@ -11,6 +11,7 @@ export function RegisterNodePage() {
   const navigate = useNavigate();
   const registerMutation = useRegisterNode();
   const [formData, setFormData] = useState<RegisterNodeRequest>({
+    id: '',
     name: '',
     api_endpoint: '',
     api_key: '',
@@ -26,7 +27,7 @@ export function RegisterNodePage() {
     }
   };
 
-  const isValid = formData.name && formData.api_endpoint && formData.api_key;
+  const isValid = formData.id && formData.name && formData.api_endpoint && formData.api_key;
 
   return (
     <div className="fade-in space-y-6">
@@ -57,9 +58,10 @@ export function RegisterNodePage() {
               <li>Configure with <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">NODE_IS_PRIMARY=false</code></li>
               <li>Set <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">PRIMARY_NODE_URL</code> to this node's URL</li>
               <li>Start the secondary node and copy the registration details from startup logs</li>
+              <li>Save the <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">NODE_ID</code> and <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">NODE_API_KEY</code> to .env to persist across restarts</li>
             </ol>
             <p className="text-xs text-muted-foreground mt-3 pl-5">
-              The startup logs will display the node name, API endpoint, and API key needed for registration.
+              <strong>Important:</strong> The startup logs will display the node ID, name, API endpoint, and API key. Copy the Node ID to ensure heartbeats work correctly.
             </p>
           </div>
         </div>
@@ -68,6 +70,21 @@ export function RegisterNodePage() {
       {/* Registration Form */}
       <Card className="p-6">
         <form onSubmit={handleSubmit} className="space-y-6">
+          <div>
+            <label className="block text-sm font-medium mb-2">
+              Node ID <span className="text-red-500">*</span>
+            </label>
+            <Input
+              placeholder="Copy from secondary node startup logs"
+              value={formData.id}
+              onChange={(e) => setFormData({ ...formData, id: e.target.value })}
+              required
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              <strong>Required:</strong> Copy the Node ID from the secondary's startup logs. This ensures heartbeat authentication works correctly.
+            </p>
+          </div>
+
           <div>
             <label className="block text-sm font-medium mb-2">
               Node Name <span className="text-red-500">*</span>
@@ -141,18 +158,6 @@ export function RegisterNodePage() {
             </Button>
           </div>
         </form>
-      </Card>
-
-      {/* Additional Help */}
-      <Card className="p-6">
-        <h3 className="font-medium mb-3">Need help?</h3>
-        <ul className="text-sm text-muted-foreground space-y-2 list-disc list-inside">
-          <li>The node must be reachable from this primary node</li>
-          <li>Ensure firewall rules allow traffic on the configured port (default: 8080)</li>
-          <li>All registration details are displayed in a formatted box in the startup logs</li>
-          <li>For HTTPS endpoints, ensure valid SSL certificates are configured</li>
-          <li>Use the full URL including protocol (http:// or https://) for the API endpoint</li>
-        </ul>
       </Card>
     </div>
   );

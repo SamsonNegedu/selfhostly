@@ -4,6 +4,14 @@ A comprehensive web-based platform for managing self-hosted applications on your
 
 ## Features
 
+### Multi-Node Architecture
+- 🌐 **Distributed Deployment** - Manage applications across multiple servers from a single UI
+- 🔄 **Automatic Health Checks** - Smart monitoring with exponential backoff for offline nodes
+- 💓 **Node Heartbeats** - Secondary nodes proactively report online status
+- 🔐 **Secure Node Communication** - API key-based authentication between nodes
+- 📊 **Unified Monitoring** - View stats from all nodes in one dashboard
+- ⚡ **Horizontal Scaling** - Add more nodes to distribute workload
+
 ### App Management
 - 🚀 **Create & Deploy Apps** - Deploy Docker Compose applications through an intuitive web UI
 - 📝 **Compose Editor** - Built-in Monaco editor with YAML syntax highlighting and validation
@@ -51,6 +59,8 @@ A comprehensive web-based platform for managing self-hosted applications on your
 
 ## ✨ Recent Updates
 
+- **🌐 Multi-Node Architecture** - Manage applications across multiple servers from a single UI with automatic health checks
+- **💓 Smart Health Monitoring** - Exponential backoff for health checks and heartbeat mechanism for faster node recovery
 - **🔧 System Monitoring** - Comprehensive dashboard showing CPU, memory, disk, and per-container metrics with real-time updates
 - **🎨 Theme Support** - Beautiful dark and light modes with automatic system preference detection
 - **📜 Version Control** - Automatic versioning and rollback capability for all compose file changes
@@ -173,6 +183,33 @@ SERVER_ADDRESS=:8080           # Address to bind the web server
 DATABASE_PATH=./data/selfhostly.db  # SQLite database location
 ```
 
+### Multi-Node Configuration (Optional)
+
+Deploy across multiple servers for distributed app management:
+
+```env
+# Primary Node (main server with UI and database)
+NODE_IS_PRIMARY=true
+NODE_NAME=primary
+NODE_API_ENDPOINT=http://192.168.1.10:8080  # This node's reachable URL
+NODE_API_KEY=your-secure-api-key-here       # Generate with: openssl rand -base64 32
+
+# Secondary Node (worker server)
+NODE_IS_PRIMARY=false
+NODE_NAME=worker-1
+NODE_API_ENDPOINT=http://192.168.1.50:9090  # This node's reachable URL
+NODE_API_KEY=your-secure-api-key-here       # Must match key registered on primary
+PRIMARY_NODE_URL=http://192.168.1.10:8080   # URL of primary node
+```
+
+**Benefits:**
+- Manage multiple servers from one UI
+- Deploy apps to any node in the cluster
+- Unified monitoring across all nodes
+- Automatic health checks and heartbeats
+
+📖 [Multi-Node Setup Guide](./docs/MULTI_NODE.md) - Complete configuration, authentication, and troubleshooting
+
 ### Cloudflare Integration (Optional)
 
 Required for automatic tunnel creation and management:
@@ -216,7 +253,7 @@ AUTH_ENABLED=true
 GITHUB_CLIENT_ID=your_github_client_id
 GITHUB_CLIENT_SECRET=your_github_client_secret
 GITHUB_ALLOWED_USERS=username1,username2
-AUTH_BASE_URL=https://your-domain.com
+NODE_API_ENDPOINT=https://your-domain.com
 ```
 
 📖 [GitHub OAuth Setup Guide](./docs/GITHUB_WHITELIST.md)
@@ -341,6 +378,7 @@ make clean
 
 ### Getting Started
 - [Development Guide](./docs/DEVELOPMENT.md) - Local setup, live reload, and debugging
+- [Multi-Node Setup](./docs/MULTI_NODE.md) - Distributed deployment, authentication, and health checks
 - [Security Model](./docs/SECURITY.md) - Single-user design and limitations
 
 ### Features
@@ -348,7 +386,8 @@ make clean
 - [Compose Versioning](./docs/COMPOSE_VERSIONING.md) - Version control and rollback system
 - [Cloudflare Integration](./docs/CLOUDFLARE_ZERO_TRUST.md) - Tunnel setup and Zero Trust configuration
 
-### Authentication
+### Authentication & Security
+- [Multi-Node Authentication](./docs/MULTI_NODE.md#authentication-strategies) - Node-to-node API keys and user auth
 - [Cloudflare Zero Trust Setup](./docs/CLOUDFLARE_ZERO_TRUST.md) - Recommended authentication method
 - [GitHub OAuth Setup](./docs/GITHUB_WHITELIST.md) - Alternative authentication option
 
@@ -394,10 +433,12 @@ make clean
 
 Perfect for:
 - 🏠 Self-hosting enthusiasts managing apps on a Raspberry Pi
-- 🔧 Developers running multiple services on a home lab server
+- 🌐 Multi-server home labs with distributed workloads
+- 🔧 Developers running multiple services across different machines
 - 📦 Anyone tired of SSH-ing to manage Docker containers
 - 🚀 Quick deployment of Docker Compose applications with public URLs
-- 📊 Monitoring resource usage without htop or SSH access
+- 📊 Monitoring resource usage across multiple nodes without SSH access
+- 🏗️ Geographic distribution of services (e.g., edge nodes + main server)
 
 Not suitable for:
 - ❌ Multi-user/multi-tenant environments (single-user design)

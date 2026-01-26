@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -157,12 +158,15 @@ const (
 	idleTimeout  = 120 * time.Second // 2 minutes idle
 )
 
-// Run starts the HTTP server
+// Run starts the HTTP server and background tasks
 func (s *Server) Run() error {
 	addr := s.config.ServerAddress
 	if addr == "" {
 		addr = ":8080"
 	}
+
+	// Start background tasks
+	s.startBackgroundTasks()
 
 	// Configure server with timeouts
 	server := &http.Server{
@@ -175,6 +179,41 @@ func (s *Server) Run() error {
 	}
 
 	return server.ListenAndServe()
+}
+
+// startBackgroundTasks starts periodic background tasks like health checks
+func (s *Server) startBackgroundTasks() {
+	// Start periodic health checks for all nodes
+	go s.runPeriodicHealthChecks()
+	
+	// If this is a secondary node with a configured primary, send startup heartbeat
+	if !s.config.Node.IsPrimary && s.config.Node.PrimaryNodeURL != "" {
+		go s.sendStartupHeartbeat()
+	}
+	
+	slog.Info("background tasks started", "health_check_interval", "30s")
+}
+
+// runPeriodicHealthChecks performs health checks on all nodes every 30 seconds
+func (s *Server) runPeriodicHealthChecks() {
+	// Run immediately on startup
+	ctx := context.Background()
+	if err := s.nodeService.HealthCheckAllNodes(ctx); err != nil {
+		slog.Warn("initial health check failed", "error", err)
+	}
+
+	// Then run every 30 seconds
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		ctx := context.Background()
+		if err := s.nodeService.HealthCheckAllNodes(ctx); err != nil {
+			slog.Warn("periodic health check failed", "error", err)
+		} else {
+			slog.Debug("periodic health check completed successfully")
+		}
+	}
 }
 
 // securityHeadersMiddleware adds security-related HTTP headers
@@ -366,7 +405,24 @@ func (s *Server) nodeAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// Look up the node by ID
+		// For SECONDARY nodes: Just verify the API key matches this node's own API key
+		// This allows any node with the correct API key to communicate
+		if !s.config.Node.IsPrimary {
+			if apiKey != s.config.Node.APIKey {
+				c.JSON(http.StatusUnauthorized, ErrorResponse{
+					Error:   "invalid API key",
+					Details: "provided API key does not match this node",
+				})
+				c.Abort()
+				return
+			}
+			// Store node ID in context for handlers
+			c.Set("node_id", nodeID)
+			c.Next()
+			return
+		}
+
+		// For PRIMARY nodes: Validate the requesting node is registered in the cluster
 		node, err := s.database.GetNode(nodeID)
 		if err != nil {
 			c.JSON(http.StatusUnauthorized, ErrorResponse{

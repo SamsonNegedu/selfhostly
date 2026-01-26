@@ -36,6 +36,7 @@ export interface CreateAppRequest {
 }
 
 export interface RegisterNodeRequest {
+  id: string; // Required: Secondary's existing node ID for heartbeat authentication
   name: string;
   api_endpoint: string;
   api_key: string;
@@ -149,6 +150,8 @@ export interface SystemStats {
   docker: DockerStats;
   containers: ContainerInfo[];
   timestamp: string;
+  error?: string; // Error message if stats couldn't be fetched
+  status: 'online' | 'offline' | 'error'; // Node connectivity status
 }
 
 export interface CPUStats {

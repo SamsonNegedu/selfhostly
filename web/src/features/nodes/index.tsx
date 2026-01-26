@@ -1,8 +1,10 @@
 import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 import { useNodes, useDeleteNode, useCurrentNode } from '../../shared/services/api';
 import { Button } from '../../shared/components/ui/button';
 import { Card } from '../../shared/components/ui/card';
 import { Badge } from '../../shared/components/ui/badge';
+import ConfirmationDialog from '../../shared/components/ui/ConfirmationDialog';
 import { Server, Plus, Trash2 } from 'lucide-react';
 
 export function NodesPage() {
@@ -10,11 +12,20 @@ export function NodesPage() {
   const { data: nodes, isLoading } = useNodes();
   const { data: currentNode } = useCurrentNode();
   const deleteMutation = useDeleteNode();
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [nodeToDelete, setNodeToDelete] = useState<{ id: string; name: string } | null>(null);
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this node?')) return;
+  const handleDeleteClick = (id: string, name: string) => {
+    setNodeToDelete({ id, name });
+    setDeleteDialogOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!nodeToDelete) return;
     try {
-      await deleteMutation.mutateAsync(id);
+      await deleteMutation.mutateAsync(nodeToDelete.id);
+      setDeleteDialogOpen(false);
+      setNodeToDelete(null);
     } catch (error) {
       console.error('Failed to delete node:', error);
     }
@@ -62,12 +73,12 @@ export function NodesPage() {
         <div className="flex items-start gap-3 p-4 rounded-lg bg-muted/50 border-2">
           <Server className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
           <div className="flex-1">
-            <p className="text-sm font-medium mb-1">
-              Current Node: {currentNode.name}
+            <div className="text-sm font-medium mb-1 flex items-center gap-2">
+              <span>Current Node: {currentNode.name}</span>
               {currentNode.is_primary && (
-                <Badge variant="default" className="bg-blue-600 ml-2">Primary</Badge>
+                <Badge variant="default" className="bg-blue-600">Primary</Badge>
               )}
-            </p>
+            </div>
             <p className="text-sm text-muted-foreground">
               Running on {currentNode.api_endpoint} • {nodes?.length || 0} node{nodes?.length !== 1 ? 's' : ''} in cluster
             </p>
@@ -121,7 +132,7 @@ export function NodesPage() {
                           variant="ghost"
                           size="sm"
                           disabled={node.is_primary}
-                          onClick={() => handleDelete(node.id)}
+                          onClick={() => handleDeleteClick(node.id, node.name)}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -146,6 +157,18 @@ export function NodesPage() {
           </Button>
         </Card>
       )}
+
+      <ConfirmationDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        title="Delete Node"
+        description={`Are you sure you want to delete "${nodeToDelete?.name}"? This action cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={handleConfirmDelete}
+        isLoading={deleteMutation.isPending}
+        variant="destructive"
+      />
     </div>
   );
 }

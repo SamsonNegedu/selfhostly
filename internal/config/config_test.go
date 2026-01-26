@@ -16,7 +16,7 @@ func TestLoad(t *testing.T) {
 	origCloudflareAccount := os.Getenv("CLOUDFLARE_ACCOUNT_ID")
 	origAuthEnabled := os.Getenv("AUTH_ENABLED")
 	origSecureCookie := os.Getenv("AUTH_SECURE_COOKIE")
-	origBaseURL := os.Getenv("AUTH_BASE_URL")
+	origBaseURL := os.Getenv("NODE_API_ENDPOINT")
 	origGitHubClientID := os.Getenv("GITHUB_CLIENT_ID")
 	origGitHubSecret := os.Getenv("GITHUB_CLIENT_SECRET")
 
@@ -31,7 +31,7 @@ func TestLoad(t *testing.T) {
 		os.Setenv("CLOUDFLARE_ACCOUNT_ID", origCloudflareAccount)
 		os.Setenv("AUTH_ENABLED", origAuthEnabled)
 		os.Setenv("AUTH_SECURE_COOKIE", origSecureCookie)
-		os.Setenv("AUTH_BASE_URL", origBaseURL)
+		os.Setenv("NODE_API_ENDPOINT", origBaseURL)
 		os.Setenv("GITHUB_CLIENT_ID", origGitHubClientID)
 		os.Setenv("GITHUB_CLIENT_SECRET", origGitHubSecret)
 	}()
@@ -46,7 +46,7 @@ func TestLoad(t *testing.T) {
 	os.Unsetenv("CLOUDFLARE_ACCOUNT_ID")
 	os.Unsetenv("AUTH_ENABLED")
 	os.Unsetenv("AUTH_SECURE_COOKIE")
-	os.Unsetenv("AUTH_BASE_URL")
+	os.Unsetenv("NODE_API_ENDPOINT")
 	os.Unsetenv("GITHUB_CLIENT_ID")
 	os.Unsetenv("GITHUB_CLIENT_SECRET")
 
@@ -114,7 +114,7 @@ func TestLoadWithCustomEnv(t *testing.T) {
 	origAuthEnabled := os.Getenv("AUTH_ENABLED")
 	origJWTSecret := os.Getenv("JWT_SECRET")
 	origSecureCookie := os.Getenv("AUTH_SECURE_COOKIE")
-	origBaseURL := os.Getenv("AUTH_BASE_URL")
+	origBaseURL := os.Getenv("NODE_API_ENDPOINT")
 	origGitHubClientID := os.Getenv("GITHUB_CLIENT_ID")
 	origGitHubSecret := os.Getenv("GITHUB_CLIENT_SECRET")
 
@@ -130,7 +130,7 @@ func TestLoadWithCustomEnv(t *testing.T) {
 		os.Setenv("AUTH_ENABLED", origAuthEnabled)
 		os.Setenv("JWT_SECRET", origJWTSecret)
 		os.Setenv("AUTH_SECURE_COOKIE", origSecureCookie)
-		os.Setenv("AUTH_BASE_URL", origBaseURL)
+		os.Setenv("NODE_API_ENDPOINT", origBaseURL)
 		os.Setenv("GITHUB_CLIENT_ID", origGitHubClientID)
 		os.Setenv("GITHUB_CLIENT_SECRET", origGitHubSecret)
 	}()
@@ -146,7 +146,7 @@ func TestLoadWithCustomEnv(t *testing.T) {
 	os.Setenv("AUTH_ENABLED", "true")
 	os.Setenv("JWT_SECRET", "custom-secret")
 	os.Setenv("AUTH_SECURE_COOKIE", "true")
-	os.Setenv("AUTH_BASE_URL", "https://example.com")
+	os.Setenv("NODE_API_ENDPOINT", "https://example.com")
 	os.Setenv("GITHUB_CLIENT_ID", "test-client-id")
 	os.Setenv("GITHUB_CLIENT_SECRET", "test-client-secret")
 

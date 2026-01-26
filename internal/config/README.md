@@ -32,7 +32,7 @@ The following environment variables can be used to configure the application:
 - `AUTH_ENABLED`: Whether authentication is enabled (default: "false")
 - `JWT_SECRET`: JWT secret for token signing (**required when AUTH_ENABLED is true**, no default)
 - `AUTH_SECURE_COOKIE`: Whether to use secure cookies (default: "false")
-- `AUTH_BASE_URL`: Base URL for OAuth callbacks (default: "http://localhost:8080")
+- `NODE_API_ENDPOINT`: This node's API endpoint URL for inter-node communication (default: "http://localhost:8080")
 - `GITHUB_CLIENT_ID`: GitHub OAuth client ID (default: "")
 - `GITHUB_CLIENT_SECRET`: GitHub OAuth client secret (default: "")
 - `GITHUB_ALLOWED_USERS`: Comma-separated list of GitHub usernames allowed to access (default: "")

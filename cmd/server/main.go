@@ -77,12 +77,24 @@ func main() {
 		log.Println("")
 		log.Println("📝 Use these details to register this node on the primary:")
 		log.Println("")
+		log.Printf("   Node ID:       %s", cfg.Node.ID)
 		log.Printf("   Node Name:     %s", cfg.Node.Name)
-		log.Printf("   API Endpoint:  http://<this-server-ip>%s", cfg.ServerAddress)
+		
+		// Show the actual API endpoint if NODE_API_ENDPOINT is set, otherwise show placeholder
+		if cfg.Node.APIEndpoint != "" {
+			log.Printf("   API Endpoint:  %s", cfg.Node.APIEndpoint)
+		} else {
+			log.Printf("   API Endpoint:  http://<this-server-ip>%s", cfg.ServerAddress)
+			log.Println("")
+			log.Println("   ⚠️  Set NODE_API_ENDPOINT to this node's reachable URL")
+		}
+		
 		log.Printf("   API Key:       %s", cfg.Node.APIKey)
 		log.Println("")
 		log.Printf("💡 Register at:   %s/nodes", cfg.Node.PrimaryNodeURL)
 		log.Println("")
+		log.Println("⚠️  CRITICAL: Copy the Node ID above - required for heartbeat authentication!")
+		log.Println("⚠️  IMPORTANT: Save NODE_ID and NODE_API_KEY to .env to keep them consistent")
 		log.Println("ℹ️  Server will start but cannot manage apps until registered")
 		log.Println("═══════════════════════════════════════════════════════════")
 		log.Println("")
