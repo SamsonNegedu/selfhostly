@@ -11,8 +11,9 @@ import (
 
 // tunnelService implements the TunnelService interface
 type tunnelService struct {
-	database *db.DB
-	logger   *slog.Logger
+	database      *db.DB
+	logger        *slog.Logger
+	tunnelManager *cloudflare.TunnelManager // Optional, for dependency injection in tests
 }
 
 // NewTunnelService creates a new tunnel service
@@ -21,6 +22,33 @@ func NewTunnelService(database *db.DB, logger *slog.Logger) domain.TunnelService
 		database: database,
 		logger:   logger,
 	}
+}
+
+// NewTunnelServiceWithManager creates a new tunnel service with a custom tunnel manager (for testing)
+func NewTunnelServiceWithManager(database *db.DB, logger *slog.Logger, tunnelManager *cloudflare.TunnelManager) domain.TunnelService {
+	return &tunnelService{
+		database:      database,
+		logger:        logger,
+		tunnelManager: tunnelManager,
+	}
+}
+
+// getTunnelManager returns the tunnel manager, creating one if not provided
+func (s *tunnelService) getTunnelManager() (*cloudflare.TunnelManager, error) {
+	if s.tunnelManager != nil {
+		return s.tunnelManager, nil
+	}
+
+	settings, err := s.database.GetSettings()
+	if err != nil {
+		return nil, err
+	}
+
+	if settings.CloudflareAPIToken == nil || settings.CloudflareAccountID == nil {
+		return nil, domain.ErrTunnelNotConfigured
+	}
+
+	return cloudflare.NewTunnelManager(*settings.CloudflareAPIToken, *settings.CloudflareAccountID, s.database), nil
 }
 
 // GetTunnelByAppID retrieves a tunnel by app ID
@@ -58,16 +86,11 @@ func (s *tunnelService) SyncTunnelStatus(ctx context.Context, appID string) erro
 		return domain.NewDomainError("TUNNEL_NOT_FOUND", "tunnel not found", err)
 	}
 
-	settings, err := s.database.GetSettings()
+	tunnelManager, err := s.getTunnelManager()
 	if err != nil {
-		return domain.WrapDatabaseOperation("get settings", err)
+		return err
 	}
 
-	if settings.CloudflareAPIToken == nil || settings.CloudflareAccountID == nil {
-		return domain.ErrTunnelNotConfigured
-	}
-
-	tunnelManager := cloudflare.NewTunnelManager(*settings.CloudflareAPIToken, *settings.CloudflareAccountID, s.database)
 	if err := tunnelManager.SyncTunnelStatus(tunnel.TunnelID); err != nil {
 		s.logger.ErrorContext(ctx, "failed to sync tunnel status", "tunnelID", tunnel.TunnelID, "error", err)
 		return err
@@ -85,13 +108,9 @@ func (s *tunnelService) UpdateTunnelIngress(ctx context.Context, appID string, r
 		return domain.NewDomainError("TUNNEL_NOT_FOUND", "tunnel not found", err)
 	}
 
-	settings, err := s.database.GetSettings()
+	tunnelManager, err := s.getTunnelManager()
 	if err != nil {
-		return domain.WrapDatabaseOperation("get settings", err)
-	}
-
-	if settings.CloudflareAPIToken == nil || settings.CloudflareAccountID == nil {
-		return domain.ErrTunnelNotConfigured
+		return err
 	}
 
 	// Convert domain IngressRules to cloudflare IngressRules
@@ -110,7 +129,6 @@ func (s *tunnelService) UpdateTunnelIngress(ctx context.Context, appID string, r
 		cfRules[i] = cfRule
 	}
 
-	tunnelManager := cloudflare.NewTunnelManager(*settings.CloudflareAPIToken, *settings.CloudflareAccountID, s.database)
 	if err := tunnelManager.UpdateTunnelIngress(tunnel.TunnelID, cfRules, req.Hostname, req.TargetDomain); err != nil {
 		s.logger.ErrorContext(ctx, "failed to update ingress", "tunnelID", tunnel.TunnelID, "error", err)
 		return err
@@ -129,17 +147,11 @@ func (s *tunnelService) CreateDNSRecord(ctx context.Context, appID string, req d
 		return domain.NewDomainError("TUNNEL_NOT_FOUND", "tunnel not found", err)
 	}
 
-	settings, err := s.database.GetSettings()
+	tunnelManager, err := s.getTunnelManager()
 	if err != nil {
-		return domain.WrapDatabaseOperation("get settings", err)
+		return err
 	}
 
-	if settings.CloudflareAPIToken == nil || settings.CloudflareAccountID == nil {
-		return domain.ErrTunnelNotConfigured
-	}
-
-	tunnelManager := cloudflare.NewTunnelManager(*settings.CloudflareAPIToken, *settings.CloudflareAccountID, s.database)
-	
 	// Get zone ID for the domain
 	zoneID, err := tunnelManager.ApiManager.GetZoneID(req.Domain)
 	if err != nil {
@@ -162,16 +174,11 @@ func (s *tunnelService) CreateDNSRecord(ctx context.Context, appID string, req d
 func (s *tunnelService) DeleteTunnel(ctx context.Context, appID string) error {
 	s.logger.InfoContext(ctx, "deleting tunnel", "appID", appID)
 
-	settings, err := s.database.GetSettings()
+	tunnelManager, err := s.getTunnelManager()
 	if err != nil {
-		return domain.WrapDatabaseOperation("get settings", err)
+		return err
 	}
 
-	if settings.CloudflareAPIToken == nil || settings.CloudflareAccountID == nil {
-		return domain.ErrTunnelNotConfigured
-	}
-
-	tunnelManager := cloudflare.NewTunnelManager(*settings.CloudflareAPIToken, *settings.CloudflareAccountID, s.database)
 	if err := tunnelManager.DeleteTunnelByAppID(appID); err != nil {
 		s.logger.ErrorContext(ctx, "failed to delete tunnel", "appID", appID, "error", err)
 		return err

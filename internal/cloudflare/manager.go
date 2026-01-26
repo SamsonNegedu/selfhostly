@@ -23,6 +23,14 @@ func NewTunnelManager(apiToken, accountID string, database *db.DB) *TunnelManage
 	}
 }
 
+// NewTunnelManagerWithManager creates a new tunnel manager with a custom API manager (for testing)
+func NewTunnelManagerWithManager(apiManager *Manager, database *db.DB) *TunnelManager {
+	return &TunnelManager{
+		ApiManager: apiManager,
+		database:   database,
+	}
+}
+
 // CreateTunnelWithMetadata creates a tunnel and stores its metadata
 func (tm *TunnelManager) CreateTunnelWithMetadata(appName string, appID string) (*db.CloudflareTunnel, error) {
 	// Create tunnel via API

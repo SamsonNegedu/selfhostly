@@ -99,6 +99,16 @@ func NewCollector(appsDir string, dockerManager *docker.Manager, database *db.DB
 	}
 }
 
+// NewCollectorWithExecutor creates a new system stats collector with a custom command executor (for testing)
+func NewCollectorWithExecutor(appsDir string, dockerManager *docker.Manager, database *db.DB, executor docker.CommandExecutor) *Collector {
+	return &Collector{
+		appsDir:         appsDir,
+		dockerManager:   dockerManager,
+		commandExecutor: executor,
+		database:        database,
+	}
+}
+
 // GetSystemStats retrieves comprehensive system statistics
 func (c *Collector) GetSystemStats() (*SystemStats, error) {
 	slog.Debug("collecting system statistics")

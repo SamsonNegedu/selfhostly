@@ -1,4 +1,4 @@
-.PHONY: dev dev-backend dev-frontend prod down clean install-air run-local help
+.PHONY: dev dev-backend dev-frontend prod down clean install-air run-local test test-verbose test-coverage help
 
 # Development commands
 dev: ## Start all services with live reload
@@ -40,6 +40,16 @@ run-local: ## Run backend locally with Air (no Docker)
 
 run-local-no-air: ## Run backend locally without Air
 	go run cmd/server/main.go
+
+# Testing commands
+test: ## Run all tests
+	go test ./...
+
+test-verbose: ## Run all tests with verbose output
+	go test -v ./...
+
+test-coverage: ## Run all tests with coverage report
+	go test -cover ./...
 
 # Utility commands
 logs: ## Show logs from all services
