@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 
@@ -9,6 +10,8 @@ import (
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/docker"
 	"github.com/selfhostly/internal/domain"
+	"github.com/selfhostly/internal/node"
+	"github.com/selfhostly/internal/routing"
 	"github.com/selfhostly/internal/system"
 	"github.com/selfhostly/internal/validation"
 )
@@ -17,8 +20,12 @@ import (
 type systemService struct {
 	database      *db.DB
 	dockerManager *docker.Manager
+	nodeClient    *node.Client
+	config        *config.Config
 	collector     *system.Collector
 	logger        *slog.Logger
+	router        *routing.NodeRouter
+	statsAgg      *routing.StatsAggregator
 }
 
 // NewSystemService creates a new system service
@@ -28,31 +35,76 @@ func NewSystemService(
 	cfg *config.Config,
 	logger *slog.Logger,
 ) domain.SystemService {
-	collector := system.NewCollector(cfg.AppsDir, dockerManager, database)
+	collector := system.NewCollector(cfg.AppsDir, dockerManager, database, cfg.Node.ID, cfg.Node.Name)
+	nodeClient := node.NewClient()
+	router := routing.NewNodeRouter(database, nodeClient, cfg.Node.ID, logger)
+	statsAgg := routing.NewStatsAggregator(router, logger)
+	
 	return &systemService{
 		database:      database,
 		dockerManager: dockerManager,
+		nodeClient:    nodeClient,
+		config:        cfg,
 		collector:     collector,
 		logger:        logger,
+		router:        router,
+		statsAgg:      statsAgg,
 	}
 }
 
-// GetSystemStats retrieves system-wide statistics
-func (s *systemService) GetSystemStats(ctx context.Context) (*system.SystemStats, error) {
-	s.logger.DebugContext(ctx, "getting system stats")
+// GetSystemStats retrieves system-wide statistics from specified nodes
+func (s *systemService) GetSystemStats(ctx context.Context, nodeIDs []string) ([]*system.SystemStats, error) {
+	s.logger.DebugContext(ctx, "getting system stats", "nodeIDs", nodeIDs)
 
-	sysStats, err := s.collector.GetSystemStats()
+	// Determine which nodes to fetch from
+	targetNodes, err := s.router.DetermineTargetNodes(ctx, nodeIDs)
 	if err != nil {
-		s.logger.ErrorContext(ctx, "failed to get system stats", "error", err)
-		return nil, domain.WrapContainerOperationFailed("get system stats", err)
+		return nil, err
 	}
 
-	s.logger.DebugContext(ctx, "system stats retrieved successfully",
-		"total_containers", sysStats.Docker.TotalContainers,
-		"running", sysStats.Docker.Running,
-		"cpu_usage", sysStats.CPU.UsagePercent)
+	// Log resolved nodes for debugging
+	if len(nodeIDs) > 0 && !(len(nodeIDs) == 1 && nodeIDs[0] == "all") {
+		resolvedIDs := make([]string, len(targetNodes))
+		for i, n := range targetNodes {
+			resolvedIDs[i] = n.ID
+		}
+		s.logger.DebugContext(ctx, "resolved target nodes", "count", len(targetNodes), "node_ids", resolvedIDs)
+	}
 
-	return sysStats, nil
+	// Aggregate stats from all target nodes in parallel
+	allStats, err := s.statsAgg.AggregateStats(
+		ctx,
+		targetNodes,
+		func() (*system.SystemStats, error) {
+			return s.collector.GetSystemStats()
+		},
+		func(n *db.Node) (map[string]interface{}, error) {
+			return s.nodeClient.GetSystemStats(n)
+		},
+		s.mapToSystemStats,
+	)
+
+	return allStats, err
+}
+
+// mapToSystemStats converts a map[string]interface{} (from JSON) to SystemStats
+func (s *systemService) mapToSystemStats(data map[string]interface{}, nodeID, nodeName string) (*system.SystemStats, error) {
+	// Marshal map back to JSON, then unmarshal into SystemStats struct
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal stats map: %w", err)
+	}
+
+	var stats system.SystemStats
+	if err := json.Unmarshal(jsonData, &stats); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal stats: %w", err)
+	}
+
+	// Ensure node ID and name are set correctly
+	stats.NodeID = nodeID
+	stats.NodeName = nodeName
+
+	return &stats, nil
 }
 
 // GetAppStats retrieves resource statistics for a specific app
@@ -139,8 +191,8 @@ func (s *systemService) GetAppLogs(ctx context.Context, appID string) ([]byte, e
 }
 
 // RestartContainer restarts a specific container
-func (s *systemService) RestartContainer(ctx context.Context, containerID string) error {
-	s.logger.InfoContext(ctx, "restarting container", "containerID", containerID)
+func (s *systemService) RestartContainer(ctx context.Context, containerID, nodeID string) error {
+	s.logger.InfoContext(ctx, "restarting container", "containerID", containerID, "nodeID", nodeID)
 
 	// Validate container ID
 	if err := validation.ValidateContainerID(containerID); err != nil {
@@ -148,18 +200,30 @@ func (s *systemService) RestartContainer(ctx context.Context, containerID string
 		return domain.WrapValidationError("container ID", err)
 	}
 
-	if err := s.dockerManager.RestartContainer(containerID); err != nil {
-		s.logger.ErrorContext(ctx, "failed to restart container", "containerID", containerID, "error", err)
+	// Route to correct node
+	_, err := s.router.RouteToNode(
+		ctx,
+		nodeID,
+		func() (interface{}, error) {
+			return nil, s.dockerManager.RestartContainer(containerID)
+		},
+		func(n *db.Node) (interface{}, error) {
+			return nil, s.nodeClient.RestartContainer(n, containerID)
+		},
+	)
+
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to restart container", "containerID", containerID, "nodeID", nodeID, "error", err)
 		return domain.WrapContainerOperationFailed("restart container", err)
 	}
 
-	s.logger.InfoContext(ctx, "container restarted successfully", "containerID", containerID)
+	s.logger.InfoContext(ctx, "container restarted successfully", "containerID", containerID, "nodeID", nodeID)
 	return nil
 }
 
 // StopContainer stops a specific container
-func (s *systemService) StopContainer(ctx context.Context, containerID string) error {
-	s.logger.InfoContext(ctx, "stopping container", "containerID", containerID)
+func (s *systemService) StopContainer(ctx context.Context, containerID, nodeID string) error {
+	s.logger.InfoContext(ctx, "stopping container", "containerID", containerID, "nodeID", nodeID)
 
 	// Validate container ID
 	if err := validation.ValidateContainerID(containerID); err != nil {
@@ -167,18 +231,30 @@ func (s *systemService) StopContainer(ctx context.Context, containerID string) e
 		return domain.WrapValidationError("container ID", err)
 	}
 
-	if err := s.dockerManager.StopContainer(containerID); err != nil {
-		s.logger.ErrorContext(ctx, "failed to stop container", "containerID", containerID, "error", err)
+	// Route to correct node
+	_, err := s.router.RouteToNode(
+		ctx,
+		nodeID,
+		func() (interface{}, error) {
+			return nil, s.dockerManager.StopContainer(containerID)
+		},
+		func(n *db.Node) (interface{}, error) {
+			return nil, s.nodeClient.StopContainer(n, containerID)
+		},
+	)
+
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to stop container", "containerID", containerID, "nodeID", nodeID, "error", err)
 		return domain.WrapContainerOperationFailed("stop container", err)
 	}
 
-	s.logger.InfoContext(ctx, "container stopped successfully", "containerID", containerID)
+	s.logger.InfoContext(ctx, "container stopped successfully", "containerID", containerID, "nodeID", nodeID)
 	return nil
 }
 
 // DeleteContainer deletes a specific container
-func (s *systemService) DeleteContainer(ctx context.Context, containerID string) error {
-	s.logger.InfoContext(ctx, "deleting container", "containerID", containerID)
+func (s *systemService) DeleteContainer(ctx context.Context, containerID, nodeID string) error {
+	s.logger.InfoContext(ctx, "deleting container", "containerID", containerID, "nodeID", nodeID)
 
 	// Validate container ID
 	if err := validation.ValidateContainerID(containerID); err != nil {
@@ -186,11 +262,23 @@ func (s *systemService) DeleteContainer(ctx context.Context, containerID string)
 		return domain.WrapValidationError("container ID", err)
 	}
 
-	if err := s.dockerManager.DeleteContainer(containerID); err != nil {
-		s.logger.ErrorContext(ctx, "failed to delete container", "containerID", containerID, "error", err)
+	// Route to correct node
+	_, err := s.router.RouteToNode(
+		ctx,
+		nodeID,
+		func() (interface{}, error) {
+			return nil, s.dockerManager.DeleteContainer(containerID)
+		},
+		func(n *db.Node) (interface{}, error) {
+			return nil, s.nodeClient.DeleteContainer(n, containerID)
+		},
+	)
+
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to delete container", "containerID", containerID, "nodeID", nodeID, "error", err)
 		return domain.WrapContainerOperationFailed("delete container", err)
 	}
 
-	s.logger.InfoContext(ctx, "container deleted successfully", "containerID", containerID)
+	s.logger.InfoContext(ctx, "container deleted successfully", "containerID", containerID, "nodeID", nodeID)
 	return nil
 }

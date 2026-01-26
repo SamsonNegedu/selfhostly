@@ -41,8 +41,25 @@ func setupTestSystemService(t *testing.T, mockExecutor docker.CommandExecutor) (
 		dockerManager = docker.NewManager(tmpAppsDir)
 	}
 
+	// Set up node configuration for multi-node support
+	testNodeID := "test-node-id"
+	testNodeName := "test-node"
+	testAPIKey := "test-api-key"
 	cfg := &config.Config{
 		AppsDir: tmpAppsDir,
+		Node: config.NodeConfig{
+			ID:        testNodeID,
+			Name:      testNodeName,
+			IsPrimary: true,
+			APIKey:    testAPIKey,
+		},
+	}
+
+	// Create a test node in the database
+	testNode := db.NewNode(testNodeName, "http://localhost:8080", testAPIKey, true)
+	testNode.ID = testNodeID
+	if err := database.CreateNode(testNode); err != nil {
+		t.Fatalf("Failed to create test node: %v", err)
 	}
 
 	logger := slog.Default()
@@ -64,9 +81,17 @@ func TestSystemService_GetAppStats(t *testing.T) {
 
 	ctx := context.Background()
 
+	// Get the test node ID
+	nodes, err := database.GetAllNodes()
+	if err != nil || len(nodes) == 0 {
+		t.Fatalf("Failed to get test node: %v", err)
+	}
+	testNodeID := nodes[0].ID
+
 	// Create app
 	app := db.NewApp("test-app", "Test application", "version: '3'\nservices:\n  web:\n    image: nginx:latest")
 	app.Status = "running"
+	app.NodeID = testNodeID // Assign to test node
 	if err := database.CreateApp(app); err != nil {
 		t.Fatalf("Failed to create app: %v", err)
 	}
@@ -108,9 +133,17 @@ func TestSystemService_GetAppStats_StoppedApp(t *testing.T) {
 
 	ctx := context.Background()
 
+	// Get the test node ID
+	nodes, err := database.GetAllNodes()
+	if err != nil || len(nodes) == 0 {
+		t.Fatalf("Failed to get test node: %v", err)
+	}
+	testNodeID := nodes[0].ID
+
 	// Create stopped app
 	app := db.NewApp("test-app", "Test application", "version: '3'\nservices:\n  web:\n    image: nginx:latest")
 	app.Status = "stopped"
+	app.NodeID = testNodeID // Assign to test node
 	if err := database.CreateApp(app); err != nil {
 		t.Fatalf("Failed to create app: %v", err)
 	}
@@ -160,8 +193,16 @@ func TestSystemService_GetAppLogs(t *testing.T) {
 
 	ctx := context.Background()
 
+	// Get the test node ID
+	nodes, err := database.GetAllNodes()
+	if err != nil || len(nodes) == 0 {
+		t.Fatalf("Failed to get test node: %v", err)
+	}
+	testNodeID := nodes[0].ID
+
 	// Create app
 	app := db.NewApp("test-app", "Test application", "version: '3'\nservices:\n  web:\n    image: nginx:latest")
+	app.NodeID = testNodeID // Assign to test node
 	if err := database.CreateApp(app); err != nil {
 		t.Fatalf("Failed to create app: %v", err)
 	}
@@ -218,7 +259,7 @@ func TestSystemService_RestartContainer(t *testing.T) {
 	mockExecutor.SetMockOutput("docker", []string{"restart", containerID}, []byte("success"))
 
 	// Restart container
-	err := service.RestartContainer(ctx, containerID)
+	err := service.RestartContainer(ctx, containerID, "test-node-id")
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -237,7 +278,7 @@ func TestSystemService_RestartContainer_InvalidID(t *testing.T) {
 	ctx := context.Background()
 
 	// Try to restart with invalid container ID
-	err := service.RestartContainer(ctx, "")
+	err := service.RestartContainer(ctx, "", "test-node-id")
 	if err == nil {
 		t.Error("Expected error for invalid container ID, got nil")
 	}
@@ -257,7 +298,7 @@ func TestSystemService_RestartContainer_DockerError(t *testing.T) {
 	mockExecutor.SetMockError("docker", []string{"restart", containerID}, dockerError)
 
 	// Try to restart container
-	err := service.RestartContainer(ctx, containerID)
+	err := service.RestartContainer(ctx, containerID, "test-node-id")
 	if err == nil {
 		t.Error("Expected error when Docker command fails, got nil")
 	}
@@ -276,7 +317,7 @@ func TestSystemService_StopContainer(t *testing.T) {
 	mockExecutor.SetMockOutput("docker", []string{"stop", containerID}, []byte("success"))
 
 	// Stop container
-	err := service.StopContainer(ctx, containerID)
+	err := service.StopContainer(ctx, containerID, "test-node-id")
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -301,7 +342,7 @@ func TestSystemService_StopContainer_DockerError(t *testing.T) {
 	mockExecutor.SetMockError("docker", []string{"stop", containerID}, dockerError)
 
 	// Try to stop container
-	err := service.StopContainer(ctx, containerID)
+	err := service.StopContainer(ctx, containerID, "test-node-id")
 	if err == nil {
 		t.Error("Expected error when Docker command fails, got nil")
 	}
@@ -320,7 +361,7 @@ func TestSystemService_DeleteContainer(t *testing.T) {
 	mockExecutor.SetMockOutput("docker", []string{"rm", "-f", containerID}, []byte("success"))
 
 	// Delete container
-	err := service.DeleteContainer(ctx, containerID)
+	err := service.DeleteContainer(ctx, containerID, "test-node-id")
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -345,7 +386,7 @@ func TestSystemService_DeleteContainer_DockerError(t *testing.T) {
 	mockExecutor.SetMockError("docker", []string{"rm", "-f", containerID}, dockerError)
 
 	// Try to delete container
-	err := service.DeleteContainer(ctx, containerID)
+	err := service.DeleteContainer(ctx, containerID, "test-node-id")
 	if err == nil {
 		t.Error("Expected error when Docker command fails, got nil")
 	}

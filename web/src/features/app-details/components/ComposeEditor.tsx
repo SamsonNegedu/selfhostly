@@ -11,10 +11,11 @@ import type { ComposeVersion } from '@/shared/types/api'
 
 interface ComposeEditorProps {
     appId: string;
+    nodeId?: string;
     initialComposeContent: string;
 }
 
-function ComposeEditor({ appId, initialComposeContent }: ComposeEditorProps) {
+function ComposeEditor({ appId, nodeId, initialComposeContent }: ComposeEditorProps) {
     const [composeContent, setComposeContent] = useState(initialComposeContent)
     const [isSaving, setIsSaving] = useState(false)
     const [hasChanges, setHasChanges] = useState(false)
@@ -23,7 +24,7 @@ function ComposeEditor({ appId, initialComposeContent }: ComposeEditorProps) {
     const [showUpdateDialog, setShowUpdateDialog] = useState(false)
     const [showVersionHistory, setShowVersionHistory] = useState(false)
     const [viewingVersion, setViewingVersion] = useState<ComposeVersion | null>(null)
-    const updateApp = useUpdateApp(appId)
+    const updateApp = useUpdateApp(appId, nodeId)
     const updateAppContainers = useUpdateAppContainers()
     const { toast } = useToast()
 
@@ -55,7 +56,7 @@ function ComposeEditor({ appId, initialComposeContent }: ComposeEditorProps) {
     }
 
     const handleUpdateContainers = () => {
-        updateAppContainers.mutate(appId, {
+        updateAppContainers.mutate({ id: appId, nodeId }, {
             onSuccess: () => {
                 toast.success('Update Started', 'Containers are being updated with the new configuration')
                 setShowUpdateDialog(false)
@@ -230,6 +231,7 @@ services:
                 <div className={`lg:col-span-1 ${!showVersionHistory ? 'hidden lg:block' : 'block'}`}>
                     <ComposeVersionHistory
                         appId={appId}
+                        nodeId={nodeId}
                         onVersionSelect={handleVersionSelect}
                     />
                 </div>

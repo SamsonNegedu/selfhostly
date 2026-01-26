@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/domain"
+	"github.com/selfhostly/internal/httputil"
 	"github.com/selfhostly/internal/validation"
 )
 
@@ -38,7 +40,10 @@ type CloudflareTunnelResponse struct {
 
 // listCloudflareTunnels returns all active Cloudflare tunnels
 func (s *Server) listCloudflareTunnels(c *gin.Context) {
-	tunnels, err := s.tunnelService.ListActiveTunnels(c.Request.Context())
+	// Extract node_ids from query parameter
+	nodeIDs := httputil.ParseNodeIDs(c)
+
+	tunnels, err := s.tunnelService.ListActiveTunnels(c.Request.Context(), nodeIDs)
 	if err != nil {
 		s.handleServiceError(c, "list tunnels", err)
 		return
@@ -79,11 +84,22 @@ func (s *Server) listCloudflareTunnels(c *gin.Context) {
 	})
 }
 
+// listLocalTunnels returns only tunnels from the local node (for inter-node calls)
+func (s *Server) listLocalTunnels(c *gin.Context) {
+	tunnels, err := s.database.ListActiveCloudflareTunnels()
+	if err != nil {
+		s.handleServiceError(c, "list local tunnels", err)
+		return
+	}
+
+	c.JSON(http.StatusOK, tunnels)
+}
+
 // getCloudflareTunnel returns details for a specific Cloudflare tunnel
 func (s *Server) getCloudflareTunnel(c *gin.Context) {
-	appID := c.Param("appId")
-	if appID == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
+	appID, err := httputil.ValidateAndGetAppIDFromAppId(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 
@@ -93,8 +109,14 @@ func (s *Server) getCloudflareTunnel(c *gin.Context) {
 		return
 	}
 
+	// Get node_id from middleware (already validated)
+	nodeID := getNodeIDFromContext(c)
+	
 	// Get app for public URL
-	app, _ := s.appService.GetApp(c.Request.Context(), appID)
+	var app *db.App
+	if nodeID != "" {
+		app, _ = s.appService.GetApp(c.Request.Context(), appID, nodeID)
+	}
 
 	var errorDetails string
 	if tunnel.ErrorDetails != nil {
@@ -121,6 +143,11 @@ func (s *Server) getCloudflareTunnel(c *gin.Context) {
 		}
 	}
 
+	publicURL := ""
+	if app != nil {
+		publicURL = app.PublicURL
+	}
+
 	response := CloudflareTunnelResponse{
 		ID:           tunnel.ID,
 		AppID:        tunnel.AppID,
@@ -128,7 +155,7 @@ func (s *Server) getCloudflareTunnel(c *gin.Context) {
 		TunnelName:   tunnel.TunnelName,
 		Status:       tunnel.Status,
 		IsActive:     tunnel.IsActive,
-		PublicURL:    app.PublicURL,
+		PublicURL:    publicURL,
 		IngressRules: ingressRules,
 		CreatedAt:    tunnel.CreatedAt,
 		UpdatedAt:    tunnel.UpdatedAt,
@@ -191,6 +218,13 @@ func (s *Server) updateTunnelIngress(c *gin.Context) {
 		return
 	}
 
+	// Get node_id from middleware (already validated)
+	nodeID := getNodeIDFromContext(c)
+	if nodeID == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "node_id is required"})
+		return
+	}
+
 	// Update the tunnel ingress configuration (Cloudflare API)
 	if err := s.tunnelService.UpdateTunnelIngress(c.Request.Context(), appID, req); err != nil {
 		s.handleServiceError(c, "update tunnel ingress", err)
@@ -199,11 +233,11 @@ func (s *Server) updateTunnelIngress(c *gin.Context) {
 
 	// Restart the cloudflared container to pick up new ingress rules
 	// This is a best-effort operation - we don't fail the request if it fails
-	if err := s.appService.RestartCloudflared(c.Request.Context(), appID); err != nil {
+	if err := s.appService.RestartCloudflared(c.Request.Context(), appID, nodeID); err != nil {
 		slog.WarnContext(c.Request.Context(), "failed to restart cloudflared container, ingress rules updated but container restart required", "appID", appID, "error", err)
 	}
 
-	app, _ := s.appService.GetApp(c.Request.Context(), appID)
+	app, _ := s.appService.GetApp(c.Request.Context(), appID, nodeID)
 
 	response := gin.H{
 		"message":       "Tunnel ingress configuration updated successfully",
@@ -267,8 +301,14 @@ func (s *Server) createDNSRecord(c *gin.Context) {
 		return
 	}
 
+	// Get node_id from middleware (already validated)
+	nodeID := getNodeIDFromContext(c)
+	
 	// Get updated app
-	app, _ := s.appService.GetApp(c.Request.Context(), appID)
+	var app *db.App
+	if nodeID != "" {
+		app, _ = s.appService.GetApp(c.Request.Context(), appID, nodeID)
+	}
 
 	// Build response
 	response := gin.H{

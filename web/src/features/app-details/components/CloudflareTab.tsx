@@ -10,12 +10,13 @@ import { IngressConfiguration } from '@/features/cloudflare/IngressConfiguration
 
 interface CloudflareTabProps {
     appId: string;
+    nodeId?: string;
 }
 
 type TunnelTab = 'overview' | 'ingress'
 
-function CloudflareTab({ appId }: CloudflareTabProps) {
-    const { data: tunnel, isLoading, error, refetch } = useCloudflareTunnel(appId)
+function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
+    const { data: tunnel, isLoading, error, refetch } = useCloudflareTunnel(appId, nodeId)
     const syncTunnel = useSyncCloudflareTunnel()
     const deleteTunnel = useDeleteCloudflareTunnel()
     const { toast } = useToast()
@@ -24,7 +25,7 @@ function CloudflareTab({ appId }: CloudflareTabProps) {
     const [showDeleteDialog, setShowDeleteDialog] = useState(false)
 
     const handleSync = () => {
-        syncTunnel.mutate(appId, {
+        syncTunnel.mutate({ appId, nodeId }, {
             onSuccess: () => {
                 toast.success('Tunnel Synced', 'Cloudflare tunnel configuration synced successfully')
                 refetch()
@@ -40,7 +41,7 @@ function CloudflareTab({ appId }: CloudflareTabProps) {
     }
 
     const confirmDelete = () => {
-        deleteTunnel.mutate(appId, {
+        deleteTunnel.mutate({ appId, nodeId }, {
             onSuccess: () => {
                 toast.success('Tunnel Deleted', 'Cloudflare tunnel has been removed')
                 setShowDeleteDialog(false)
@@ -325,6 +326,7 @@ function CloudflareTab({ appId }: CloudflareTabProps) {
             {activeTab === 'ingress' && (
                 <IngressConfiguration
                     appId={appId}
+                    nodeId={nodeId}
                     existingIngress={tunnel.ingress_rules || []}
                     existingHostname={tunnel.public_url?.replace(/^https?:\/\//, '').split('/')[0] || ''}
                     tunnelID={tunnel.tunnel_id}

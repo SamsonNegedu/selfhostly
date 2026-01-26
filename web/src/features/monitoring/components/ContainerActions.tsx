@@ -10,10 +10,11 @@ interface ContainerActionsProps {
   containerName: string;
   containerState: string;
   appName: string;
+  nodeId: string;
   isManaged: boolean;
 }
 
-function ContainerActions({ containerId, containerName, containerState, appName, isManaged }: ContainerActionsProps) {
+function ContainerActions({ containerId, containerName, containerState, appName, nodeId, isManaged }: ContainerActionsProps) {
   const [restartDialogOpen, setRestartDialogOpen] = useState(false);
   const [stopDialogOpen, setStopDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -25,7 +26,7 @@ function ContainerActions({ containerId, containerName, containerState, appName,
 
   const handleRestart = async () => {
     try {
-      await restartMutation.mutateAsync(containerId);
+      await restartMutation.mutateAsync({ containerId, nodeId });
       const action = isRunning ? 'restarted' : 'started';
       toast.success(`Container "${containerName}" ${action} successfully`);
       setRestartDialogOpen(false);
@@ -36,7 +37,7 @@ function ContainerActions({ containerId, containerName, containerState, appName,
 
   const handleStop = async () => {
     try {
-      await stopMutation.mutateAsync(containerId);
+      await stopMutation.mutateAsync({ containerId, nodeId });
       toast.success(`Container "${containerName}" stopped successfully`);
       setStopDialogOpen(false);
     } catch (error) {
@@ -46,7 +47,7 @@ function ContainerActions({ containerId, containerName, containerState, appName,
 
   const handleDelete = async () => {
     try {
-      await deleteMutation.mutateAsync(containerId);
+      await deleteMutation.mutateAsync({ containerId, nodeId });
       toast.success(`Container "${containerName}" deleted successfully`);
       setDeleteDialogOpen(false);
     } catch (error) {

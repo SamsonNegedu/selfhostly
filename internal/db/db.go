@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/selfhostly/internal/config"
 	_ "modernc.org/sqlite"
 )
 
@@ -51,6 +52,18 @@ func (db *DB) GetDBPath() string {
 // migrate runs database migrations
 func (db *DB) migrate() error {
 	migrations := []string{
+		// Nodes table - must be created before apps table for foreign key
+		`CREATE TABLE IF NOT EXISTS nodes (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL UNIQUE,
+			api_endpoint TEXT NOT NULL,
+			api_key TEXT NOT NULL,
+			is_primary INTEGER NOT NULL DEFAULT 0,
+			status TEXT NOT NULL DEFAULT 'online',
+			last_seen DATETIME,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
 		`CREATE TABLE IF NOT EXISTS apps (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL UNIQUE,
@@ -62,9 +75,14 @@ func (db *DB) migrate() error {
 			public_url TEXT,
 			status TEXT NOT NULL DEFAULT 'stopped',
 			error_message TEXT,
+			node_id TEXT,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
+		// Add node_id column to existing apps table (for migrations)
+		`ALTER TABLE apps ADD COLUMN node_id TEXT`,
+		// Create index for faster node lookups
+		`CREATE INDEX IF NOT EXISTS idx_apps_node_id ON apps(node_id)`,
 		`CREATE TABLE IF NOT EXISTS users (
 			id TEXT PRIMARY KEY,
 			username TEXT NOT NULL UNIQUE,
@@ -165,6 +183,24 @@ func isDuplicateColumnError(err error) bool {
 		strings.Contains(errStr, "already exists")
 }
 
+// InitNode initializes the node entry in the database (bootstrap for primary nodes)
+func (db *DB) InitNode(cfg *config.Config) error {
+	// Auto-bootstrap for existing single-node installations (primary only)
+	if err := db.bootstrapSingleNode(cfg); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// bootstrapSingleNode creates a node entry for existing installations
+// and assigns all existing apps to it. Only runs on PRIMARY nodes.
+func (db *DB) bootstrapSingleNode(cfg *config.Config) error {
+	// Delegate to the standalone migration function
+	return bootstrapSingleNode(db.DB, cfg)
+}
+
+
 // CreateApp creates a new app
 func (db *DB) CreateApp(app *App) error {
 	var errorMessage interface{}
@@ -189,7 +225,7 @@ func (db *DB) CreateApp(app *App) error {
 // SECURITY: Returns ALL apps without user filtering (single-user design)
 // For multi-user support, implement GetUserApps(userID string) instead
 func (db *DB) GetAllApps() ([]*App, error) {
-	rows, err := db.Query("SELECT id, name, description, compose_content, tunnel_token, tunnel_id, tunnel_domain, public_url, status, error_message, created_at, updated_at FROM apps ORDER BY created_at DESC")
+	rows, err := db.Query("SELECT id, name, description, compose_content, tunnel_token, tunnel_id, tunnel_domain, public_url, status, error_message, node_id, created_at, updated_at FROM apps ORDER BY created_at DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -198,9 +234,21 @@ func (db *DB) GetAllApps() ([]*App, error) {
 	var apps []*App
 	for rows.Next() {
 		app := &App{}
-		err := rows.Scan(&app.ID, &app.Name, &app.Description, &app.ComposeContent, &app.TunnelToken, &app.TunnelID, &app.TunnelDomain, &app.PublicURL, &app.Status, &app.ErrorMessage, &app.CreatedAt, &app.UpdatedAt)
+		var errorMessage sql.NullString
+		var nodeID sql.NullString
+		err := rows.Scan(&app.ID, &app.Name, &app.Description, &app.ComposeContent, &app.TunnelToken, &app.TunnelID, &app.TunnelDomain, &app.PublicURL, &app.Status, &errorMessage, &nodeID, &app.CreatedAt, &app.UpdatedAt)
 		if err != nil {
 			return nil, err
+		}
+		if errorMessage.Valid {
+			app.ErrorMessage = &errorMessage.String
+		} else {
+			app.ErrorMessage = nil
+		}
+		if nodeID.Valid {
+			app.NodeID = nodeID.String
+		} else {
+			app.NodeID = ""
 		}
 		apps = append(apps, app)
 	}
@@ -212,10 +260,11 @@ func (db *DB) GetAllApps() ([]*App, error) {
 func (db *DB) GetApp(id string) (*App, error) {
 	app := &App{}
 	var errorMessage sql.NullString
+	var nodeID sql.NullString
 	err := db.QueryRow(
-		"SELECT id, name, description, compose_content, tunnel_token, tunnel_id, tunnel_domain, public_url, status, error_message, created_at, updated_at FROM apps WHERE id = ?",
+		"SELECT id, name, description, compose_content, tunnel_token, tunnel_id, tunnel_domain, public_url, status, error_message, node_id, created_at, updated_at FROM apps WHERE id = ?",
 		id,
-	).Scan(&app.ID, &app.Name, &app.Description, &app.ComposeContent, &app.TunnelToken, &app.TunnelID, &app.TunnelDomain, &app.PublicURL, &app.Status, &errorMessage, &app.CreatedAt, &app.UpdatedAt)
+	).Scan(&app.ID, &app.Name, &app.Description, &app.ComposeContent, &app.TunnelToken, &app.TunnelID, &app.TunnelDomain, &app.PublicURL, &app.Status, &errorMessage, &nodeID, &app.CreatedAt, &app.UpdatedAt)
 
 	if err == nil {
 		if errorMessage.Valid {
@@ -223,13 +272,18 @@ func (db *DB) GetApp(id string) (*App, error) {
 		} else {
 			app.ErrorMessage = nil
 		}
+		if nodeID.Valid {
+			app.NodeID = nodeID.String
+		} else {
+			app.NodeID = ""
+		}
 	}
 	return app, err
 }
 
 // ListApps retrieves all apps
 func (db *DB) ListApps() ([]*App, error) {
-	rows, err := db.Query("SELECT id, name, description, compose_content, tunnel_token, tunnel_id, tunnel_domain, public_url, status, error_message, created_at, updated_at FROM apps ORDER BY created_at DESC")
+	rows, err := db.Query("SELECT id, name, description, compose_content, tunnel_token, tunnel_id, tunnel_domain, public_url, status, error_message, node_id, created_at, updated_at FROM apps ORDER BY created_at DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +292,7 @@ func (db *DB) ListApps() ([]*App, error) {
 	var apps []*App
 	for rows.Next() {
 		app := &App{}
-		err := rows.Scan(&app.ID, &app.Name, &app.Description, &app.ComposeContent, &app.TunnelToken, &app.TunnelID, &app.TunnelDomain, &app.PublicURL, &app.Status, &app.ErrorMessage, &app.CreatedAt, &app.UpdatedAt)
+		err := rows.Scan(&app.ID, &app.Name, &app.Description, &app.ComposeContent, &app.TunnelToken, &app.TunnelID, &app.TunnelDomain, &app.PublicURL, &app.Status, &app.ErrorMessage, &app.NodeID, &app.CreatedAt, &app.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -717,4 +771,163 @@ func (db *DB) MarkVersionAsCurrent(appID string, version int) error {
 func (db *DB) DeleteComposeVersionsByAppID(appID string) error {
 	_, err := db.Exec("DELETE FROM compose_versions WHERE app_id = ?", appID)
 	return err
+}
+
+// ===========================
+// Node CRUD Operations
+// ===========================
+
+// CreateNode creates a new node
+func (db *DB) CreateNode(node *Node) error {
+	_, err := db.Exec(
+		`INSERT INTO nodes (id, name, api_endpoint, api_key, is_primary, status, last_seen, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		node.ID, node.Name, node.APIEndpoint, node.APIKey,
+		node.IsPrimary, node.Status, node.LastSeen,
+		node.CreatedAt, node.UpdatedAt,
+	)
+	return err
+}
+
+// GetNode retrieves a node by ID
+func (db *DB) GetNode(id string) (*Node, error) {
+	node := &Node{}
+	var lastSeen sql.NullTime
+	err := db.QueryRow(
+		`SELECT id, name, api_endpoint, api_key, is_primary, status, last_seen, created_at, updated_at 
+		 FROM nodes WHERE id = ?`,
+		id,
+	).Scan(&node.ID, &node.Name, &node.APIEndpoint, &node.APIKey,
+		&node.IsPrimary, &node.Status, &lastSeen,
+		&node.CreatedAt, &node.UpdatedAt)
+
+	if err == nil && lastSeen.Valid {
+		node.LastSeen = &lastSeen.Time
+	}
+
+	return node, err
+}
+
+// GetAllNodes retrieves all nodes
+func (db *DB) GetAllNodes() ([]*Node, error) {
+	rows, err := db.Query(
+		`SELECT id, name, api_endpoint, api_key, is_primary, status, last_seen, created_at, updated_at 
+		 FROM nodes ORDER BY created_at ASC`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var nodes []*Node
+	for rows.Next() {
+		node := &Node{}
+		var lastSeen sql.NullTime
+		err := rows.Scan(&node.ID, &node.Name, &node.APIEndpoint, &node.APIKey,
+			&node.IsPrimary, &node.Status, &lastSeen,
+			&node.CreatedAt, &node.UpdatedAt)
+		if err != nil {
+			return nil, err
+		}
+
+		if lastSeen.Valid {
+			node.LastSeen = &lastSeen.Time
+		}
+
+		nodes = append(nodes, node)
+	}
+
+	return nodes, nil
+}
+
+// GetPrimaryNode retrieves the primary node
+func (db *DB) GetPrimaryNode() (*Node, error) {
+	node := &Node{}
+	var lastSeen sql.NullTime
+	err := db.QueryRow(
+		`SELECT id, name, api_endpoint, api_key, is_primary, status, last_seen, created_at, updated_at 
+		 FROM nodes WHERE is_primary = 1 LIMIT 1`,
+	).Scan(&node.ID, &node.Name, &node.APIEndpoint, &node.APIKey,
+		&node.IsPrimary, &node.Status, &lastSeen,
+		&node.CreatedAt, &node.UpdatedAt)
+
+	if err == nil && lastSeen.Valid {
+		node.LastSeen = &lastSeen.Time
+	}
+
+	return node, err
+}
+
+// UpdateNode updates a node
+func (db *DB) UpdateNode(node *Node) error {
+	_, err := db.Exec(
+		`UPDATE nodes SET name = ?, api_endpoint = ?, api_key = ?, is_primary = ?, status = ?, last_seen = ?, updated_at = ? 
+		 WHERE id = ?`,
+		node.Name, node.APIEndpoint, node.APIKey, node.IsPrimary,
+		node.Status, node.LastSeen, time.Now(), node.ID,
+	)
+	return err
+}
+
+// DeleteNode deletes a node
+func (db *DB) DeleteNode(id string) error {
+	_, err := db.Exec("DELETE FROM nodes WHERE id = ?", id)
+	return err
+}
+
+// GetNodeByName retrieves a node by name
+func (db *DB) GetNodeByName(name string) (*Node, error) {
+	node := &Node{}
+	var lastSeen sql.NullTime
+	err := db.QueryRow(
+		`SELECT id, name, api_endpoint, api_key, is_primary, status, last_seen, created_at, updated_at 
+		 FROM nodes WHERE name = ?`,
+		name,
+	).Scan(&node.ID, &node.Name, &node.APIEndpoint, &node.APIKey,
+		&node.IsPrimary, &node.Status, &lastSeen,
+		&node.CreatedAt, &node.UpdatedAt)
+
+	if err == nil && lastSeen.Valid {
+		node.LastSeen = &lastSeen.Time
+	}
+
+	return node, err
+}
+
+// GetNodeByAPIKey retrieves a node by API key
+func (db *DB) GetNodeByAPIKey(apiKey string) (*Node, error) {
+	node := &Node{}
+	var lastSeen sql.NullTime
+	err := db.QueryRow(
+		`SELECT id, name, api_endpoint, api_key, is_primary, status, last_seen, created_at, updated_at 
+		 FROM nodes WHERE api_key = ? LIMIT 1`,
+		apiKey,
+	).Scan(&node.ID, &node.Name, &node.APIEndpoint, &node.APIKey,
+		&node.IsPrimary, &node.Status, &lastSeen,
+		&node.CreatedAt, &node.UpdatedAt)
+
+	if err == nil && lastSeen.Valid {
+		node.LastSeen = &lastSeen.Time
+	}
+
+	return node, err
+}
+
+// GetNodeByAPIEndpoint retrieves a node by API endpoint
+func (db *DB) GetNodeByAPIEndpoint(endpoint string) (*Node, error) {
+	node := &Node{}
+	var lastSeen sql.NullTime
+	err := db.QueryRow(
+		`SELECT id, name, api_endpoint, api_key, is_primary, status, last_seen, created_at, updated_at 
+		 FROM nodes WHERE api_endpoint = ? LIMIT 1`,
+		endpoint,
+	).Scan(&node.ID, &node.Name, &node.APIEndpoint, &node.APIKey,
+		&node.IsPrimary, &node.Status, &lastSeen,
+		&node.CreatedAt, &node.UpdatedAt)
+
+	if err == nil && lastSeen.Valid {
+		node.LastSeen = &lastSeen.Time
+	}
+
+	return node, err
 }

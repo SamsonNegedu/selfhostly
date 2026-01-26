@@ -21,6 +21,8 @@ import {
     ArrowUpDown
 } from 'lucide-react'
 import { useCloudflareTunnels, useSyncCloudflareTunnel, useDeleteCloudflareTunnel } from '@/shared/services/api'
+import { useNodeContext } from '@/shared/contexts/NodeContext'
+import { useAppStore } from '@/shared/stores/app-store'
 import { useToast } from '@/shared/components/ui/Toast'
 import { useState } from 'react'
 import type { CloudflareTunnel } from '@/shared/types/api'
@@ -31,6 +33,7 @@ type StatusFilter = 'all' | 'active' | 'inactive' | 'error'
 
 interface TunnelTableProps {
     tunnels: CloudflareTunnel[]
+    apps: Array<{ id: string; node_id?: string }>
     onSync: (appId: string, appName: string) => void
     onDelete: (appId: string, appName: string) => void
     onCopy: (text: string, label: string) => void
@@ -38,7 +41,7 @@ interface TunnelTableProps {
     isDeleting: boolean
 }
 
-function TunnelTable({ tunnels, onSync, onDelete, onCopy, isSyncing, isDeleting }: TunnelTableProps) {
+function TunnelTable({ tunnels, apps, onSync, onDelete, onCopy, isSyncing, isDeleting }: TunnelTableProps) {
     return (
         <Card className="border-2">
             <div className="overflow-x-auto">
@@ -132,7 +135,11 @@ function TunnelTable({ tunnels, onSync, onDelete, onCopy, isSyncing, isDeleting 
                                         <Button
                                             variant="outline"
                                             size="sm"
-                                            onClick={() => window.location.href = `/apps/${tunnel.app_id}`}
+                                            onClick={() => {
+                                                const app = apps.find(a => a.id === tunnel.app_id)
+                                                const nodeIdParam = app?.node_id ? `?node_id=${app.node_id}` : ''
+                                                window.location.href = `/apps/${tunnel.app_id}${nodeIdParam}`
+                                            }}
                                             className="button-press"
                                             title="View app"
                                         >
@@ -160,7 +167,10 @@ function TunnelTable({ tunnels, onSync, onDelete, onCopy, isSyncing, isDeleting 
 }
 
 function CloudflareManagement() {
-    const { data: tunnelsData, isLoading, error, refetch } = useCloudflareTunnels()
+    // Get global node context for filtering tunnels by selected nodes
+    const { selectedNodeIds } = useNodeContext()
+
+    const { data: tunnelsData, isLoading, error, refetch } = useCloudflareTunnels(selectedNodeIds)
     const syncTunnel = useSyncCloudflareTunnel()
     const deleteTunnel = useDeleteCloudflareTunnel()
     const { toast } = useToast()
@@ -256,8 +266,12 @@ function CloudflareManagement() {
         }
     }
 
+    // Get apps from store to find node_id for tunnels
+    const apps = useAppStore((state) => state.apps)
+
     const handleSync = (appId: string, appName: string) => {
-        syncTunnel.mutate(appId, {
+        const app = apps.find(a => a.id === appId)
+        syncTunnel.mutate({ appId, nodeId: app?.node_id }, {
             onSuccess: () => {
                 toast.success('Tunnel Synced', `${appName} tunnel configuration synced successfully`)
             },
@@ -274,7 +288,8 @@ function CloudflareManagement() {
     const confirmDelete = () => {
         if (!tunnelToDelete) return
 
-        deleteTunnel.mutate(tunnelToDelete.id, {
+        const app = apps.find(a => a.id === tunnelToDelete.id)
+        deleteTunnel.mutate({ appId: tunnelToDelete.id, nodeId: app?.node_id }, {
             onSuccess: () => {
                 toast.success('Tunnel Deleted', `${tunnelToDelete.name} tunnel has been removed`)
                 setTunnelToDelete(null)
@@ -530,6 +545,7 @@ function CloudflareManagement() {
 
                         <TunnelTable
                             tunnels={processedTunnels}
+                            apps={apps}
                             onSync={handleSync}
                             onDelete={handleDelete}
                             onCopy={copyToClipboard}

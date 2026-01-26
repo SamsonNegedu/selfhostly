@@ -9,12 +9,13 @@ import { ComposeVersion } from '@/shared/types/api'
 
 interface ComposeVersionHistoryProps {
     appId: string;
+    nodeId?: string;
     onVersionSelect?: (version: ComposeVersion) => void;
 }
 
-function ComposeVersionHistory({ appId, onVersionSelect }: ComposeVersionHistoryProps) {
-    const { data: versions, isLoading, error } = useComposeVersions(appId)
-    const rollback = useRollbackToVersion(appId)
+function ComposeVersionHistory({ appId, nodeId, onVersionSelect }: ComposeVersionHistoryProps) {
+    const { data: versions, isLoading, error } = useComposeVersions(appId, nodeId)
+    const rollback = useRollbackToVersion(appId, nodeId)
     const { toast } = useToast()
     const [selectedVersion, setSelectedVersion] = useState<ComposeVersion | null>(null)
     const [showRollbackDialog, setShowRollbackDialog] = useState(false)
@@ -138,8 +139,8 @@ function ComposeVersionHistory({ appId, onVersionSelect }: ComposeVersionHistory
                             <div
                                 key={version.id}
                                 className={`relative border rounded-lg p-3 transition-all hover:shadow-sm ${version.is_current
-                                        ? 'border-primary bg-primary/5'
-                                        : 'border-border hover:border-primary/50'
+                                    ? 'border-primary bg-primary/5'
+                                    : 'border-border hover:border-primary/50'
                                     }`}
                             >
                                 {/* Timeline connector */}
@@ -150,8 +151,8 @@ function ComposeVersionHistory({ appId, onVersionSelect }: ComposeVersionHistory
                                 <div className="flex items-center gap-3">
                                     {/* Version indicator */}
                                     <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold ${version.is_current
-                                            ? 'bg-primary text-primary-foreground'
-                                            : 'bg-muted text-muted-foreground'
+                                        ? 'bg-primary text-primary-foreground'
+                                        : 'bg-muted text-muted-foreground'
                                         }`}>
                                         v{version.version}
                                     </div>

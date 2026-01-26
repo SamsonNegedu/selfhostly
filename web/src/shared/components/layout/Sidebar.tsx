@@ -1,7 +1,9 @@
 import { useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Server, Plus, Cloud, Activity, Settings, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { Cloud, Activity, Settings, ChevronLeft, ChevronRight, X, Network, Package } from 'lucide-react';
 import { Button } from '../ui/button';
+import { NodeSelector } from '../ui/NodeSelector';
+import { useNodeContext } from '../../contexts/NodeContext';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -11,8 +13,8 @@ interface SidebarProps {
 }
 
 const navItems = [
-  { path: '/apps/new', label: 'New App', icon: Plus },
-  { path: '/apps', label: 'Apps', icon: Server },
+  { path: '/apps', label: 'Apps', icon: Package },
+  { path: '/nodes', label: 'Nodes', icon: Network },
   { path: '/cloudflare', label: 'Cloudflare', icon: Cloud },
   { path: '/monitoring', label: 'Monitoring', icon: Activity },
   { path: '/settings', label: 'Settings', icon: Settings },
@@ -20,6 +22,7 @@ const navItems = [
 
 function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse }: SidebarProps) {
   const location = useLocation();
+  const { selectedNodeIds, setSelectedNodeIds } = useNodeContext();
 
   // Close sidebar on ESC key (mobile only)
   useEffect(() => {
@@ -90,6 +93,17 @@ function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse }: SidebarProp
           </Button>
         </div>
 
+        {/* Global Node Selector */}
+        <div className={`border-b border-border p-4`}>
+          <NodeSelector
+            selectedNodeIds={selectedNodeIds}
+            onChange={setSelectedNodeIds}
+            multiSelect={true}
+            className="w-full"
+            collapsed={isCollapsed}
+          />
+        </div>
+
         {/* Navigation items */}
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
           {navItems.map((item) => {
@@ -110,8 +124,8 @@ function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse }: SidebarProp
                   flex items-center gap-3 px-3 py-2.5 rounded-lg
                   transition-colors duration-150
                   ${active
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                    ? 'bg-primary text-primary-foreground font-semibold'
+                    : 'text-foreground hover:bg-accent hover:text-accent-foreground'
                   }
                   ${isCollapsed ? 'md:justify-center' : ''}
                 `}

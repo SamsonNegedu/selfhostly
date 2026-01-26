@@ -5,31 +5,54 @@ import (
 	"log/slog"
 
 	"github.com/selfhostly/internal/cloudflare"
+	"github.com/selfhostly/internal/config"
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/domain"
+	"github.com/selfhostly/internal/node"
+	"github.com/selfhostly/internal/routing"
 )
 
 // tunnelService implements the TunnelService interface
 type tunnelService struct {
 	database      *db.DB
+	nodeClient    *node.Client
+	config        *config.Config
 	logger        *slog.Logger
 	tunnelManager *cloudflare.TunnelManager // Optional, for dependency injection in tests
+	router        *routing.NodeRouter
+	tunnelsAgg    *routing.TunnelsAggregator
 }
 
 // NewTunnelService creates a new tunnel service
-func NewTunnelService(database *db.DB, logger *slog.Logger) domain.TunnelService {
+func NewTunnelService(database *db.DB, cfg *config.Config, logger *slog.Logger) domain.TunnelService {
+	nodeClient := node.NewClient()
+	router := routing.NewNodeRouter(database, nodeClient, cfg.Node.ID, logger)
+	tunnelsAgg := routing.NewTunnelsAggregator(router, logger)
+	
 	return &tunnelService{
-		database: database,
-		logger:   logger,
+		database:   database,
+		nodeClient: nodeClient,
+		config:     cfg,
+		logger:     logger,
+		router:     router,
+		tunnelsAgg: tunnelsAgg,
 	}
 }
 
 // NewTunnelServiceWithManager creates a new tunnel service with a custom tunnel manager (for testing)
-func NewTunnelServiceWithManager(database *db.DB, logger *slog.Logger, tunnelManager *cloudflare.TunnelManager) domain.TunnelService {
+func NewTunnelServiceWithManager(database *db.DB, cfg *config.Config, logger *slog.Logger, tunnelManager *cloudflare.TunnelManager) domain.TunnelService {
+	nodeClient := node.NewClient()
+	router := routing.NewNodeRouter(database, nodeClient, cfg.Node.ID, logger)
+	tunnelsAgg := routing.NewTunnelsAggregator(router, logger)
+	
 	return &tunnelService{
 		database:      database,
+		nodeClient:    nodeClient,
+		config:        cfg,
 		logger:        logger,
 		tunnelManager: tunnelManager,
+		router:        router,
+		tunnelsAgg:    tunnelsAgg,
 	}
 }
 
@@ -64,17 +87,29 @@ func (s *tunnelService) GetTunnelByAppID(ctx context.Context, appID string) (*db
 	return tunnel, nil
 }
 
-// ListActiveTunnels retrieves all active tunnels
-func (s *tunnelService) ListActiveTunnels(ctx context.Context) ([]*db.CloudflareTunnel, error) {
-	s.logger.DebugContext(ctx, "listing active tunnels")
+// ListActiveTunnels retrieves all active tunnels from specified nodes
+func (s *tunnelService) ListActiveTunnels(ctx context.Context, nodeIDs []string) ([]*db.CloudflareTunnel, error) {
+	s.logger.DebugContext(ctx, "listing active tunnels", "nodeIDs", nodeIDs)
 
-	tunnels, err := s.database.ListActiveCloudflareTunnels()
+	// Determine which nodes to fetch from
+	targetNodes, err := s.router.DetermineTargetNodes(ctx, nodeIDs)
 	if err != nil {
-		s.logger.ErrorContext(ctx, "failed to list tunnels", "error", err)
-		return nil, domain.WrapDatabaseOperation("list tunnels", err)
+		return nil, err
 	}
 
-	return tunnels, nil
+	// Aggregate tunnels from all target nodes in parallel
+	allTunnels, err := s.tunnelsAgg.AggregateTunnels(
+		ctx,
+		targetNodes,
+		func() ([]*db.CloudflareTunnel, error) {
+			return s.database.ListActiveCloudflareTunnels()
+		},
+		func(n *db.Node) ([]*db.CloudflareTunnel, error) {
+			return s.nodeClient.GetTunnels(n)
+		},
+	)
+
+	return allTunnels, err
 }
 
 // SyncTunnelStatus synchronizes tunnel status with Cloudflare
@@ -114,24 +149,19 @@ func (s *tunnelService) UpdateTunnelIngress(ctx context.Context, appID string, r
 	}
 
 	// Convert domain IngressRules to cloudflare IngressRules
-	cfRules := make([]cloudflare.IngressRule, len(req.IngressRules))
-	for i, rule := range req.IngressRules {
-		cfRule := cloudflare.IngressRule{
-			Service:       rule.Service,
-			OriginRequest: rule.OriginRequest,
-		}
-		if rule.Hostname != nil {
-			cfRule.Hostname = *rule.Hostname
-		}
-		if rule.Path != nil {
-			cfRule.Path = *rule.Path
-		}
-		cfRules[i] = cfRule
-	}
+	cfRules := cloudflare.ConvertToCloudflareRules(req.IngressRules)
 
 	if err := tunnelManager.UpdateTunnelIngress(tunnel.TunnelID, cfRules, req.Hostname, req.TargetDomain); err != nil {
 		s.logger.ErrorContext(ctx, "failed to update ingress", "tunnelID", tunnel.TunnelID, "error", err)
 		return err
+	}
+
+	// Update the database record with the new ingress rules
+	tunnel.IngressRules = &req.IngressRules
+	if err := s.database.UpdateCloudflareTunnel(tunnel); err != nil {
+		s.logger.ErrorContext(ctx, "failed to update tunnel in database", "tunnelID", tunnel.TunnelID, "error", err)
+		// Don't fail the request if database update fails - Cloudflare API update succeeded
+		// but log the error for debugging
 	}
 
 	s.logger.InfoContext(ctx, "tunnel ingress updated successfully", "tunnelID", tunnel.TunnelID, "appID", appID)

@@ -46,10 +46,27 @@ func setupTestAppServiceWithMocks(t *testing.T, mockExecutor docker.CommandExecu
 		dockerManager = docker.NewManager(tmpAppsDir)
 	}
 
+	// Set up node configuration for multi-node support
+	testNodeID := "test-node-id"
+	testNodeName := "test-node"
+	testAPIKey := "test-api-key"
 	cfg := &config.Config{
 		AppsDir:    tmpAppsDir,
 		AutoStart:  false,
 		Cloudflare: config.CloudflareConfig{},
+		Node: config.NodeConfig{
+			ID:        testNodeID,
+			Name:      testNodeName,
+			IsPrimary: true,
+			APIKey:    testAPIKey,
+		},
+	}
+
+	// Create a test node in the database
+	testNode := db.NewNode(testNodeName, "http://localhost:8080", testAPIKey, true)
+	testNode.ID = testNodeID
+	if err := database.CreateNode(testNode); err != nil {
+		t.Fatalf("Failed to create test node: %v", err)
 	}
 
 	logger := slog.Default()
@@ -123,7 +140,7 @@ func TestAppService_GetApp(t *testing.T) {
 	}
 
 	// Retrieve the app
-	retrievedApp, err := service.GetApp(ctx, createdApp.ID)
+	retrievedApp, err := service.GetApp(ctx, createdApp.ID, createdApp.NodeID)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -145,7 +162,7 @@ func TestAppService_GetApp_NotFound(t *testing.T) {
 	ctx := context.Background()
 
 	// Try to get non-existent app
-	_, err := service.GetApp(ctx, "non-existent-id")
+	_, err := service.GetApp(ctx, "non-existent-id", "test-node-id")
 	if err == nil {
 		t.Error("Expected error for non-existent app, got nil")
 	}
@@ -184,7 +201,7 @@ func TestAppService_ListApps(t *testing.T) {
 	}
 
 	// List all apps
-	appsList, err := service.ListApps(ctx)
+	appsList, err := service.ListApps(ctx, []string{})
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -219,7 +236,7 @@ func TestAppService_UpdateApp(t *testing.T) {
 		ComposeContent: "version: '3'\nservices:\n  web:\n    image: nginx:alpine",
 	}
 
-	updatedApp, err := service.UpdateApp(ctx, createdApp.ID, updateReq)
+	updatedApp, err := service.UpdateApp(ctx, createdApp.ID, createdApp.NodeID, updateReq)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -257,13 +274,13 @@ func TestAppService_DeleteApp(t *testing.T) {
 	mockExecutor.SetMockOutput("docker", []string{"compose", "-f", "docker-compose.yml", "down"}, []byte("success"))
 
 	// Delete the app
-	err = service.DeleteApp(ctx, createdApp.ID)
+	err = service.DeleteApp(ctx, createdApp.ID, createdApp.NodeID)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
 
 	// Verify app no longer exists
-	_, err = service.GetApp(ctx, createdApp.ID)
+	_, err = service.GetApp(ctx, createdApp.ID, createdApp.NodeID)
 	if err == nil {
 		t.Error("Expected error when getting deleted app, got nil")
 	}
@@ -297,7 +314,7 @@ func TestAppService_StartApp(t *testing.T) {
 	mockExecutor.SetMockOutput("docker", []string{"compose", "-f", "docker-compose.yml", "up", "-d"}, []byte("success"))
 
 	// Start the app
-	updatedApp, err := service.StartApp(ctx, createdApp.ID)
+	updatedApp, err := service.StartApp(ctx, createdApp.ID, createdApp.NodeID)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -321,7 +338,7 @@ func TestAppService_StartApp_NotFound(t *testing.T) {
 
 	ctx := context.Background()
 
-	_, err := service.StartApp(ctx, "non-existent-id")
+	_, err := service.StartApp(ctx, "non-existent-id", "test-node-id")
 	if err == nil {
 		t.Error("Expected error for non-existent app, got nil")
 	}
@@ -356,7 +373,7 @@ func TestAppService_StartApp_DockerError(t *testing.T) {
 	mockExecutor.SetMockError("docker", []string{"compose", "-f", "docker-compose.yml", "up", "-d"}, dockerError)
 
 	// Try to start the app
-	_, err = service.StartApp(ctx, createdApp.ID)
+	_, err = service.StartApp(ctx, createdApp.ID, createdApp.NodeID)
 	if err == nil {
 		t.Error("Expected error when Docker command fails, got nil")
 	}
@@ -406,7 +423,7 @@ func TestAppService_StopApp(t *testing.T) {
 	mockExecutor.SetMockOutput("docker", []string{"compose", "-f", "docker-compose.yml", "down"}, []byte("success"))
 
 	// Stop the app
-	updatedApp, err := service.StopApp(ctx, createdApp.ID)
+	updatedApp, err := service.StopApp(ctx, createdApp.ID, createdApp.NodeID)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -453,7 +470,7 @@ func TestAppService_StopApp_DockerError(t *testing.T) {
 	mockExecutor.SetMockError("docker", []string{"compose", "-f", "docker-compose.yml", "down"}, dockerError)
 
 	// Try to stop the app
-	_, err = service.StopApp(ctx, createdApp.ID)
+	_, err = service.StopApp(ctx, createdApp.ID, createdApp.NodeID)
 	if err == nil {
 		t.Error("Expected error when Docker command fails, got nil")
 	}
@@ -494,7 +511,7 @@ func TestAppService_UpdateAppContainers(t *testing.T) {
 	mockExecutor.SetMockOutput("docker", []string{"compose", "-f", "docker-compose.yml", "up", "-d", "--build"}, []byte("success"))
 
 	// Update containers
-	updatedApp, err := service.UpdateAppContainers(ctx, createdApp.ID)
+	updatedApp, err := service.UpdateAppContainers(ctx, createdApp.ID, createdApp.NodeID)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -535,7 +552,7 @@ func TestAppService_UpdateAppContainers_DockerError(t *testing.T) {
 	mockExecutor.SetMockError("docker", []string{"compose", "-f", "docker-compose.yml", "up", "-d", "--build"}, dockerError)
 
 	// Try to update containers
-	_, err = service.UpdateAppContainers(ctx, createdApp.ID)
+	_, err = service.UpdateAppContainers(ctx, createdApp.ID, createdApp.NodeID)
 	if err == nil {
 		t.Error("Expected error when Docker command fails, got nil")
 	}
@@ -574,8 +591,8 @@ func TestAppService_RestartCloudflared(t *testing.T) {
 	// Mock successful docker compose restart command
 	mockExecutor.SetMockOutput("docker", []string{"compose", "-f", "docker-compose.yml", "restart", "cloudflared"}, []byte("success"))
 
-	// Restart cloudflared
-	err = service.RestartCloudflared(ctx, createdApp.ID)
+	// Restart cloudflared (using app's node_id)
+	err = service.RestartCloudflared(ctx, createdApp.ID, createdApp.NodeID)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}

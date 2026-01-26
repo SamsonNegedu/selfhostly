@@ -42,6 +42,8 @@ function AppList({ filteredApps }: AppListProps) {
         if (appToDelete) {
             const appName = appToDelete.name
             const appId = appToDelete.id
+            // Get the node_id from the app
+            const app = apps.find(a => a.id === appId)
 
             // Mark app as being deleted
             setDeletingAppId(appId)
@@ -50,7 +52,7 @@ function AppList({ filteredApps }: AppListProps) {
             toast.info('Deleting app', `Deleting "${appName}"...`)
 
             // Then trigger the actual deletion
-            deleteApp.mutate(appId, {
+            deleteApp.mutate({ id: appId, nodeId: app?.node_id }, {
                 onSuccess: () => {
                     // Optimistically remove from local store on success
                     useAppStore.getState().removeApp(appId)
@@ -157,12 +159,12 @@ function AppList({ filteredApps }: AppListProps) {
                         error: 'border-l-red-500'
                     }
                     const statusColor = statusColorMap[app.status as keyof typeof statusColorMap] || 'border-l-gray-400'
-                    
+
                     return (
                         <Card
                             key={app.id}
                             className={`group cursor-pointer card-hover fade-in stagger-${(index % 6) + 1} relative overflow-hidden border-l-4 ${statusColor} ${isDeleting ? 'opacity-60 pointer-events-none' : ''}`}
-                            onClick={() => !isDeleting && navigate(`/apps/${app.id}`)}
+                            onClick={() => !isDeleting && navigate(`/apps/${app.id}${app.node_id ? `?node_id=${app.node_id}` : ''}`)}
                         >
                             {/* Deletion Overlay */}
                             {isDeleting && (
@@ -176,7 +178,7 @@ function AppList({ filteredApps }: AppListProps) {
                                     </div>
                                 </div>
                             )}
-                            
+
                             {/* Card Header */}
                             <CardHeader className="pb-3">
                                 <div className="flex items-start justify-between gap-3">
@@ -203,7 +205,7 @@ function AppList({ filteredApps }: AppListProps) {
                                             )}
                                         </div>
                                     </div>
-                                    
+
                                     {/* Actions Menu */}
                                     <div onClick={(e) => e.stopPropagation()}>
                                         <SimpleDropdown
@@ -216,7 +218,7 @@ function AppList({ filteredApps }: AppListProps) {
                                             <div className="py-1 min-w-[160px]">
                                                 {app.status === 'running' && (
                                                     <SimpleDropdownItem
-                                                        onClick={() => stopApp.mutate(app.id, {
+                                                        onClick={() => stopApp.mutate({ id: app.id, nodeId: app.node_id }, {
                                                             onSuccess: () => toast.success('App stopped', `${app.name} has been stopped successfully`),
                                                             onError: (error) => toast.error('Failed to stop app', error.message)
                                                         })}
@@ -229,7 +231,7 @@ function AppList({ filteredApps }: AppListProps) {
                                                 )}
                                                 {app.status === 'stopped' && (
                                                     <SimpleDropdownItem
-                                                        onClick={() => startApp.mutate(app.id, {
+                                                        onClick={() => startApp.mutate({ id: app.id, nodeId: app.node_id }, {
                                                             onSuccess: () => toast.success('App started', `${app.name} has been started successfully`),
                                                             onError: (error) => toast.error('Failed to start app', error.message)
                                                         })}
@@ -241,7 +243,7 @@ function AppList({ filteredApps }: AppListProps) {
                                                     </SimpleDropdownItem>
                                                 )}
                                                 <SimpleDropdownItem
-                                                    onClick={() => updateApp.mutate(app.id, {
+                                                    onClick={() => updateApp.mutate({ id: app.id, nodeId: app.node_id }, {
                                                         onSuccess: () => toast.success('Update started', `${app.name} update process has begun`),
                                                         onError: (error) => toast.error('Failed to start update', error.message)
                                                     })}
@@ -265,7 +267,7 @@ function AppList({ filteredApps }: AppListProps) {
                                     </div>
                                 </div>
                             </CardHeader>
-                            
+
                             {/* Card Content */}
                             <CardContent className="pt-0 pb-4">
                                 <p className="text-sm text-muted-foreground mb-3 line-clamp-2 min-h-[2.5rem]">
@@ -278,7 +280,7 @@ function AppList({ filteredApps }: AppListProps) {
                                     </div>
                                 )}
                             </CardContent>
-                            
+
                             {/* Card Footer */}
                             <div className="px-6 py-3 bg-muted/30 border-t flex items-center justify-between text-xs text-muted-foreground">
                                 <span className="flex items-center gap-1.5">

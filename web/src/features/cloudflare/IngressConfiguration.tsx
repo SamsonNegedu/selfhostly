@@ -10,16 +10,18 @@ import type { IngressRule } from '@/shared/types/api'
 
 interface IngressConfigurationProps {
     appId: string;
+    nodeId?: string;
     existingIngress?: IngressRule[];
     existingHostname?: string;
     tunnelID?: string;
     onSave?: (rules: IngressRule[], hostname?: string) => void;
 }
 
-export function IngressConfiguration({ appId, existingIngress = [], existingHostname: _existingHostname = '', tunnelID: _tunnelID, onSave }: IngressConfigurationProps) {
+export function IngressConfiguration({ appId, nodeId, existingIngress = [], existingHostname: _existingHostname = '', tunnelID: _tunnelID, onSave }: IngressConfigurationProps) {
     const queryClient = useQueryClient()
-    // Handle null values in existing ingress rules
-    const sanitizedIngress = existingIngress.map(rule => ({
+    // Handle null/undefined values in existing ingress rules
+    const safeIngress = existingIngress || []
+    const sanitizedIngress = safeIngress.map(rule => ({
         ...rule,
         hostname: rule.hostname || null,
         path: rule.path || null
@@ -86,6 +88,7 @@ export function IngressConfiguration({ appId, existingIngress = [], existingHost
         updateTunnelIngressMutation.mutate(
             {
                 appId,
+                nodeId,
                 ingressRules: validRules,
                 hostname: hostnames[0] || undefined, // Send first hostname for backward compatibility
                 targetDomain: undefined
@@ -95,14 +98,16 @@ export function IngressConfiguration({ appId, existingIngress = [], existingHost
                     setSaveSuccess(true)
                     setSaveError(null)
 
-                    // Immediately invalidate tunnel query for instant UI feedback
-                    queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', appId] })
+                    // Immediately invalidate tunnel query for instant UI feedback (with nodeId)
+                    queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', appId, nodeId] })
+                    queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', appId] }) // Also invalidate without nodeId for backward compatibility
 
                     // Create DNS records for all hostnames
                     if (hostnames.length > 0) {
                         const dnsPromises = hostnames.map(hostname =>
                             createDNSRecordMutation.mutateAsync({
                                 appId,
+                                nodeId,
                                 hostname,
                                 targetDomain: undefined
                             })
@@ -110,10 +115,12 @@ export function IngressConfiguration({ appId, existingIngress = [], existingHost
 
                         Promise.all(dnsPromises)
                             .then(() => {
-                                // Invalidate all related queries to refresh UI
-                                queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', appId] })
+                                // Invalidate all related queries to refresh UI (with nodeId)
+                                queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', appId, nodeId] })
+                                queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', appId] }) // Also invalidate without nodeId
                                 queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnels'] })
-                                queryClient.invalidateQueries({ queryKey: ['app', appId] })
+                                queryClient.invalidateQueries({ queryKey: ['app', appId, nodeId] })
+                                queryClient.invalidateQueries({ queryKey: ['app', appId] }) // Also invalidate without nodeId
                                 queryClient.invalidateQueries({ queryKey: ['apps'] })
                                 onSave?.(validRules, hostnames[0])
                             })
@@ -121,10 +128,12 @@ export function IngressConfiguration({ appId, existingIngress = [], existingHost
                                 setSaveError(`Ingress configured but DNS creation failed: ${error.message}`)
                             })
                     } else {
-                        // Invalidate all related queries to refresh UI
-                        queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', appId] })
+                        // Invalidate all related queries to refresh UI (with nodeId)
+                        queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', appId, nodeId] })
+                        queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', appId] }) // Also invalidate without nodeId
                         queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnels'] })
-                        queryClient.invalidateQueries({ queryKey: ['app', appId] })
+                        queryClient.invalidateQueries({ queryKey: ['app', appId, nodeId] })
+                        queryClient.invalidateQueries({ queryKey: ['app', appId] }) // Also invalidate without nodeId
                         queryClient.invalidateQueries({ queryKey: ['apps'] })
                         onSave?.(validRules, undefined)
                     }

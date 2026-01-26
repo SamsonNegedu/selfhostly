@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/selfhostly/internal/cloudflare"
+	"github.com/selfhostly/internal/config"
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/domain"
 )
@@ -43,12 +44,32 @@ func setupTestTunnelService(t *testing.T) (domain.TunnelService, *db.DB, *cloudf
 
 	logger := slog.Default()
 
+	// Create minimal config for testing with node configuration
+	testNodeID := "test-node-id"
+	testNodeName := "test-node"
+	testAPIKey := "test-api-key"
+	cfg := &config.Config{
+		Node: config.NodeConfig{
+			ID:        testNodeID,
+			Name:      testNodeName,
+			IsPrimary: true,
+			APIKey:    testAPIKey,
+		},
+	}
+
+	// Create a test node in the database
+	testNode := db.NewNode(testNodeName, "http://localhost:8080", testAPIKey, true)
+	testNode.ID = testNodeID
+	if err := database.CreateNode(testNode); err != nil {
+		t.Fatalf("Failed to create test node: %v", err)
+	}
+
 	// Create mocked Cloudflare Manager with mock HTTP client
 	mockManager := cloudflare.NewManagerWithClient(apiToken, accountID, mockHTTPClient)
 	mockTunnelManager := cloudflare.NewTunnelManagerWithManager(mockManager, database)
 
 	// Create service with mocked tunnel manager
-	service := NewTunnelServiceWithManager(database, logger, mockTunnelManager)
+	service := NewTunnelServiceWithManager(database, cfg, logger, mockTunnelManager)
 
 	cleanup := func() {
 		database.Close()
@@ -60,11 +81,19 @@ func setupTestTunnelService(t *testing.T) (domain.TunnelService, *db.DB, *cloudf
 
 // createTestAppWithTunnel creates an app and tunnel for testing
 func createTestAppWithTunnel(t *testing.T, database *db.DB) (*db.App, *db.CloudflareTunnel) {
+	// Get the test node ID (assumes test node was created in setup)
+	nodes, err := database.GetAllNodes()
+	if err != nil || len(nodes) == 0 {
+		t.Fatalf("Failed to get test node: %v", err)
+	}
+	testNodeID := nodes[0].ID
+
 	// Create app
 	app := db.NewApp("test-app", "Test application", "version: '3'\nservices:\n  web:\n    image: nginx:latest")
 	app.TunnelID = "tunnel-123"
 	app.TunnelToken = "tunnel-token-456"
 	app.Status = "stopped"
+	app.NodeID = testNodeID // Assign to test node
 
 	if err := database.CreateApp(app); err != nil {
 		t.Fatalf("Failed to create app: %v", err)
@@ -131,9 +160,17 @@ func TestTunnelService_ListActiveTunnels(t *testing.T) {
 	// Create multiple apps and tunnels
 	_, tunnel1 := createTestAppWithTunnel(t, database)
 
+	// Get the test node ID
+	nodes, err := database.GetAllNodes()
+	if err != nil || len(nodes) == 0 {
+		t.Fatalf("Failed to get test node: %v", err)
+	}
+	testNodeID := nodes[0].ID
+
 	app2 := db.NewApp("test-app-2", "Second app", "version: '3'\nservices:\n  web:\n    image: nginx:latest")
 	app2.TunnelID = "tunnel-456"
 	app2.TunnelToken = "tunnel-token-789"
+	app2.NodeID = testNodeID // Assign to test node
 	if err := database.CreateApp(app2); err != nil {
 		t.Fatalf("Failed to create app: %v", err)
 	}
@@ -145,8 +182,8 @@ func TestTunnelService_ListActiveTunnels(t *testing.T) {
 		t.Fatalf("Failed to create tunnel: %v", err)
 	}
 
-	// List active tunnels
-	tunnels, err := service.ListActiveTunnels(ctx)
+	// List active tunnels (empty nodeIDs means fetch from all nodes, but in test we only have local)
+	tunnels, err := service.ListActiveTunnels(ctx, []string{})
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -188,7 +225,7 @@ func TestTunnelService_UpdateTunnelIngress(t *testing.T) {
 	})
 
 	// Set up mock Cloudflare API response for DNS record creation
-	dnsURL := fmt.Sprintf("https://api.cloudflare.com/client/v4/zones/zone-123/dns_records")
+	dnsURL := "https://api.cloudflare.com/client/v4/zones/zone-123/dns_records"
 	mockHTTPClient.SetMockResponse(dnsURL, cloudflare.MockResponse{
 		StatusCode: http.StatusOK,
 		Body:       `{"success": true, "result": {"id": "dns-record-123"}}`,
@@ -223,6 +260,25 @@ func TestTunnelService_UpdateTunnelIngress(t *testing.T) {
 	// Verify Cloudflare API was called
 	if !mockHTTPClient.AssertRequestMade("PUT", ingressURL) {
 		t.Error("Expected PUT request to update ingress configuration")
+	}
+
+	// Verify ingress rules were saved to database
+	updatedTunnel, err := database.GetCloudflareTunnelByAppID(app.ID)
+	if err != nil {
+		t.Fatalf("Failed to retrieve updated tunnel: %v", err)
+	}
+	if updatedTunnel.IngressRules == nil {
+		t.Error("Expected ingress rules to be saved to database, got nil")
+	} else if len(*updatedTunnel.IngressRules) != len(req.IngressRules) {
+		t.Errorf("Expected %d ingress rules in database, got %d", len(req.IngressRules), len(*updatedTunnel.IngressRules))
+	} else {
+		// Verify first rule matches
+		if (*updatedTunnel.IngressRules)[0].Service != req.IngressRules[0].Service {
+			t.Errorf("Expected service %s, got %s", req.IngressRules[0].Service, (*updatedTunnel.IngressRules)[0].Service)
+		}
+		if (*updatedTunnel.IngressRules)[0].Hostname == nil || *(*updatedTunnel.IngressRules)[0].Hostname != *req.IngressRules[0].Hostname {
+			t.Error("Expected hostname to match")
+		}
 	}
 }
 

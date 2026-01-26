@@ -115,10 +115,11 @@ class ApiClient {
   /**
    * POST request
    */
-  async post<T, D = unknown>(endpoint: string, data?: D): Promise<T> {
+  async post<T, D = unknown>(endpoint: string, data?: D, params?: Record<string, string | number | boolean>): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'POST',
       body: data ? JSON.stringify(data) : undefined,
+      params,
     });
   }
 
@@ -145,9 +146,10 @@ class ApiClient {
   /**
    * DELETE request
    */
-  async delete<T>(endpoint: string): Promise<T> {
+  async delete<T>(endpoint: string, params?: Record<string, string | number | boolean>): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'DELETE',
+      params,
     });
   }
 }

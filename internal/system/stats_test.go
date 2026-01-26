@@ -31,8 +31,18 @@ func setupTestCollector(t *testing.T, mockExecutor docker.CommandExecutor) (*Col
 	// Create docker manager with mocked executor
 	dockerManager := docker.NewManagerWithExecutor(tmpAppsDir, mockExecutor)
 
+	// Create a test node in the database
+	testNodeID := "test-node-id"
+	testNodeName := "test-node"
+	testAPIKey := "test-api-key"
+	testNode := db.NewNode(testNodeName, "http://localhost:8080", testAPIKey, true)
+	testNode.ID = testNodeID
+	if err := database.CreateNode(testNode); err != nil {
+		t.Fatalf("Failed to create test node: %v", err)
+	}
+
 	// Create collector with mocked executor
-	collector := NewCollectorWithExecutor(tmpAppsDir, dockerManager, database, mockExecutor)
+	collector := NewCollectorWithExecutor(tmpAppsDir, dockerManager, database, mockExecutor, testNodeID, testNodeName)
 
 	cleanup := func() {
 		database.Close()
@@ -237,8 +247,16 @@ func TestCollector_GetAllContainerStats(t *testing.T) {
 	collector, database, cleanup := setupTestCollector(t, mockExecutor)
 	defer cleanup()
 
+	// Get the test node ID
+	nodes, err := database.GetAllNodes()
+	if err != nil || len(nodes) == 0 {
+		t.Fatalf("Failed to get test node: %v", err)
+	}
+	testNodeID := nodes[0].ID
+
 	// Create a managed app in database
 	app := db.NewApp("test-app", "Test application", "version: '3'\nservices:\n  web:\n    image: nginx:latest")
+	app.NodeID = testNodeID // Assign to test node
 	if err := database.CreateApp(app); err != nil {
 		t.Fatalf("Failed to create app: %v", err)
 	}
@@ -257,7 +275,7 @@ func TestCollector_GetAllContainerStats(t *testing.T) {
 
 	mockExecutor.SetMockOutput("docker", []string{"stats", "--no-stream", "--format", "{{.ID}}|{{.CPUPerc}}|{{.MemUsage}}|{{.NetIO}}|{{.BlockIO}}"}, []byte(statsOutput))
 
-	containers := collector.getAllContainerStats()
+	containers := collector.getAllContainerStats("test-node-id")
 
 	if len(containers) != 2 {
 		t.Errorf("Expected 2 containers, got %d", len(containers))
@@ -314,7 +332,7 @@ func TestCollector_GetAllContainerStats_Empty(t *testing.T) {
 	// Mock empty container list
 	mockExecutor.SetMockOutput("docker", []string{"ps", "-a", "-q"}, []byte(""))
 
-	containers := collector.getAllContainerStats()
+	containers := collector.getAllContainerStats("test-node-id")
 
 	if len(containers) != 0 {
 		t.Errorf("Expected 0 containers, got %d", len(containers))
@@ -331,9 +349,18 @@ func TestCollector_DetermineAppNameFromInspect(t *testing.T) {
 	collector, database, cleanup := setupTestCollector(t, mockExecutor)
 	defer cleanup()
 
+	// Get the test node ID
+	nodes, err := database.GetAllNodes()
+	if err != nil || len(nodes) == 0 {
+		t.Fatalf("Failed to get test node: %v", err)
+	}
+	testNodeID := nodes[0].ID
+
 	// Create managed apps
 	app1 := db.NewApp("test-app", "Test application", "version: '3'\nservices:\n  web:\n    image: nginx:latest")
+	app1.NodeID = testNodeID // Assign to test node
 	app2 := db.NewApp("another-app", "Another app", "version: '3'\nservices:\n  api:\n    image: node:latest")
+	app2.NodeID = testNodeID // Assign to test node
 	database.CreateApp(app1)
 	database.CreateApp(app2)
 
@@ -375,8 +402,16 @@ func TestCollector_BuildContainerInfo(t *testing.T) {
 	collector, database, cleanup := setupTestCollector(t, mockExecutor)
 	defer cleanup()
 
+	// Get the test node ID
+	nodes, err := database.GetAllNodes()
+	if err != nil || len(nodes) == 0 {
+		t.Fatalf("Failed to get test node: %v", err)
+	}
+	testNodeID := nodes[0].ID
+
 	// Create managed app
 	app := db.NewApp("test-app", "Test application", "version: '3'\nservices:\n  web:\n    image: nginx:latest")
+	app.NodeID = testNodeID // Assign to test node
 	database.CreateApp(app)
 
 	managedApps := collector.getManagedAppsMap()
@@ -390,7 +425,7 @@ func TestCollector_BuildContainerInfo(t *testing.T) {
 		RestartCount: 5,
 	}
 
-	containerInfo := collector.buildContainerInfo("abc123def456", "test-app", inspect, managedApps)
+	containerInfo := collector.buildContainerInfo("abc123def456", "test-app", "test-node-id", inspect, managedApps)
 
 	if containerInfo == nil {
 		t.Fatal("Expected container info, got nil")
@@ -429,7 +464,7 @@ func TestCollector_BuildContainerInfo(t *testing.T) {
 		RestartCount: 0,
 	}
 
-	containerInfo2 := collector.buildContainerInfo("def456ghi789", "test-app", inspect2, managedApps)
+	containerInfo2 := collector.buildContainerInfo("def456ghi789", "test-app", "test-node-id", inspect2, managedApps)
 
 	if containerInfo2.State != "paused" {
 		t.Errorf("Expected state 'paused', got '%s'", containerInfo2.State)
@@ -444,7 +479,7 @@ func TestCollector_BuildContainerInfo(t *testing.T) {
 		RestartCount: 0,
 	}
 
-	containerInfo3 := collector.buildContainerInfo("ghi789jkl012", "test-app", inspect3, managedApps)
+	containerInfo3 := collector.buildContainerInfo("ghi789jkl012", "test-app", "test-node-id", inspect3, managedApps)
 
 	if containerInfo3.State != "stopped" {
 		t.Errorf("Expected state 'stopped', got '%s'", containerInfo3.State)
@@ -535,17 +570,12 @@ func TestCollector_GetNodeInfo(t *testing.T) {
 
 	nodeID, nodeName := collector.getNodeInfo()
 
-	// Should return hostname (or "unknown" if it fails)
-	if nodeID == "" {
-		t.Error("Expected node ID to be set")
+	// Should return the values passed to the constructor
+	if nodeID != "test-node-id" {
+		t.Errorf("Expected node ID 'test-node-id', got '%s'", nodeID)
 	}
 
-	if nodeName == "" {
-		t.Error("Expected node name to be set")
-	}
-
-	// Node ID and name should be the same (for single-node setup)
-	if nodeID != nodeName {
-		t.Errorf("Expected node ID and name to match, got ID=%s, Name=%s", nodeID, nodeName)
+	if nodeName != "test-node" {
+		t.Errorf("Expected node name 'test-node', got '%s'", nodeName)
 	}
 }

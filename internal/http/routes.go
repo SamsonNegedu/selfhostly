@@ -45,8 +45,33 @@ func (s *Server) setupRoutes() {
 		// System/monitoring routes
 		s.setupSystemRoutes(api)
 
+		// Node management routes
+		s.setupNodeRoutes(api)
+
 		// User info endpoint
 		api.GET("/me", s.getCurrentUser)
+	}
+
+	// Internal API routes for inter-node communication (requires node auth)
+	internal := s.engine.Group("/api/internal")
+	internal.Use(s.nodeAuthMiddleware())
+	{
+		internal.GET("/settings", s.getSettingsForNode)
+
+		// App management for inter-node communication (local only, no aggregation)
+		internal.GET("/apps", s.listLocalApps)
+		internal.GET("/apps/:id", s.getLocalApp)
+		internal.POST("/apps", s.createLocalApp)
+		internal.PUT("/apps/:id", s.updateLocalApp)
+		internal.POST("/apps/:id/start", s.startLocalApp)
+		internal.POST("/apps/:id/stop", s.stopLocalApp)
+		internal.DELETE("/apps/:id", s.deleteLocalApp)
+
+		// System stats for inter-node communication (local only, no aggregation)
+		internal.GET("/system/stats", s.getLocalSystemStats)
+
+		// Cloudflare tunnels for inter-node communication (local only, no aggregation)
+		internal.GET("/cloudflare/tunnels", s.listLocalTunnels)
 	}
 
 	// Serve frontend static files
@@ -63,22 +88,28 @@ func (s *Server) setupRoutes() {
 func (s *Server) setupAppRoutes(api *gin.RouterGroup) {
 	apps := api.Group("/apps")
 	{
+		// List and create don't require node_id
 		apps.GET("", s.listApps)
 		apps.POST("", s.createApp)
-		apps.GET("/:id", s.getApp)
-		apps.PUT("/:id", s.updateApp)
-		apps.DELETE("/:id", s.deleteApp)
-		apps.POST("/:id/start", s.startApp)
-		apps.POST("/:id/stop", s.stopApp)
-		apps.POST("/:id/update", s.updateAppContainers)
-		apps.GET("/:id/logs", s.getAppLogs)
-		apps.GET("/:id/stats", s.getAppStats)
-		apps.POST("/:id/repair", s.repairApp)
 
-		// Compose version routes
-		apps.GET("/:id/compose/versions", s.getComposeVersions)
-		apps.GET("/:id/compose/versions/:version", s.getComposeVersion)
-		apps.POST("/:id/compose/rollback/:version", s.rollbackToVersion)
+		// App-specific operations require node_id
+		appSpecific := apps.Group("/:id", s.requireNodeIDMiddleware())
+		{
+			appSpecific.GET("", s.getApp)
+			appSpecific.PUT("", s.updateApp)
+			appSpecific.DELETE("", s.deleteApp)
+			appSpecific.POST("/start", s.startApp)
+			appSpecific.POST("/stop", s.stopApp)
+			appSpecific.POST("/update", s.updateAppContainers)
+			appSpecific.GET("/logs", s.getAppLogs)
+			appSpecific.GET("/stats", s.getAppStats)
+			appSpecific.POST("/repair", s.repairApp)
+
+			// Compose version routes
+			appSpecific.GET("/compose/versions", s.getComposeVersions)
+			appSpecific.GET("/compose/versions/:version", s.getComposeVersion)
+			appSpecific.POST("/compose/rollback/:version", s.rollbackToVersion)
+		}
 	}
 }
 
@@ -86,11 +117,16 @@ func (s *Server) setupCloudflareRoutes(api *gin.RouterGroup) {
 	cloudflare := api.Group("/cloudflare")
 	{
 		cloudflare.GET("/tunnels", s.listCloudflareTunnels)
-		cloudflare.GET("/apps/:appId/tunnel", s.getCloudflareTunnel)
-		cloudflare.POST("/apps/:appId/tunnel/sync", s.syncCloudflareTunnel)
-		cloudflare.PUT("/apps/:appId/tunnel/ingress", s.updateTunnelIngress)
-		cloudflare.POST("/apps/:appId/tunnel/dns", s.createDNSRecord)
-		cloudflare.DELETE("/apps/:appId/tunnel", s.deleteCloudflareTunnel)
+
+		// App-specific tunnel operations require node_id
+		tunnelOps := cloudflare.Group("/apps/:appId", s.requireNodeIDMiddleware())
+		{
+			tunnelOps.GET("/tunnel", s.getCloudflareTunnel)
+			tunnelOps.POST("/tunnel/sync", s.syncCloudflareTunnel)
+			tunnelOps.PUT("/tunnel/ingress", s.updateTunnelIngress)
+			tunnelOps.POST("/tunnel/dns", s.createDNSRecord)
+			tunnelOps.DELETE("/tunnel", s.deleteCloudflareTunnel)
+		}
 	}
 }
 
@@ -106,16 +142,31 @@ func (s *Server) setupSystemRoutes(api *gin.RouterGroup) {
 	systemGroup := api.Group("/system")
 	{
 		systemGroup.GET("/stats", s.getSystemStats)
-		
+
 		// Only expose debug endpoints in non-production environments
 		if s.config.Environment != "production" {
 			systemGroup.GET("/debug/docker-stats/:id", s.getDebugDockerStats)
 		}
-		
+
 		systemGroup.POST("/containers/:id/restart", s.restartContainer)
 		systemGroup.POST("/containers/:id/stop", s.stopContainer)
 		systemGroup.DELETE("/containers/:id", s.deleteContainer)
 	}
+}
+
+func (s *Server) setupNodeRoutes(api *gin.RouterGroup) {
+	nodes := api.Group("/nodes")
+	{
+		nodes.GET("", s.listNodes)
+		nodes.POST("", s.registerNode)
+		nodes.GET("/:id", s.getNode)
+		nodes.PUT("/:id", s.updateNode)
+		nodes.DELETE("/:id", s.deleteNode)
+		nodes.GET("/:id/health", s.checkNodeHealth)
+	}
+
+	// Current node info
+	api.GET("/node/info", s.getCurrentNodeInfo)
 }
 
 // getCurrentUser returns the authenticated user info

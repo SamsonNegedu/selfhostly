@@ -1,3 +1,15 @@
+export interface Node {
+  id: string;
+  name: string;
+  api_endpoint: string;
+  // api_key is excluded from API responses for security - never exposed to frontend
+  is_primary: boolean;
+  status: 'online' | 'offline' | 'unreachable';
+  last_seen?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface App {
   id: string;
   name: string;
@@ -9,6 +21,8 @@ export interface App {
   public_url: string;
   status: 'running' | 'stopped' | 'updating' | 'error';
   error_message: string;
+  node_id: string;
+  node_name?: string; // For display purposes (added by backend)
   created_at: string;
   updated_at: string;
 }
@@ -18,6 +32,19 @@ export interface CreateAppRequest {
   description: string;
   compose_content: string;
   ingress_rules?: IngressRule[];
+  node_id?: string; // Target node for app deployment
+}
+
+export interface RegisterNodeRequest {
+  name: string;
+  api_endpoint: string;
+  api_key: string;
+}
+
+export interface UpdateNodeRequest {
+  name?: string;
+  api_endpoint?: string;
+  api_key?: string;
 }
 
 export interface UpdateAppRequest {
@@ -158,6 +185,7 @@ export interface ContainerInfo {
   id: string;
   name: string;
   app_name: string;
+  node_id: string; // ID of the node this container is running on
   is_managed: boolean; // Whether container belongs to an app managed by our system
   status: string;
   state: 'running' | 'stopped' | 'paused';

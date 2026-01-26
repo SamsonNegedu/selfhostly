@@ -1,17 +1,22 @@
 import React, { useState, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { useApps, useQueryClient } from '@/shared/services/api'
 import { useAppStore } from '@/shared/stores/app-store'
 import AppList from './components/AppList'
-import { AlertCircle, Search, Filter, X, TrendingUp, Server, Activity, AlertTriangle } from 'lucide-react'
+import { AlertCircle, Search, Filter, X, TrendingUp, Server, Activity, AlertTriangle, Plus } from 'lucide-react'
 import { DashboardSkeleton } from '@/shared/components/ui/Skeleton'
 import { Button } from '@/shared/components/ui/button'
+import { useNodeContext } from '@/shared/contexts/NodeContext'
 import type { App } from '@/shared/types/api'
 
 type SortOption = 'name' | 'date' | 'status'
 type FilterStatus = 'all' | 'running' | 'stopped' | 'updating' | 'error'
 
 function Dashboard() {
-    const { data: apps, isLoading, error } = useApps()
+    // Get global node context
+    const { selectedNodeIds } = useNodeContext()
+
+    const { data: apps, isLoading, error } = useApps(selectedNodeIds)
     const setApps = useAppStore((state) => state.setApps)
     const queryClient = useQueryClient()
 
@@ -123,11 +128,19 @@ function Dashboard() {
     return (
         <div className="fade-in space-y-6">
             {/* Header */}
-            <div>
-                <h1 className="text-3xl font-bold">Applications</h1>
-                <p className="text-muted-foreground mt-2">
-                    Manage and monitor your self-hosted apps
-                </p>
+            <div className="flex items-start justify-between">
+                <div>
+                    <h1 className="text-3xl font-bold">Applications</h1>
+                    <p className="text-muted-foreground mt-2">
+                        Manage and monitor your self-hosted apps
+                    </p>
+                </div>
+                <Link to="/apps/new">
+                    <Button className="button-press">
+                        <Plus className="h-4 w-4 mr-2" />
+                        New App
+                    </Button>
+                </Link>
             </div>
 
             {/* Statistics Cards */}
@@ -194,7 +207,7 @@ function Dashboard() {
                         )}
                     </div>
 
-                    {/* Filters */}
+                    {/* Node Selector and Filters */}
                     <div className="flex items-center gap-2">
                         <Button
                             variant="outline"

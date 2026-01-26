@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useCreateApp } from '@/shared/services/api'
 import { Button } from '@/shared/components/ui'
 import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/card'
+import { NodeSelector } from '@/shared/components/ui/NodeSelector'
 import ComposeEditor from './components/ComposeEditor'
 import PreviewCompose from './components/PreviewCompose'
 import ProgressIndicator from './components/ProgressIndicator'
@@ -26,6 +27,7 @@ function CreateApp() {
         description: '',
         compose_content: '',
         ingress_rules: [] as IngressRule[],
+        node_id: '', // Target node for deployment (empty = current node)
     })
 
     const steps = [
@@ -126,8 +128,11 @@ function CreateApp() {
         const validIngressRules = formData.ingress_rules.filter(rule => rule.service.trim() !== '')
 
         const submitData = {
-            ...formData,
+            name: formData.name,
+            description: formData.description,
+            compose_content: formData.compose_content,
             ingress_rules: validIngressRules.length > 0 ? validIngressRules : undefined,
+            node_id: formData.node_id || undefined,
         }
 
         createApp.mutate(submitData, {
@@ -236,6 +241,20 @@ function CreateApp() {
                                     className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-y"
                                     placeholder="A brief description of your app (optional)"
                                 />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium mb-2">
+                                    Deployment Node
+                                </label>
+                                <NodeSelector
+                                    selectedNodeIds={formData.node_id ? [formData.node_id] : []}
+                                    onChange={(nodeIds) => setFormData({ ...formData, node_id: nodeIds[0] || '' })}
+                                    multiSelect={false}
+                                />
+                                <p className="text-xs text-muted-foreground mt-1">
+                                    Choose which node will host this app. Leave unselected to use current node.
+                                </p>
                             </div>
 
                             <div className="flex justify-end">

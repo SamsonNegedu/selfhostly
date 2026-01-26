@@ -1,6 +1,6 @@
-import React, { useState } from 'react'
-import { useParams } from 'react-router-dom'
-import { useApp, useStartApp, useStopApp, useUpdateAppContainers, useDeleteApp } from '@/shared/services/api'
+import React, { useState, useMemo } from 'react'
+import { useParams, useSearchParams } from 'react-router-dom'
+import { useApp, useStartApp, useStopApp, useUpdateAppContainers, useDeleteApp, useApps } from '@/shared/services/api'
 import { useAppStore } from '@/shared/stores/app-store'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '@/shared/components/ui/Toast'
@@ -20,9 +20,36 @@ type TabType = 'overview' | 'compose' | 'logs' | 'cloudflare'
 
 function AppDetails() {
     const { id } = useParams<{ id: string }>()
+    const [searchParams] = useSearchParams()
     const appId = id ?? undefined
     const navigate = useNavigate()
-    const { data: app, isLoading, refetch, isFetching } = useApp(appId!)
+
+    // Try to get node_id from URL query param first
+    const nodeIdFromUrl = searchParams.get('node_id')
+
+    // Get node_id from app store if available (for initial load)
+    const apps = useAppStore((state) => state.apps)
+    const cachedApp = apps.find(a => a.id === appId)
+
+    // Fetch apps list if nodeId is not available from cache or URL
+    const shouldFetchApps = !nodeIdFromUrl && !cachedApp?.node_id
+    const { data: appsList, isLoading: isLoadingApps } = useApps(undefined) // Fetch from all nodes
+
+    // Determine nodeId: URL param > cache > fetched apps list
+    const nodeId = useMemo(() => {
+        if (nodeIdFromUrl) return nodeIdFromUrl
+        if (cachedApp?.node_id) return cachedApp.node_id
+        if (appsList) {
+            const foundApp = appsList.find(a => a.id === appId)
+            return foundApp?.node_id
+        }
+        return undefined
+    }, [nodeIdFromUrl, cachedApp?.node_id, appsList, appId])
+
+    const { data: app, isLoading: isLoadingApp, refetch, isFetching } = useApp(appId!, nodeId || undefined)
+
+    // Combined loading state: wait for apps list if we need it to find nodeId
+    const isLoading = isLoadingApp || (shouldFetchApps && isLoadingApps)
     const startApp = useStartApp()
     const stopApp = useStopApp()
     const updateApp = useUpdateAppContainers()
@@ -46,7 +73,7 @@ function AppDetails() {
             toast.info('Deleting app', `Deleting "${appName}"...`)
 
             // Trigger deletion
-            deleteApp.mutate(app.id, {
+            deleteApp.mutate({ id: app.id, nodeId: app.node_id }, {
                 onSuccess: () => {
                     // Remove from local store on success
                     useAppStore.getState().removeApp(app.id)
@@ -175,7 +202,7 @@ function AppDetails() {
                             isDeletePending={deleteApp.isPending}
                             isRefreshing={isFetching}
                             onRefresh={() => refetch()}
-                            onStart={() => startApp.mutate(app.id, {
+                            onStart={() => startApp.mutate({ id: app.id, nodeId: app.node_id }, {
                                 onSuccess: () => {
                                     toast.success('App started', `${app.name} has been started successfully`)
                                     refetch()
@@ -184,7 +211,7 @@ function AppDetails() {
                                     toast.error('Failed to start app', error.message)
                                 }
                             })}
-                            onStop={() => stopApp.mutate(app.id, {
+                            onStop={() => stopApp.mutate({ id: app.id, nodeId: app.node_id }, {
                                 onSuccess: () => {
                                     toast.success('App stopped', `${app.name} has been stopped successfully`)
                                     refetch()
@@ -193,7 +220,7 @@ function AppDetails() {
                                     toast.error('Failed to stop app', error.message)
                                 }
                             })}
-                            onUpdate={() => updateApp.mutate(app.id, {
+                            onUpdate={() => updateApp.mutate({ id: app.id, nodeId: app.node_id }, {
                                 onSuccess: () => {
                                     toast.success('Update started', `${app.name} update process has begun`)
                                     refetch()
@@ -254,14 +281,15 @@ function AppDetails() {
                     {activeTab === 'compose' && (
                         <ComposeEditor
                             appId={app.id}
+                            nodeId={app.node_id}
                             initialComposeContent={app.compose_content}
                         />
                     )}
                     {activeTab === 'logs' && (
-                        <LogViewer appId={app.id} />
+                        <LogViewer appId={app.id} nodeId={app.node_id} />
                     )}
                     {activeTab === 'cloudflare' && (
-                        <CloudflareTab appId={app.id} />
+                        <CloudflareTab appId={app.id} nodeId={app.node_id} />
                     )}
                 </CardContent>
             </Card>

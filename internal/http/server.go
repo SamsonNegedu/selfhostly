@@ -26,6 +26,7 @@ type Server struct {
 	tunnelService  domain.TunnelService
 	systemService  domain.SystemService
 	composeService domain.ComposeService
+	nodeService    domain.NodeService
 	engine         *gin.Engine
 	authService    *auth.Service
 }
@@ -65,9 +66,10 @@ func NewServer(cfg *config.Config, database *db.DB) *Server {
 
 	// Initialize services (Phase 2 integration)
 	appService := service.NewAppService(database, dockerManager, cfg, logger)
-	tunnelService := service.NewTunnelService(database, logger)
+	tunnelService := service.NewTunnelService(database, cfg, logger)
 	systemService := service.NewSystemService(database, dockerManager, cfg, logger)
 	composeService := service.NewComposeService(database, dockerManager, logger)
+	nodeService := service.NewNodeService(database, cfg, logger)
 
 	// Initialize server
 	server := &Server{
@@ -78,6 +80,7 @@ func NewServer(cfg *config.Config, database *db.DB) *Server {
 		tunnelService:  tunnelService,
 		systemService:  systemService,
 		composeService: composeService,
+		nodeService:    nodeService,
 		engine:         engine,
 		authService:    authService,
 	}
@@ -338,6 +341,76 @@ func getUserFromContext(c *gin.Context) (token.User, bool) {
 		}
 	}
 	return token.User{}, false
+}
+
+// nodeAuthMiddleware checks for valid node API key for inter-node requests
+func (s *Server) nodeAuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		nodeID := c.GetHeader("X-Node-ID")
+		if nodeID == "" {
+			c.JSON(http.StatusUnauthorized, ErrorResponse{
+				Error:   "missing node ID",
+				Details: "X-Node-ID header is required",
+			})
+			c.Abort()
+			return
+		}
+
+		apiKey := c.GetHeader("X-Node-API-Key")
+		if apiKey == "" {
+			c.JSON(http.StatusUnauthorized, ErrorResponse{
+				Error:   "missing node API key",
+				Details: "X-Node-API-Key header is required",
+			})
+			c.Abort()
+			return
+		}
+
+		// Look up the node by ID
+		node, err := s.database.GetNode(nodeID)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, ErrorResponse{
+				Error:   "unknown node",
+				Details: "node ID does not match any registered node",
+			})
+			c.Abort()
+			return
+		}
+
+		// Verify the API key matches this specific node
+		if node.APIKey != apiKey {
+			c.JSON(http.StatusUnauthorized, ErrorResponse{
+				Error:   "invalid node API key",
+				Details: "provided API key does not match the identified node",
+			})
+			c.Abort()
+			return
+		}
+
+		// Store node ID in context for handlers
+		c.Set("node_id", node.ID)
+		c.Next()
+	}
+}
+
+// requireNodeIDMiddleware validates that node_id query parameter is present
+// Used for app-specific operations to ensure efficient routing
+func (s *Server) requireNodeIDMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		nodeID := c.Query("node_id")
+		if nodeID == "" {
+			c.JSON(http.StatusBadRequest, ErrorResponse{
+				Error:   "node_id is required",
+				Details: "node_id query parameter must be provided for app-specific operations",
+			})
+			c.Abort()
+			return
+		}
+		
+		// Store in context for handlers to use
+		c.Set("node_id_param", nodeID)
+		c.Next()
+	}
 }
 
 // AuthHandlers returns the auth HTTP handlers for mounting

@@ -56,6 +56,16 @@ func setupTestCleanupManager(t *testing.T, mockExecutor docker.CommandExecutor, 
 		tunnelManager = cloudflare.NewTunnelManager(apiToken, accountID, database)
 	}
 
+	// Set up node configuration for multi-node support
+	testNodeID := "test-node-id"
+	testNodeName := "test-node"
+	testAPIKey := "test-api-key"
+	testNode := db.NewNode(testNodeName, "http://localhost:8080", testAPIKey, true)
+	testNode.ID = testNodeID
+	if err := database.CreateNode(testNode); err != nil {
+		t.Fatalf("Failed to create test node: %v", err)
+	}
+
 	manager := NewCleanupManager(dockerManager, database, settings, tunnelManager)
 
 	cleanup := func() {
@@ -73,10 +83,18 @@ func TestCleanupManager_CleanupApp(t *testing.T) {
 	manager, database, cleanup := setupTestCleanupManager(t, mockExecutor, mockHTTPClient)
 	defer cleanup()
 
+	// Get the test node ID
+	nodes, err := database.GetAllNodes()
+	if err != nil || len(nodes) == 0 {
+		t.Fatalf("Failed to get test node: %v", err)
+	}
+	testNodeID := nodes[0].ID
+
 	// Create app with tunnel
 	app := db.NewApp("test-app", "Test application", "version: '3'\nservices:\n  web:\n    image: nginx:latest")
 	app.TunnelID = "tunnel-123"
 	app.TunnelToken = "tunnel-token-456"
+	app.NodeID = testNodeID // Assign to test node
 	if err := database.CreateApp(app); err != nil {
 		t.Fatalf("Failed to create app: %v", err)
 	}
@@ -161,8 +179,16 @@ func TestCleanupManager_CleanupApp_NoTunnel(t *testing.T) {
 	manager, database, cleanup := setupTestCleanupManager(t, mockExecutor, nil)
 	defer cleanup()
 
+	// Get the test node ID
+	nodes, err := database.GetAllNodes()
+	if err != nil || len(nodes) == 0 {
+		t.Fatalf("Failed to get test node: %v", err)
+	}
+	testNodeID := nodes[0].ID
+
 	// Create app without tunnel
 	app := db.NewApp("test-app", "Test application", "version: '3'\nservices:\n  web:\n    image: nginx:latest")
+	app.NodeID = testNodeID // Assign to test node
 	if err := database.CreateApp(app); err != nil {
 		t.Fatalf("Failed to create app: %v", err)
 	}
@@ -193,9 +219,17 @@ func TestCleanupManager_CleanupApp_PartialFailure(t *testing.T) {
 	manager, database, cleanup := setupTestCleanupManager(t, mockExecutor, mockHTTPClient)
 	defer cleanup()
 
+	// Get the test node ID
+	nodes, err := database.GetAllNodes()
+	if err != nil || len(nodes) == 0 {
+		t.Fatalf("Failed to get test node: %v", err)
+	}
+	testNodeID := nodes[0].ID
+
 	// Create app with tunnel
 	app := db.NewApp("test-app", "Test application", "version: '3'\nservices:\n  web:\n    image: nginx:latest")
 	app.TunnelID = "tunnel-123"
+	app.NodeID = testNodeID // Assign to test node
 	if err := database.CreateApp(app); err != nil {
 		t.Fatalf("Failed to create app: %v", err)
 	}
@@ -243,8 +277,16 @@ func TestCleanupManager_GetSummary(t *testing.T) {
 	manager, database, cleanup := setupTestCleanupManager(t, mockExecutor, nil)
 	defer cleanup()
 
+	// Get the test node ID
+	nodes, err := database.GetAllNodes()
+	if err != nil || len(nodes) == 0 {
+		t.Fatalf("Failed to get test node: %v", err)
+	}
+	testNodeID := nodes[0].ID
+
 	// Create app
 	app := db.NewApp("test-app", "Test application", "version: '3'\nservices:\n  web:\n    image: nginx:latest")
+	app.NodeID = testNodeID // Assign to test node
 	if err := database.CreateApp(app); err != nil {
 		t.Fatalf("Failed to create app: %v", err)
 	}
@@ -253,7 +295,7 @@ func TestCleanupManager_GetSummary(t *testing.T) {
 	mockExecutor.SetMockOutput("docker", []string{"compose", "-f", "docker-compose.yml", "down"}, []byte("success"))
 
 	// Perform cleanup
-	_, err := manager.CleanupApp(app)
+	_, err = manager.CleanupApp(app)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -281,8 +323,16 @@ func TestCleanupManager_GetResults(t *testing.T) {
 	manager, database, cleanup := setupTestCleanupManager(t, mockExecutor, nil)
 	defer cleanup()
 
+	// Get the test node ID
+	nodes, err := database.GetAllNodes()
+	if err != nil || len(nodes) == 0 {
+		t.Fatalf("Failed to get test node: %v", err)
+	}
+	testNodeID := nodes[0].ID
+
 	// Create app
 	app := db.NewApp("test-app", "Test application", "version: '3'\nservices:\n  web:\n    image: nginx:latest")
+	app.NodeID = testNodeID // Assign to test node
 	if err := database.CreateApp(app); err != nil {
 		t.Fatalf("Failed to create app: %v", err)
 	}
@@ -291,7 +341,7 @@ func TestCleanupManager_GetResults(t *testing.T) {
 	mockExecutor.SetMockOutput("docker", []string{"compose", "-f", "docker-compose.yml", "down"}, []byte("success"))
 
 	// Perform cleanup
-	_, err := manager.CleanupApp(app)
+	_, err = manager.CleanupApp(app)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}

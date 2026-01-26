@@ -4,6 +4,8 @@ import CreateApp from '@/features/create-app';
 import AppDetails from '@/features/app-details';
 import Cloudflare from '@/features/cloudflare';
 import Monitoring from '@/features/monitoring';
+import Nodes from '@/features/nodes';
+import RegisterNode from '@/features/nodes/register';
 import Settings from '@/features/settings';
 import Login from '@/features/login';
 import MainLayout from '@/shared/components/layout/MainLayout';
@@ -11,6 +13,7 @@ import { AuthProvider, useAuth } from '@/shared/components/auth/AuthProvider';
 import { useToast, ToastContainer } from '@/shared/components/ui/Toast';
 import { Agentation } from '@/shared/components/dev/Agentation';
 import { ThemeProvider } from '@/shared/components/theme/ThemeProvider';
+import { NodeContextProvider } from '@/shared/contexts/NodeContext';
 
 // Protected route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -132,6 +135,22 @@ function AppRoutes() {
                     </ProtectedRoute>
                 }
             />
+            <Route
+                path="/nodes"
+                element={
+                    <ProtectedRoute>
+                        <Nodes />
+                    </ProtectedRoute>
+                }
+            />
+            <Route
+                path="/nodes/new"
+                element={
+                    <ProtectedRoute>
+                        <RegisterNode />
+                    </ProtectedRoute>
+                }
+            />
 
             {/* Catch all - redirect to dashboard */}
             <Route path="*" element={<Navigate to="/apps" replace />} />
@@ -147,8 +166,10 @@ function App() {
             <BrowserRouter>
                 <ThemeProvider>
                     <AuthProvider>
-                        <AppRoutes />
-                        <ToastContainer toasts={toasts} removeToast={removeToast} />
+                        <NodeContextProvider>
+                            <AppRoutes />
+                            <ToastContainer toasts={toasts} removeToast={removeToast} />
+                        </NodeContextProvider>
                     </AuthProvider>
                 </ThemeProvider>
             </BrowserRouter>

@@ -12,15 +12,21 @@ import (
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/docker"
 	"github.com/selfhostly/internal/domain"
+	"github.com/selfhostly/internal/node"
+	"github.com/selfhostly/internal/routing"
 	"github.com/selfhostly/internal/validation"
 )
 
 // appService implements the AppService interface
 type appService struct {
-	database      *db.DB
-	dockerManager *docker.Manager
-	config        *config.Config
-	logger        *slog.Logger
+	database        *db.DB
+	dockerManager   *docker.Manager
+	nodeClient      *node.Client
+	config          *config.Config
+	logger          *slog.Logger
+	router          *routing.NodeRouter
+	appsAgg         *routing.AppsAggregator
+	settingsManager *cloudflare.SettingsManager
 }
 
 // NewAppService creates a new app service
@@ -30,17 +36,46 @@ func NewAppService(
 	cfg *config.Config,
 	logger *slog.Logger,
 ) domain.AppService {
+	nodeClient := node.NewClient()
+	router := routing.NewNodeRouter(database, nodeClient, cfg.Node.ID, logger)
+	appsAgg := routing.NewAppsAggregator(router, logger)
+	settingsManager := cloudflare.NewSettingsManager(database, logger)
+	
 	return &appService{
-		database:      database,
-		dockerManager: dockerManager,
-		config:        cfg,
-		logger:        logger,
+		database:        database,
+		dockerManager:   dockerManager,
+nodeClient:      nodeClient,
+		config:          cfg,
+		logger:          logger,
+		router:          router,
+		appsAgg:         appsAgg,
+		settingsManager: settingsManager,
 	}
 }
 
 // CreateApp creates a new application
 func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest) (*db.App, error) {
-	s.logger.InfoContext(ctx, "creating app", "name", req.Name)
+	s.logger.InfoContext(ctx, "creating app", "name", req.Name, "targetNode", req.NodeID)
+
+	// If node_id is specified and it's not this node, forward to that node
+	if req.NodeID != "" && req.NodeID != s.config.Node.ID {
+		s.logger.InfoContext(ctx, "forwarding app creation to remote node", "name", req.Name, "nodeID", req.NodeID)
+
+		targetNode, err := s.database.GetNode(req.NodeID)
+		if err != nil {
+			return nil, fmt.Errorf("target node not found: %w", err)
+		}
+
+		// Forward request to target node
+		app, err := s.nodeClient.CreateApp(targetNode, req)
+		if err != nil {
+			s.logger.ErrorContext(ctx, "failed to create app on remote node", "name", req.Name, "nodeID", req.NodeID, "error", err)
+			return nil, err
+		}
+
+		s.logger.InfoContext(ctx, "app created on remote node", "name", req.Name, "nodeID", req.NodeID, "appID", app.ID)
+		return app, nil
+	}
 
 	// Validate app name
 	if err := validation.ValidateAppName(req.Name); err != nil {
@@ -63,10 +98,10 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 	}
 
 	// Get Cloudflare settings
-	settings, err := s.database.GetSettings()
+	settings, err := s.settingsManager.GetSettings()
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to get settings", "error", err)
-		return nil, domain.WrapDatabaseOperation("get settings", err)
+		return nil, err
 	}
 
 	// Parse compose to extract networks
@@ -128,6 +163,7 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 	app.PublicURL = publicURL
 	app.Status = "stopped"
 	app.ErrorMessage = nil
+	app.NodeID = s.config.Node.ID // Assign to current node
 	app.UpdatedAt = time.Now()
 
 	if err := s.database.CreateApp(app); err != nil {
@@ -193,28 +229,9 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 			if len(req.IngressRules) > 0 && tunnelID != "" && settings.CloudflareAPIToken != nil && settings.CloudflareAccountID != nil {
 				s.logger.InfoContext(ctx, "applying ingress rules after app start", "app", req.Name, "ruleCount", len(req.IngressRules))
 
-				// Convert db.IngressRule to cloudflare.IngressRule
-				cfRules := make([]cloudflare.IngressRule, len(req.IngressRules))
-				for i, rule := range req.IngressRules {
-					cfRule := cloudflare.IngressRule{
-						Service:       rule.Service,
-						OriginRequest: rule.OriginRequest,
-					}
-					if rule.Hostname != nil {
-						cfRule.Hostname = *rule.Hostname
-					}
-					if rule.Path != nil {
-						cfRule.Path = *rule.Path
-					}
-					cfRules[i] = cfRule
-				}
-
-				// Ensure there's a catch-all rule at the end if not provided
-				if cfRules[len(cfRules)-1].Service != "http_status:404" {
-					cfRules = append(cfRules, cloudflare.IngressRule{
-						Service: "http_status:404",
-					})
-				}
+				// Convert db.IngressRule to cloudflare.IngressRule and ensure catch-all rule
+				cfRules := cloudflare.ConvertToCloudflareRules(req.IngressRules)
+				cfRules = cloudflare.EnsureCatchAllRule(cfRules)
 
 				tunnelManager := cloudflare.NewTunnelManager(*settings.CloudflareAPIToken, *settings.CloudflareAccountID, s.database)
 				if err := tunnelManager.UpdateTunnelIngress(tunnelID, cfRules, "", ""); err != nil {
@@ -237,35 +254,60 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 	return app, nil
 }
 
-// GetApp retrieves an app by ID
-func (s *appService) GetApp(ctx context.Context, appID string) (*db.App, error) {
-	s.logger.DebugContext(ctx, "getting app", "appID", appID)
+// GetApp retrieves an app by ID, optionally with a node_id hint for optimization
+func (s *appService) GetApp(ctx context.Context, appID string, nodeID string) (*db.App, error) {
+	s.logger.DebugContext(ctx, "getting app", "appID", appID, "nodeID", nodeID)
 
-	app, err := s.database.GetApp(appID)
+	result, err := s.router.RouteToNode(
+		ctx,
+		nodeID,
+		func() (interface{}, error) {
+			app, err := s.database.GetApp(appID)
+			if err != nil {
+				return nil, domain.WrapAppNotFound(appID, err)
+			}
+			return app, nil
+		},
+		func(n *db.Node) (interface{}, error) {
+			return s.nodeClient.GetApp(n, appID)
+		},
+	)
+
 	if err != nil {
-		s.logger.DebugContext(ctx, "app not found", "appID", appID)
-		return nil, domain.WrapAppNotFound(appID, err)
+		return nil, err
 	}
 
-	return app, nil
+	return result.(*db.App), nil
 }
 
 // ListApps retrieves all apps
-func (s *appService) ListApps(ctx context.Context) ([]*db.App, error) {
-	s.logger.DebugContext(ctx, "listing apps")
+func (s *appService) ListApps(ctx context.Context, nodeIDs []string) ([]*db.App, error) {
+	s.logger.DebugContext(ctx, "listing apps", "nodeIDs", nodeIDs)
 
-	apps, err := s.database.GetAllApps()
+	// Determine which nodes to fetch from
+	targetNodes, err := s.router.DetermineTargetNodes(ctx, nodeIDs)
 	if err != nil {
-		s.logger.ErrorContext(ctx, "failed to retrieve apps", "error", err)
-		return nil, domain.WrapDatabaseOperation("list apps", err)
+		return nil, err
 	}
 
-	return apps, nil
+	// Aggregate apps from all target nodes in parallel
+	allApps, err := s.appsAgg.AggregateApps(
+		ctx,
+		targetNodes,
+		func() ([]*db.App, error) {
+			return s.database.GetAllApps()
+		},
+		func(n *db.Node) ([]*db.App, error) {
+			return s.nodeClient.GetApps(n)
+		},
+	)
+
+	return allApps, err
 }
 
 // UpdateApp updates an existing app
-func (s *appService) UpdateApp(ctx context.Context, appID string, req domain.UpdateAppRequest) (*db.App, error) {
-	s.logger.InfoContext(ctx, "updating app", "appID", appID)
+func (s *appService) UpdateApp(ctx context.Context, appID string, nodeID string, req domain.UpdateAppRequest) (*db.App, error) {
+	s.logger.InfoContext(ctx, "updating app", "appID", appID, "nodeID", nodeID)
 
 	// Validate name if provided
 	if req.Name != "" {
@@ -291,17 +333,35 @@ func (s *appService) UpdateApp(ctx context.Context, appID string, req domain.Upd
 		}
 	}
 
+	// If app is on a remote node, forward the request
+	if !s.router.IsLocalNode(nodeID) {
+		result, err := s.router.RouteToNode(
+			ctx,
+			nodeID,
+			nil, // Not used since we know it's remote
+			func(n *db.Node) (interface{}, error) {
+				return s.nodeClient.UpdateApp(n, appID, req)
+			},
+		)
+		if err != nil {
+			s.logger.ErrorContext(ctx, "failed to update app on remote node", "appID", appID, "nodeID", nodeID)
+			return nil, err
+		}
+		s.logger.InfoContext(ctx, "app updated on remote node", "appID", appID, "nodeID", nodeID)
+		return result.(*db.App), nil
+	}
+
+	// Get the app from local node
 	app, err := s.database.GetApp(appID)
 	if err != nil {
-		s.logger.DebugContext(ctx, "app not found for update", "appID", appID)
 		return nil, domain.WrapAppNotFound(appID, err)
 	}
 
 	// Get Cloudflare settings
-	settings, err := s.database.GetSettings()
+	settings, err := s.settingsManager.GetSettings()
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to get settings", "error", err)
-		return nil, domain.WrapDatabaseOperation("get settings", err)
+		return nil, err
 	}
 
 	// Parse compose content if provided
@@ -390,26 +450,37 @@ func (s *appService) UpdateApp(ctx context.Context, appID string, req domain.Upd
 }
 
 // DeleteApp deletes an app using comprehensive cleanup
-func (s *appService) DeleteApp(ctx context.Context, appID string) error {
-	s.logger.InfoContext(ctx, "deleting app", "appID", appID)
+func (s *appService) DeleteApp(ctx context.Context, appID string, nodeID string) error {
+	s.logger.InfoContext(ctx, "deleting app", "appID", appID, "nodeID", nodeID)
 
+	// If app is on a remote node, forward the request
+	if !s.router.IsLocalNode(nodeID) {
+		_, err := s.router.RouteToNode(
+			ctx,
+			nodeID,
+			nil, // Not used since we know it's remote
+			func(n *db.Node) (interface{}, error) {
+				return nil, s.nodeClient.DeleteApp(n, appID)
+			},
+		)
+		if err != nil {
+			s.logger.ErrorContext(ctx, "failed to delete app on remote node", "appID", appID, "nodeID", nodeID)
+		}
+		return err
+	}
+
+	// Get the app from local node
 	app, err := s.database.GetApp(appID)
 	if err != nil {
-		s.logger.DebugContext(ctx, "app not found for deletion", "appID", appID)
 		return domain.WrapAppNotFound(appID, err)
 	}
 
-	// Get Cloudflare settings
-	settings, err := s.database.GetSettings()
+	// Get Cloudflare settings and tunnel manager if configured
+	tunnelManager, settings, err := s.settingsManager.GetConfiguredTunnelManager()
 	if err != nil {
 		s.logger.WarnContext(ctx, "failed to get settings for cleanup", "app", app.Name, "error", err)
 		// Continue with basic cleanup even if settings fail
-	}
-
-	var tunnelManager *cloudflare.TunnelManager
-	if settings != nil && settings.CloudflareAPIToken != nil && settings.CloudflareAccountID != nil &&
-		*settings.CloudflareAPIToken != "" && *settings.CloudflareAccountID != "" {
-		tunnelManager = cloudflare.NewTunnelManager(*settings.CloudflareAPIToken, *settings.CloudflareAccountID, s.database)
+		settings = nil
 	}
 
 	// Create cleanup manager
@@ -454,12 +525,32 @@ func (s *appService) DeleteApp(ctx context.Context, appID string) error {
 }
 
 // StartApp starts an application
-func (s *appService) StartApp(ctx context.Context, appID string) (*db.App, error) {
-	s.logger.InfoContext(ctx, "starting app", "appID", appID)
+func (s *appService) StartApp(ctx context.Context, appID string, nodeID string) (*db.App, error) {
+	s.logger.InfoContext(ctx, "starting app", "appID", appID, "nodeID", nodeID)
 
+	// If app is on a remote node, forward the request
+	if !s.router.IsLocalNode(nodeID) {
+		result, err := s.router.RouteToNode(
+			ctx,
+			nodeID,
+			nil, // Not used since we know it's remote
+			func(n *db.Node) (interface{}, error) {
+				if err := s.nodeClient.StartApp(n, appID); err != nil {
+					return nil, err
+				}
+				return s.nodeClient.GetApp(n, appID)
+			},
+		)
+		if err != nil {
+			s.logger.ErrorContext(ctx, "failed to start app on remote node", "appID", appID, "nodeID", nodeID)
+			return nil, err
+		}
+		return result.(*db.App), nil
+	}
+
+	// Get the app from local node
 	app, err := s.database.GetApp(appID)
 	if err != nil {
-		s.logger.DebugContext(ctx, "app not found for start", "appID", appID)
 		return nil, domain.WrapAppNotFound(appID, err)
 	}
 
@@ -492,12 +583,32 @@ func (s *appService) StartApp(ctx context.Context, appID string) (*db.App, error
 }
 
 // StopApp stops an application
-func (s *appService) StopApp(ctx context.Context, appID string) (*db.App, error) {
-	s.logger.InfoContext(ctx, "stopping app", "appID", appID)
+func (s *appService) StopApp(ctx context.Context, appID string, nodeID string) (*db.App, error) {
+	s.logger.InfoContext(ctx, "stopping app", "appID", appID, "nodeID", nodeID)
 
+	// If app is on a remote node, forward the request
+	if !s.router.IsLocalNode(nodeID) {
+		result, err := s.router.RouteToNode(
+			ctx,
+			nodeID,
+			nil, // Not used since we know it's remote
+			func(n *db.Node) (interface{}, error) {
+				if err := s.nodeClient.StopApp(n, appID); err != nil {
+					return nil, err
+				}
+				return s.nodeClient.GetApp(n, appID)
+			},
+		)
+		if err != nil {
+			s.logger.ErrorContext(ctx, "failed to stop app on remote node", "appID", appID, "nodeID", nodeID)
+			return nil, err
+		}
+		return result.(*db.App), nil
+	}
+
+	// Get the app from local node
 	app, err := s.database.GetApp(appID)
 	if err != nil {
-		s.logger.DebugContext(ctx, "app not found for stop", "appID", appID)
 		return nil, domain.WrapAppNotFound(appID, err)
 	}
 
@@ -530,9 +641,28 @@ func (s *appService) StopApp(ctx context.Context, appID string) (*db.App, error)
 }
 
 // UpdateAppContainers updates app containers with zero downtime
-func (s *appService) UpdateAppContainers(ctx context.Context, appID string) (*db.App, error) {
-	s.logger.InfoContext(ctx, "updating app containers", "appID", appID)
+func (s *appService) UpdateAppContainers(ctx context.Context, appID string, nodeID string) (*db.App, error) {
+	s.logger.InfoContext(ctx, "updating app containers", "appID", appID, "nodeID", nodeID)
 
+	// If app is on a remote node, forward the request
+	if !s.router.IsLocalNode(nodeID) {
+		result, err := s.router.RouteToNode(
+			ctx,
+			nodeID,
+			nil, // Not used since we know it's remote
+			func(n *db.Node) (interface{}, error) {
+				return s.nodeClient.UpdateAppContainers(n, appID)
+			},
+		)
+		if err != nil {
+			s.logger.ErrorContext(ctx, "failed to update app containers on remote node", "appID", appID, "nodeID", nodeID)
+			return nil, err
+		}
+		s.logger.InfoContext(ctx, "app containers updated on remote node", "appID", appID, "nodeID", nodeID)
+		return result.(*db.App), nil
+	}
+
+	// Get the app from local node
 	app, err := s.database.GetApp(appID)
 	if err != nil {
 		s.logger.DebugContext(ctx, "app not found for update", "appID", appID)
@@ -586,17 +716,15 @@ func (s *appService) RepairApp(ctx context.Context, appID string) (*db.App, erro
 	}
 
 	// Get Cloudflare settings
-	settings, err := s.database.GetSettings()
+	settings, err := s.settingsManager.RequireCloudflareSettings()
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to get settings", "error", err)
-		return nil, domain.WrapDatabaseOperation("get settings", err)
+		return nil, err
 	}
 
-	// Only repair if Cloudflare is configured and app has tunnel ID but missing token
-	if settings.CloudflareAPIToken == nil || settings.CloudflareAccountID == nil ||
-		*settings.CloudflareAPIToken == "" || *settings.CloudflareAccountID == "" ||
-		app.TunnelID == "" {
-		return nil, fmt.Errorf("cannot repair: Cloudflare not configured or no tunnel ID")
+	// Only repair if app has tunnel ID
+	if app.TunnelID == "" {
+		return nil, fmt.Errorf("cannot repair: no tunnel ID")
 	}
 
 	// If tunnel token is already in database, no repair needed
@@ -664,9 +792,19 @@ func (s *appService) RepairApp(ctx context.Context, appID string) (*db.App, erro
 
 // RestartCloudflared restarts the cloudflared container for an app
 // This is typically called after updating ingress rules to apply the new configuration
-func (s *appService) RestartCloudflared(ctx context.Context, appID string) error {
-	s.logger.InfoContext(ctx, "restarting cloudflared container", "appID", appID)
+func (s *appService) RestartCloudflared(ctx context.Context, appID string, nodeID string) error {
+	s.logger.InfoContext(ctx, "restarting cloudflared container", "appID", appID, "nodeID", nodeID)
 
+	// If app is on a remote node, we can't restart cloudflared remotely
+	// The ingress update already happened via Cloudflare API, so this is best-effort
+	// In a multi-node setup, cloudflared restart would need to happen on the target node
+	// For now, we only restart if the app is on this node
+	if !s.router.IsLocalNode(nodeID) {
+		s.logger.WarnContext(ctx, "cannot restart cloudflared on remote node, ingress updated but container restart may be required", "appID", appID, "nodeID", nodeID)
+		return nil // Don't fail - ingress update already succeeded
+	}
+
+	// Get app from local node
 	app, err := s.database.GetApp(appID)
 	if err != nil {
 		s.logger.DebugContext(ctx, "app not found for cloudflared restart", "appID", appID)

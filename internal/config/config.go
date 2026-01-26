@@ -1,9 +1,13 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 // Config holds the application configuration
@@ -16,6 +20,17 @@ type Config struct {
 	Auth          AuthConfig
 	AutoStart     bool
 	CORS          CORSConfig
+	Node          NodeConfig
+}
+
+// NodeConfig holds node-specific configuration for multi-node support
+type NodeConfig struct {
+	ID              string // This node's UUID (generated on first run if not set)
+	Name            string // This node's name
+	IsPrimary       bool   // Whether this is the primary node
+	APIKey          string // API key for other nodes to authenticate with this node
+	PrimaryNodeURL  string // URL of primary node (only for secondary nodes)
+	PrimaryNodeKey  string // API key to authenticate with primary (only for secondary nodes)
 }
 
 // CORSConfig holds CORS configuration
@@ -59,6 +74,30 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("JWT_SECRET environment variable is required when AUTH_ENABLED is true")
 	}
 
+	// Node configuration
+	nodeID := getEnv("NODE_ID", "")
+	if nodeID == "" || nodeID == "auto" {
+		// Generate a new UUID for this node
+		nodeID = uuid.New().String()
+	}
+
+	nodeName := getEnv("NODE_NAME", "")
+	if nodeName == "" {
+		// Default to hostname
+		hostname, err := os.Hostname()
+		if err != nil || hostname == "" {
+			nodeName = "node-" + nodeID[:8]
+		} else {
+			nodeName = hostname
+		}
+	}
+
+	apiKey := getEnv("NODE_API_KEY", "")
+	if apiKey == "" {
+		// Generate secure API key
+		apiKey = generateSecureAPIKey()
+	}
+
 	cfg := &Config{
 		ServerAddress: getEnv("SERVER_ADDRESS", ":8080"),
 		DatabasePath:  getEnv("DATABASE_PATH", "./data/selfhostly.db"),
@@ -82,6 +121,14 @@ func Load() (*Config, error) {
 		AutoStart: getEnv("AUTO_START_APPS", "false") == "true",
 		CORS: CORSConfig{
 			AllowedOrigins: allowedOrigins,
+		},
+		Node: NodeConfig{
+			ID:             nodeID,
+			Name:           nodeName,
+			IsPrimary:      getEnv("NODE_IS_PRIMARY", "true") == "true", // Default to primary for backward compatibility
+			APIKey:         apiKey,
+			PrimaryNodeURL: getEnv("PRIMARY_NODE_URL", ""),
+			PrimaryNodeKey: getEnv("PRIMARY_NODE_API_KEY", ""),
 		},
 	}
 
@@ -112,4 +159,14 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+// generateSecureAPIKey generates a cryptographically secure random API key
+func generateSecureAPIKey() string {
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		// Fallback to UUID if crypto/rand fails
+		return uuid.New().String()
+	}
+	return base64.URLEncoding.EncodeToString(bytes)
 }

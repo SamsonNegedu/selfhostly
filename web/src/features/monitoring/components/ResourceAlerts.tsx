@@ -27,8 +27,10 @@ function ResourceAlerts({ stats }: ResourceAlertsProps) {
     alerts.push({ type: 'warning', message: `Disk space is running low (${stats.disk.usage_percent.toFixed(1)}%)` });
   }
 
-  // Container-level alerts
-  const highCPUContainers = stats.containers.filter(
+  // Container-level alerts (only if containers array exists)
+  const containers = stats.containers || [];
+
+  const highCPUContainers = containers.filter(
     (c) => c.state === 'running' && c.cpu_percent > 90
   );
   if (highCPUContainers.length > 0) {
@@ -38,7 +40,7 @@ function ResourceAlerts({ stats }: ResourceAlertsProps) {
     });
   }
 
-  const highMemContainers = stats.containers.filter(
+  const highMemContainers = containers.filter(
     (c) => c.state === 'running' && c.memory_limit_bytes > 0 && (c.memory_usage_bytes / c.memory_limit_bytes) * 100 > 85
   );
   if (highMemContainers.length > 0) {
@@ -48,7 +50,7 @@ function ResourceAlerts({ stats }: ResourceAlertsProps) {
     });
   }
 
-  const stoppedContainers = stats.containers.filter((c) => c.state === 'stopped');
+  const stoppedContainers = containers.filter((c) => c.state === 'stopped');
   if (stoppedContainers.length > 0) {
     alerts.push({
       type: 'warning',
@@ -56,7 +58,7 @@ function ResourceAlerts({ stats }: ResourceAlertsProps) {
     });
   }
 
-  const restartedContainers = stats.containers.filter((c) => c.restart_count > 5);
+  const restartedContainers = containers.filter((c) => c.restart_count > 5);
   if (restartedContainers.length > 0) {
     alerts.push({
       type: 'warning',
@@ -73,11 +75,10 @@ function ResourceAlerts({ stats }: ResourceAlertsProps) {
       {alerts.map((alert, index) => (
         <div
           key={index}
-          className={`flex items-start gap-3 p-4 rounded-lg border ${
-            alert.type === 'critical'
+          className={`flex items-start gap-3 p-4 rounded-lg border ${alert.type === 'critical'
               ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-900/50'
               : 'bg-yellow-50 dark:bg-yellow-900/10 border-yellow-200 dark:border-yellow-900/50'
-          }`}
+            }`}
         >
           {alert.type === 'critical' ? (
             <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
@@ -86,11 +87,10 @@ function ResourceAlerts({ stats }: ResourceAlertsProps) {
           )}
           <div className="flex-1">
             <p
-              className={`text-sm font-medium ${
-                alert.type === 'critical'
+              className={`text-sm font-medium ${alert.type === 'critical'
                   ? 'text-red-900 dark:text-red-200'
                   : 'text-yellow-900 dark:text-yellow-200'
-              }`}
+                }`}
             >
               {alert.message}
             </p>

@@ -67,6 +67,7 @@ type ContainerInfo struct {
 	ID           string  `json:"id"`
 	Name         string  `json:"name"`
 	AppName      string  `json:"app_name"`
+	NodeID       string  `json:"node_id"`        // ID of the node this container is running on
 	IsManaged    bool    `json:"is_managed"`     // Whether container belongs to an app managed by our system
 	Status       string  `json:"status"`
 	State        string  `json:"state"`
@@ -87,25 +88,31 @@ type Collector struct {
 	dockerManager   *docker.Manager
 	commandExecutor docker.CommandExecutor
 	database        *db.DB
+	nodeID          string // The UUID of this node
+	nodeName        string // The name of this node
 }
 
 // NewCollector creates a new system stats collector
-func NewCollector(appsDir string, dockerManager *docker.Manager, database *db.DB) *Collector {
+func NewCollector(appsDir string, dockerManager *docker.Manager, database *db.DB, nodeID, nodeName string) *Collector {
 	return &Collector{
 		appsDir:         appsDir,
 		dockerManager:   dockerManager,
 		commandExecutor: docker.NewRealCommandExecutor(),
 		database:        database,
+		nodeID:          nodeID,
+		nodeName:        nodeName,
 	}
 }
 
 // NewCollectorWithExecutor creates a new system stats collector with a custom command executor (for testing)
-func NewCollectorWithExecutor(appsDir string, dockerManager *docker.Manager, database *db.DB, executor docker.CommandExecutor) *Collector {
+func NewCollectorWithExecutor(appsDir string, dockerManager *docker.Manager, database *db.DB, executor docker.CommandExecutor, nodeID, nodeName string) *Collector {
 	return &Collector{
 		appsDir:         appsDir,
 		dockerManager:   dockerManager,
 		commandExecutor: executor,
 		database:        database,
+		nodeID:          nodeID,
+		nodeName:        nodeName,
 	}
 }
 
@@ -149,7 +156,7 @@ func (c *Collector) GetSystemStats() (*SystemStats, error) {
 
 	go func() {
 		defer wg.Done()
-		containers = c.getAllContainerStats()
+		containers = c.getAllContainerStats(nodeID)
 	}()
 
 	// Wait for all goroutines to complete
@@ -177,17 +184,9 @@ func (c *Collector) GetSystemStats() (*SystemStats, error) {
 
 // getNodeInfo retrieves node identification information
 func (c *Collector) getNodeInfo() (string, string) {
-	hostname, err := os.Hostname()
-	if err != nil {
-		slog.Warn("failed to get hostname", "error", err)
-		hostname = "unknown"
-	}
-
-	// For future multi-node support, this could come from config
-	nodeID := hostname
-	nodeName := hostname
-
-	return nodeID, nodeName
+	// Use the node ID and name stored in the collector
+	// These are set from the config during initialization
+	return c.nodeID, c.nodeName
 }
 
 // getCPUStats retrieves CPU usage statistics
@@ -305,7 +304,7 @@ func (c *Collector) getDockerDaemonStats() DockerStats {
 }
 
 // getAllContainerStats retrieves statistics for all containers system-wide
-func (c *Collector) getAllContainerStats() []ContainerInfo {
+func (c *Collector) getAllContainerStats(nodeID string) []ContainerInfo {
 	// Initialize as empty slice (not nil) so it serializes as [] instead of null in JSON
 	allContainers := []ContainerInfo{}
 
@@ -355,7 +354,7 @@ func (c *Collector) getAllContainerStats() []ContainerInfo {
 		// Determine app name from inspect data
 		appName := c.determineAppNameFromInspect(inspect, managedApps)
 
-		containerInfo := c.buildContainerInfo(containerID, appName, inspect, managedApps)
+		containerInfo := c.buildContainerInfo(containerID, appName, nodeID, inspect, managedApps)
 		if containerInfo != nil {
 			// Apply pre-fetched stats if container is running
 			if stats, found := statsMap[containerID]; found {
@@ -485,7 +484,7 @@ func (c *Collector) determineAppNameFromInspect(inspect ContainerInspectData, ma
 }
 
 // buildContainerInfo builds a ContainerInfo from inspect data
-func (c *Collector) buildContainerInfo(containerID, appName string, inspect ContainerInspectData, managedApps map[string]bool) *ContainerInfo {
+func (c *Collector) buildContainerInfo(containerID, appName, nodeID string, inspect ContainerInspectData, managedApps map[string]bool) *ContainerInfo {
 	state := "stopped"
 	if inspect.IsRunning {
 		state = "running"
@@ -497,6 +496,7 @@ func (c *Collector) buildContainerInfo(containerID, appName string, inspect Cont
 		ID:           containerID,
 		Name:         inspect.Name,
 		AppName:      appName,
+		NodeID:       nodeID,
 		IsManaged:    managedApps[appName],
 		Status:       inspect.Status,
 		State:        state,

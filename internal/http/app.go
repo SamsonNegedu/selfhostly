@@ -6,7 +6,9 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/domain"
+	"github.com/selfhostly/internal/httputil"
 )
 
 // ErrorResponse represents a standardized error response
@@ -31,6 +33,26 @@ func (s *Server) handleServiceError(c *gin.Context, operation string, err error)
 	c.JSON(http.StatusInternalServerError, ErrorResponse{Error: fmt.Sprintf("Failed to %s", operation), Details: err.Error()})
 }
 
+// getNodeIDFromContext extracts node_id from context, checking both possible keys
+// Returns empty string if not found (callers should validate)
+func getNodeIDFromContext(c *gin.Context) string {
+	// Check for node_id_param (from requireNodeIDMiddleware)
+	if nodeID, exists := c.Get("node_id_param"); exists {
+		if id, ok := nodeID.(string); ok && id != "" {
+			return id
+		}
+	}
+	
+	// Check for node_id (from nodeAuthMiddleware)
+	if nodeID, exists := c.Get("node_id"); exists {
+		if id, ok := nodeID.(string); ok && id != "" {
+			return id
+		}
+	}
+	
+	return ""
+}
+
 // createApp creates a new app
 func (s *Server) createApp(c *gin.Context) {
 	var req domain.CreateAppRequest
@@ -49,15 +71,43 @@ func (s *Server) createApp(c *gin.Context) {
 	c.JSON(http.StatusCreated, app)
 }
 
-// getApp returns a single app
-func (s *Server) getApp(c *gin.Context) {
-	id := c.Param("id")
-	if id == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
+// createLocalApp creates a new app on the local node (for inter-node calls)
+func (s *Server) createLocalApp(c *gin.Context) {
+	var req domain.CreateAppRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		slog.WarnContext(c.Request.Context(), "invalid create app request", "error", err)
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request format"})
 		return
 	}
 
-	app, err := s.appService.GetApp(c.Request.Context(), id)
+	// Force NodeID to be the local node for internal endpoints
+	req.NodeID = s.config.Node.ID
+
+	app, err := s.appService.CreateApp(c.Request.Context(), req)
+	if err != nil {
+		s.handleServiceError(c, "create local app", err)
+		return
+	}
+
+	c.JSON(http.StatusCreated, app)
+}
+
+// getApp returns a single app
+func (s *Server) getApp(c *gin.Context) {
+	id, err := httputil.ValidateAndGetAppID(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	// Get node_id from middleware (already validated)
+	nodeID := getNodeIDFromContext(c)
+	if nodeID == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "node_id is required"})
+		return
+	}
+	
+	app, err := s.appService.GetApp(c.Request.Context(), id, nodeID)
 	if err != nil {
 		s.handleServiceError(c, "get app", err)
 		return
@@ -68,9 +118,16 @@ func (s *Server) getApp(c *gin.Context) {
 
 // updateApp updates an app
 func (s *Server) updateApp(c *gin.Context) {
-	id := c.Param("id")
-	if id == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
+	id, err := httputil.ValidateAndGetAppID(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	// Get node_id from middleware (already validated)
+	nodeID := getNodeIDFromContext(c)
+	if nodeID == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "node_id is required"})
 		return
 	}
 
@@ -81,7 +138,7 @@ func (s *Server) updateApp(c *gin.Context) {
 		return
 	}
 
-	app, err := s.appService.UpdateApp(c.Request.Context(), id, req)
+	app, err := s.appService.UpdateApp(c.Request.Context(), id, nodeID, req)
 	if err != nil {
 		s.handleServiceError(c, "update app", err)
 		return
@@ -92,13 +149,20 @@ func (s *Server) updateApp(c *gin.Context) {
 
 // deleteApp deletes an app using the comprehensive cleanup system
 func (s *Server) deleteApp(c *gin.Context) {
-	id := c.Param("id")
-	if id == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
+	id, err := httputil.ValidateAndGetAppID(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	if err := s.appService.DeleteApp(c.Request.Context(), id); err != nil {
+	// Get node_id from middleware (already validated)
+	nodeID := getNodeIDFromContext(c)
+	if nodeID == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "node_id is required"})
+		return
+	}
+
+	if err := s.appService.DeleteApp(c.Request.Context(), id, nodeID); err != nil {
 		s.handleServiceError(c, "delete app", err)
 		return
 	}
@@ -117,7 +181,14 @@ func (s *Server) startApp(c *gin.Context) {
 		return
 	}
 
-	app, err := s.appService.StartApp(c.Request.Context(), id)
+	// Get node_id from middleware (already validated)
+	nodeID := getNodeIDFromContext(c)
+	if nodeID == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "node_id is required"})
+		return
+	}
+
+	app, err := s.appService.StartApp(c.Request.Context(), id, nodeID)
 	if err != nil {
 		s.handleServiceError(c, "start app", err)
 		return
@@ -134,7 +205,14 @@ func (s *Server) stopApp(c *gin.Context) {
 		return
 	}
 
-	app, err := s.appService.StopApp(c.Request.Context(), id)
+	// Get node_id from middleware (already validated)
+	nodeID := getNodeIDFromContext(c)
+	if nodeID == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "node_id is required"})
+		return
+	}
+
+	app, err := s.appService.StopApp(c.Request.Context(), id, nodeID)
 	if err != nil {
 		s.handleServiceError(c, "stop app", err)
 		return
@@ -151,7 +229,14 @@ func (s *Server) updateAppContainers(c *gin.Context) {
 		return
 	}
 
-	app, err := s.appService.UpdateAppContainers(c.Request.Context(), id)
+	// Get node_id from middleware (already validated)
+	nodeID := getNodeIDFromContext(c)
+	if nodeID == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "node_id is required"})
+		return
+	}
+
+	app, err := s.appService.UpdateAppContainers(c.Request.Context(), id, nodeID)
 	if err != nil {
 		s.handleServiceError(c, "update app containers", err)
 		return
@@ -217,13 +302,126 @@ func (s *Server) repairApp(c *gin.Context) {
 
 // listApps returns all apps
 func (s *Server) listApps(c *gin.Context) {
-	apps, err := s.appService.ListApps(c.Request.Context())
+	// Extract node_ids from query parameter
+	nodeIDs := httputil.ParseNodeIDs(c)
+
+	apps, err := s.appService.ListApps(c.Request.Context(), nodeIDs)
 	if err != nil {
 		s.handleServiceError(c, "list apps", err)
 		return
 	}
 
 	c.JSON(http.StatusOK, apps)
+}
+
+// listLocalApps returns only apps from the local node (for inter-node calls)
+func (s *Server) listLocalApps(c *gin.Context) {
+	apps, err := s.database.GetAllApps()
+	if err != nil {
+		s.handleServiceError(c, "list local apps", err)
+		return
+	}
+
+	c.JSON(http.StatusOK, apps)
+}
+
+// getLocalApp returns a single app from the local node (for inter-node calls)
+func (s *Server) getLocalApp(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
+		return
+	}
+
+	// Fetch directly from local database (internal endpoints are local-only)
+	app, err := s.database.GetApp(id)
+	if err != nil {
+		s.handleServiceError(c, "get local app", err)
+		return
+	}
+
+	c.JSON(http.StatusOK, app)
+}
+
+// updateLocalApp updates an app on the local node (for inter-node calls)
+func (s *Server) updateLocalApp(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
+		return
+	}
+
+	var req domain.UpdateAppRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		slog.WarnContext(c.Request.Context(), "invalid update app request", "appID", id, "error", err)
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request format"})
+		return
+	}
+
+	// Use local node ID for internal endpoints
+	app, err := s.appService.UpdateApp(c.Request.Context(), id, s.config.Node.ID, req)
+	if err != nil {
+		s.handleServiceError(c, "update local app", err)
+		return
+	}
+
+	c.JSON(http.StatusOK, app)
+}
+
+// deleteLocalApp deletes an app on the local node (for inter-node calls)
+func (s *Server) deleteLocalApp(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
+		return
+	}
+
+	// Use local node ID for internal endpoints
+	if err := s.appService.DeleteApp(c.Request.Context(), id, s.config.Node.ID); err != nil {
+		s.handleServiceError(c, "delete local app", err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "App deleted successfully",
+		"appID":   id,
+	})
+}
+
+// startLocalApp starts an app on the local node (for inter-node calls)
+func (s *Server) startLocalApp(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
+		return
+	}
+
+	// Use local node ID for internal endpoints
+	app, err := s.appService.StartApp(c.Request.Context(), id, s.config.Node.ID)
+	if err != nil {
+		s.handleServiceError(c, "start local app", err)
+		return
+	}
+
+	c.JSON(http.StatusOK, app)
+}
+
+// stopLocalApp stops an app on the local node (for inter-node calls)
+func (s *Server) stopLocalApp(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
+		return
+	}
+
+	// Use local node ID for internal endpoints
+	app, err := s.appService.StopApp(c.Request.Context(), id, s.config.Node.ID)
+	if err != nil {
+		s.handleServiceError(c, "stop local app", err)
+		return
+	}
+
+	c.JSON(http.StatusOK, app)
 }
 
 // RollbackRequest represents a rollback request with optional metadata
@@ -250,17 +448,15 @@ func (s *Server) getComposeVersions(c *gin.Context) {
 
 // getComposeVersion returns a specific compose version
 func (s *Server) getComposeVersion(c *gin.Context) {
-	id := c.Param("id")
-	versionParam := c.Param("version")
-	if id == "" || versionParam == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID or version"})
+	id, err := httputil.ValidateAndGetAppID(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	// Parse version number
-	var version int
-	if _, err := fmt.Sscanf(versionParam, "%d", &version); err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid version number"})
+	version, err := httputil.ValidateAndGetVersion(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 
@@ -275,17 +471,15 @@ func (s *Server) getComposeVersion(c *gin.Context) {
 
 // rollbackToVersion rolls back to a specific compose version
 func (s *Server) rollbackToVersion(c *gin.Context) {
-	id := c.Param("id")
-	versionParam := c.Param("version")
-	if id == "" || versionParam == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID or version"})
+	id, err := httputil.ValidateAndGetAppID(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 
-	// Parse version number
-	var targetVersion int
-	if _, err := fmt.Sscanf(versionParam, "%d", &targetVersion); err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid version number"})
+	targetVersion, err := httputil.ValidateAndGetVersion(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 		return
 	}
 
@@ -310,7 +504,11 @@ func (s *Server) rollbackToVersion(c *gin.Context) {
 	}
 
 	// Get updated app
-	app, _ := s.appService.GetApp(c.Request.Context(), id)
+	nodeID := getNodeIDFromContext(c)
+	var app *db.App
+	if nodeID != "" {
+		app, _ = s.appService.GetApp(c.Request.Context(), id, nodeID)
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":      "Rolled back successfully",
