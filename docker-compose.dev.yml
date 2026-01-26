@@ -4,11 +4,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.dev
-    container_name: automaton-backend-dev
+    container_name: selfhostly-backend-dev
     ports:
       - "8080:8080"
     environment:
-      DATABASE_PATH: ./data/automaton.db
+      DATABASE_PATH: ./data/selfhostly.db
       APPS_DIR: ./apps
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
       CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID}
@@ -22,14 +22,14 @@ services:
       # Exclude tmp directory from host
       - /app/tmp
     networks:
-      - automaton-network
+      - selfhostly-network
     restart: unless-stopped
 
   frontend:
-    build: 
+    build:
       context: ./web
       dockerfile: Dockerfile.pi
-    container_name: automaton-frontend-dev
+    container_name: selfhostly-frontend-dev
     ports:
       - "3000:3000"
     environment:
@@ -39,23 +39,23 @@ services:
       - ./web:/app
       - /app/node_modules
     networks:
-      - automaton-network
+      - selfhostly-network
     depends_on:
       - backend
     restart: unless-stopped
 
   cloudflared:
     image: cloudflare/cloudflared:latest-arm64
-    container_name: automaton-cloudflared-dev
+    container_name: selfhostly-cloudflared-dev
     command: tunnel run
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN}
     networks:
-      - automaton-network
+      - selfhostly-network
     restart: unless-stopped
     depends_on:
       - backend
 
 networks:
-  automaton-network:
+  selfhostly-network:
     driver: bridge

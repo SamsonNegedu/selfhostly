@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strings"
 )
@@ -10,6 +11,7 @@ type Config struct {
 	ServerAddress string
 	DatabasePath  string
 	AppsDir       string
+	Environment   string // development, staging, production
 	Cloudflare    CloudflareConfig
 	Auth          AuthConfig
 	AutoStart     bool
@@ -32,7 +34,6 @@ type AuthConfig struct {
 	Enabled      bool
 	JWTSecret    string
 	GitHub       GitHubOAuthConfig
-	CookieDomain string
 	SecureCookie bool
 	BaseURL      string // Base URL for OAuth callbacks (e.g., http://localhost:8080)
 }
@@ -50,18 +51,26 @@ func Load() (*Config, error) {
 	corsOrigins := getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000,http://localhost:8080")
 	allowedOrigins := parseCommaSeparatedList(corsOrigins)
 
-	return &Config{
+	authEnabled := getEnv("AUTH_ENABLED", "false") == "true"
+	jwtSecret := os.Getenv("JWT_SECRET")
+
+	// Validate JWT secret is provided when auth is enabled
+	if authEnabled && jwtSecret == "" {
+		return nil, fmt.Errorf("JWT_SECRET environment variable is required when AUTH_ENABLED is true")
+	}
+
+	cfg := &Config{
 		ServerAddress: getEnv("SERVER_ADDRESS", ":8080"),
-		DatabasePath:  getEnv("DATABASE_PATH", "./data/automaton.db"),
+		DatabasePath:  getEnv("DATABASE_PATH", "./data/selfhostly.db"),
 		AppsDir:       getEnv("APPS_DIR", "./apps"),
+		Environment:   getEnv("APP_ENV", "production"),
 		Cloudflare: CloudflareConfig{
 			APIToken:  os.Getenv("CLOUDFLARE_API_TOKEN"),
 			AccountID: os.Getenv("CLOUDFLARE_ACCOUNT_ID"),
 		},
 		Auth: AuthConfig{
-			Enabled:      getEnv("AUTH_ENABLED", "false") == "true",
-			JWTSecret:    getEnv("JWT_SECRET", "change-me-in-production-secret-key"),
-			CookieDomain: getEnv("AUTH_COOKIE_DOMAIN", "localhost"),
+			Enabled:      authEnabled,
+			JWTSecret:    jwtSecret,
 			SecureCookie: getEnv("AUTH_SECURE_COOKIE", "false") == "true",
 			BaseURL:      getEnv("AUTH_BASE_URL", "http://localhost:8080"),
 			GitHub: GitHubOAuthConfig{
@@ -74,7 +83,9 @@ func Load() (*Config, error) {
 		CORS: CORSConfig{
 			AllowedOrigins: allowedOrigins,
 		},
-	}, nil
+	}
+
+	return cfg, nil
 }
 
 // parseCommaSeparatedList splits a comma-separated string into a slice

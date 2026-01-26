@@ -15,7 +15,6 @@ func TestLoad(t *testing.T) {
 	origCloudflareToken := os.Getenv("CLOUDFLARE_API_TOKEN")
 	origCloudflareAccount := os.Getenv("CLOUDFLARE_ACCOUNT_ID")
 	origAuthEnabled := os.Getenv("AUTH_ENABLED")
-	origCookieDomain := os.Getenv("AUTH_COOKIE_DOMAIN")
 	origSecureCookie := os.Getenv("AUTH_SECURE_COOKIE")
 	origBaseURL := os.Getenv("AUTH_BASE_URL")
 	origGitHubClientID := os.Getenv("GITHUB_CLIENT_ID")
@@ -31,7 +30,6 @@ func TestLoad(t *testing.T) {
 		os.Setenv("CLOUDFLARE_API_TOKEN", origCloudflareToken)
 		os.Setenv("CLOUDFLARE_ACCOUNT_ID", origCloudflareAccount)
 		os.Setenv("AUTH_ENABLED", origAuthEnabled)
-		os.Setenv("AUTH_COOKIE_DOMAIN", origCookieDomain)
 		os.Setenv("AUTH_SECURE_COOKIE", origSecureCookie)
 		os.Setenv("AUTH_BASE_URL", origBaseURL)
 		os.Setenv("GITHUB_CLIENT_ID", origGitHubClientID)
@@ -47,7 +45,6 @@ func TestLoad(t *testing.T) {
 	os.Unsetenv("CLOUDFLARE_API_TOKEN")
 	os.Unsetenv("CLOUDFLARE_ACCOUNT_ID")
 	os.Unsetenv("AUTH_ENABLED")
-	os.Unsetenv("AUTH_COOKIE_DOMAIN")
 	os.Unsetenv("AUTH_SECURE_COOKIE")
 	os.Unsetenv("AUTH_BASE_URL")
 	os.Unsetenv("GITHUB_CLIENT_ID")
@@ -64,8 +61,8 @@ func TestLoad(t *testing.T) {
 		t.Errorf("Expected ServerAddress to be :8080, got %s", config.ServerAddress)
 	}
 
-	if config.DatabasePath != "./data/automaton.db" {
-		t.Errorf("Expected DatabasePath to be ./data/automaton.db, got %s", config.DatabasePath)
+	if config.DatabasePath != "./data/selfhostly.db" {
+		t.Errorf("Expected DatabasePath to be ./data/selfhostly.db, got %s", config.DatabasePath)
 	}
 
 	if config.AppsDir != "./apps" {
@@ -80,12 +77,8 @@ func TestLoad(t *testing.T) {
 		t.Errorf("Expected Auth.Enabled to be false, got %v", config.Auth.Enabled)
 	}
 
-	if config.Auth.JWTSecret != "change-me-in-production-secret-key" {
-		t.Errorf("Expected JWTSecret to be 'change-me-in-production-secret-key', got %s", config.Auth.JWTSecret)
-	}
-
-	if config.Auth.CookieDomain != "localhost" {
-		t.Errorf("Expected CookieDomain to be 'localhost', got %s", config.Auth.CookieDomain)
+	if config.Auth.JWTSecret != "" {
+		t.Errorf("Expected JWTSecret to be empty when auth disabled, got %s", config.Auth.JWTSecret)
 	}
 
 	if config.Auth.SecureCookie != false {
@@ -120,7 +113,6 @@ func TestLoadWithCustomEnv(t *testing.T) {
 	origCloudflareAccount := os.Getenv("CLOUDFLARE_ACCOUNT_ID")
 	origAuthEnabled := os.Getenv("AUTH_ENABLED")
 	origJWTSecret := os.Getenv("JWT_SECRET")
-	origCookieDomain := os.Getenv("AUTH_COOKIE_DOMAIN")
 	origSecureCookie := os.Getenv("AUTH_SECURE_COOKIE")
 	origBaseURL := os.Getenv("AUTH_BASE_URL")
 	origGitHubClientID := os.Getenv("GITHUB_CLIENT_ID")
@@ -137,7 +129,6 @@ func TestLoadWithCustomEnv(t *testing.T) {
 		os.Setenv("CLOUDFLARE_ACCOUNT_ID", origCloudflareAccount)
 		os.Setenv("AUTH_ENABLED", origAuthEnabled)
 		os.Setenv("JWT_SECRET", origJWTSecret)
-		os.Setenv("AUTH_COOKIE_DOMAIN", origCookieDomain)
 		os.Setenv("AUTH_SECURE_COOKIE", origSecureCookie)
 		os.Setenv("AUTH_BASE_URL", origBaseURL)
 		os.Setenv("GITHUB_CLIENT_ID", origGitHubClientID)
@@ -154,7 +145,6 @@ func TestLoadWithCustomEnv(t *testing.T) {
 	os.Setenv("CLOUDFLARE_ACCOUNT_ID", "test-account")
 	os.Setenv("AUTH_ENABLED", "true")
 	os.Setenv("JWT_SECRET", "custom-secret")
-	os.Setenv("AUTH_COOKIE_DOMAIN", "example.com")
 	os.Setenv("AUTH_SECURE_COOKIE", "true")
 	os.Setenv("AUTH_BASE_URL", "https://example.com")
 	os.Setenv("GITHUB_CLIENT_ID", "test-client-id")
@@ -197,10 +187,6 @@ func TestLoadWithCustomEnv(t *testing.T) {
 
 	if config.Auth.JWTSecret != "custom-secret" {
 		t.Errorf("Expected JWTSecret to be 'custom-secret', got %s", config.Auth.JWTSecret)
-	}
-
-	if config.Auth.CookieDomain != "example.com" {
-		t.Errorf("Expected CookieDomain to be 'example.com', got %s", config.Auth.CookieDomain)
 	}
 
 	if config.Auth.SecureCookie != true {
@@ -320,4 +306,31 @@ func TestGetEnv(t *testing.T) {
 
 	// Clean up
 	os.Unsetenv(key)
+}
+
+func TestLoadWithAuthEnabledButNoJWTSecret(t *testing.T) {
+	// Store original env vars
+	origAuthEnabled := os.Getenv("AUTH_ENABLED")
+	origJWTSecret := os.Getenv("JWT_SECRET")
+
+	// Restore env vars after test
+	defer func() {
+		os.Setenv("AUTH_ENABLED", origAuthEnabled)
+		os.Setenv("JWT_SECRET", origJWTSecret)
+	}()
+
+	// Enable auth but don't set JWT secret
+	os.Setenv("AUTH_ENABLED", "true")
+	os.Unsetenv("JWT_SECRET")
+
+	// Should return an error
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Expected error when AUTH_ENABLED is true but JWT_SECRET is not set, got nil")
+	}
+
+	expectedError := "JWT_SECRET environment variable is required when AUTH_ENABLED is true"
+	if err.Error() != expectedError {
+		t.Errorf("Expected error message '%s', got '%s'", expectedError, err.Error())
+	}
 }

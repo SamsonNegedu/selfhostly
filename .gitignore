@@ -39,7 +39,9 @@ build-errors.log
 
 data/
 apps/
-automaton
+selfhostly
 
 web/node_modules/
 web/dist/
+
+automaton

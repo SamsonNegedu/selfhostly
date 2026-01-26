@@ -181,7 +181,7 @@ func InjectCloudflared(compose *ComposeFile, appName, tunnelToken string, networ
 			}
 		} else {
 			// Default network name
-			network = "automaton-network"
+			network = "selfhostly-network"
 		}
 	}
 

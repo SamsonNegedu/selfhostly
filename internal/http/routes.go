@@ -106,7 +106,12 @@ func (s *Server) setupSystemRoutes(api *gin.RouterGroup) {
 	systemGroup := api.Group("/system")
 	{
 		systemGroup.GET("/stats", s.getSystemStats)
-		systemGroup.GET("/debug/docker-stats/:id", s.getDebugDockerStats)
+		
+		// Only expose debug endpoints in non-production environments
+		if s.config.Environment != "production" {
+			systemGroup.GET("/debug/docker-stats/:id", s.getDebugDockerStats)
+		}
+		
 		systemGroup.POST("/containers/:id/restart", s.restartContainer)
 		systemGroup.POST("/containers/:id/stop", s.stopContainer)
 		systemGroup.DELETE("/containers/:id", s.deleteContainer)

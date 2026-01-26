@@ -2,23 +2,23 @@ version: "3.8"
 services:
   cloudflared:
     image: cloudflare/cloudflared:latest-arm64
-    container_name: automaton-cloudflared
+    container_name: selfhostly-cloudflared
     command: tunnel run
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN}
     networks:
-      - automaton-network
+      - selfhostly-network
     restart: always
     depends_on:
       - backend
-  
+
   backend:
     build: .
-    container_name: automaton-backend
+    container_name: selfhostly-backend
     ports:
       - "8080:8080"
     environment:
-      DATABASE_PATH: ./data/automaton.db
+      DATABASE_PATH: ./data/selfhostly.db
       APPS_DIR: ./apps
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
       CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID}
@@ -27,26 +27,26 @@ services:
       - ./data:/app/data
       - ./apps:/app/apps
     networks:
-      - automaton-network
+      - selfhostly-network
     restart: always
-  
+
   frontend:
-    build: 
+    build:
       context: ./web
       dockerfile: Dockerfile.pi
-    container_name: automaton-frontend
+    container_name: selfhostly-frontend
     ports:
       - "3000:3000"
     environment:
       REACT_APP_API_URL: http://localhost:8080
     networks:
-      - automaton-network
+      - selfhostly-network
     depends_on:
       - backend
     restart: always
 
 networks:
-  automaton-network:
+  selfhostly-network:
     driver: bridge
 
 volumes:

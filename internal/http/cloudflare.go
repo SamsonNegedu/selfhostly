@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/selfhostly/internal/domain"
+	"github.com/selfhostly/internal/validation"
 )
 
 // IngressRule represents a single ingress rule for a Cloudflare tunnel
@@ -235,6 +236,15 @@ func (s *Server) createDNSRecord(c *gin.Context) {
 
 	if err := c.ShouldBindJSON(&dnsRequest); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid DNS record request format"})
+		return
+	}
+
+	// Validate hostname format
+	if err := validation.ValidateHostname(dnsRequest.Hostname); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid hostname format",
+			Details: err.Error(),
+		})
 		return
 	}
 

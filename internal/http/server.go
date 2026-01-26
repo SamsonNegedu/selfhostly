@@ -32,7 +32,8 @@ type Server struct {
 
 // NewServer creates a new HTTP server
 func NewServer(cfg *config.Config, database *db.DB) *Server {
-	if cfg.Auth.Enabled {
+	// Set Gin mode based on environment
+	if cfg.Environment == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	} else {
 		gin.SetMode(gin.DebugMode)
@@ -45,6 +46,7 @@ func NewServer(cfg *config.Config, database *db.DB) *Server {
 	engine.Use(corsMiddleware(cfg))
 	engine.Use(cacheControlMiddleware())
 	engine.Use(loggerMiddleware())
+	engine.Use(jsonBodyLimitMiddleware(maxBodySize))
 
 	// Initialize auth service
 	var authService *auth.Service
@@ -247,6 +249,27 @@ func cacheControlMiddleware() gin.HandlerFunc {
 		// For other paths (like index.html), don't set cache headers
 		// Let default Gin static file handling decide
 
+		c.Next()
+	}
+}
+
+// jsonBodyLimitMiddleware limits the size of JSON request bodies to prevent DoS
+func jsonBodyLimitMiddleware(maxBytes int64) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Only apply to JSON requests
+		if c.Request.Method != "GET" && c.Request.Method != "DELETE" && c.Request.Method != "OPTIONS" {
+			contentType := c.GetHeader("Content-Type")
+			if strings.Contains(contentType, "application/json") {
+				if c.Request.ContentLength > maxBytes {
+					c.AbortWithStatusJSON(http.StatusRequestEntityTooLarge, gin.H{
+						"error": "Request body too large",
+					})
+					return
+				}
+				// Wrap the request body with MaxBytesReader
+				c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes)
+			}
+		}
 		c.Next()
 	}
 }

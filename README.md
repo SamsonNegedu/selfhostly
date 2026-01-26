@@ -73,8 +73,8 @@ A comprehensive web-based platform for managing self-hosted applications on your
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/yourusername/selfhost-automaton.git
-cd selfhost-automaton
+git clone https://github.com/yourusername/selfhostly.git
+cd selfhostly
 
 # 2. Configure environment
 cp env.example .env
@@ -170,7 +170,7 @@ make help             # Show all available commands with descriptions
 ```env
 # Server Configuration
 SERVER_ADDRESS=:8080           # Address to bind the web server
-DATABASE_PATH=./data/automaton.db  # SQLite database location
+DATABASE_PATH=./data/selfhostly.db  # SQLite database location
 ```
 
 ### Cloudflare Integration (Optional)
@@ -283,7 +283,7 @@ docker build -t selfhostly -f Dockerfile.unified .
 ### Project Structure
 
 ```
-selfhost-automaton/
+selfhostly/
 ├── cmd/server/           # Main application entry point
 ├── internal/
 │   ├── cloudflare/       # Cloudflare API client and tunnel management

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document outlines the security architecture, current limitations, and future considerations for the selfhost-automaton project.
+This document outlines the security architecture, current limitations, and future considerations for the selfhostly project.
 
 ## Current Security Model
 

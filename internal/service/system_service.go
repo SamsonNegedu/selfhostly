@@ -10,6 +10,7 @@ import (
 	"github.com/selfhostly/internal/docker"
 	"github.com/selfhostly/internal/domain"
 	"github.com/selfhostly/internal/system"
+	"github.com/selfhostly/internal/validation"
 )
 
 // systemService implements the SystemService interface
@@ -141,6 +142,12 @@ func (s *systemService) GetAppLogs(ctx context.Context, appID string) ([]byte, e
 func (s *systemService) RestartContainer(ctx context.Context, containerID string) error {
 	s.logger.InfoContext(ctx, "restarting container", "containerID", containerID)
 
+	// Validate container ID
+	if err := validation.ValidateContainerID(containerID); err != nil {
+		s.logger.WarnContext(ctx, "invalid container ID", "containerID", containerID, "error", err)
+		return domain.WrapValidationError("container ID", err)
+	}
+
 	if err := s.dockerManager.RestartContainer(containerID); err != nil {
 		s.logger.ErrorContext(ctx, "failed to restart container", "containerID", containerID, "error", err)
 		return domain.WrapContainerOperationFailed("restart container", err)
@@ -154,6 +161,12 @@ func (s *systemService) RestartContainer(ctx context.Context, containerID string
 func (s *systemService) StopContainer(ctx context.Context, containerID string) error {
 	s.logger.InfoContext(ctx, "stopping container", "containerID", containerID)
 
+	// Validate container ID
+	if err := validation.ValidateContainerID(containerID); err != nil {
+		s.logger.WarnContext(ctx, "invalid container ID", "containerID", containerID, "error", err)
+		return domain.WrapValidationError("container ID", err)
+	}
+
 	if err := s.dockerManager.StopContainer(containerID); err != nil {
 		s.logger.ErrorContext(ctx, "failed to stop container", "containerID", containerID, "error", err)
 		return domain.WrapContainerOperationFailed("stop container", err)
@@ -166,6 +179,12 @@ func (s *systemService) StopContainer(ctx context.Context, containerID string) e
 // DeleteContainer deletes a specific container
 func (s *systemService) DeleteContainer(ctx context.Context, containerID string) error {
 	s.logger.InfoContext(ctx, "deleting container", "containerID", containerID)
+
+	// Validate container ID
+	if err := validation.ValidateContainerID(containerID); err != nil {
+		s.logger.WarnContext(ctx, "invalid container ID", "containerID", containerID, "error", err)
+		return domain.WrapValidationError("container ID", err)
+	}
 
 	if err := s.dockerManager.DeleteContainer(containerID); err != nil {
 		s.logger.ErrorContext(ctx, "failed to delete container", "containerID", containerID, "error", err)

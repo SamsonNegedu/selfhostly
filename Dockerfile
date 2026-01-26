@@ -13,7 +13,7 @@ RUN go mod download
 COPY . .
 
 # Build the application for ARM64 (no CGO needed with modernc.org/sqlite)
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o automaton cmd/server/main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o selfhostly cmd/server/main.go
 
 # Production stage
 FROM alpine:latest
@@ -25,7 +25,7 @@ RUN apk add --no-cache ca-certificates
 WORKDIR /app
 
 # Copy binary from builder stage
-COPY --from=builder /app/automaton .
+COPY --from=builder /app/selfhostly .
 
 # Create directories
 RUN mkdir -p /app/data /app/apps
@@ -34,4 +34,4 @@ RUN mkdir -p /app/data /app/apps
 EXPOSE 8080
 
 # Run the application
-CMD ["./automaton"]
+CMD ["./selfhostly"]

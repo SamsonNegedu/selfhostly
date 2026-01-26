@@ -1,6 +1,6 @@
 # Deploying with Cloudflare Zero Trust
 
-This is the **recommended authentication method** for selfhost-automaton. It's simpler, more secure, and requires zero OAuth configuration.
+This is the **recommended authentication method** for selfhostly. It's simpler, more secure, and requires zero OAuth configuration.
 
 ## Why Cloudflare Zero Trust?
 
@@ -20,7 +20,7 @@ This is the **recommended authentication method** for selfhost-automaton. It's s
 
 ### Perfect for Single-User Deployments
 
-Since selfhost-automaton is designed for single-user use (you managing your own apps), Cloudflare Zero Trust is ideal:
+Since selfhostly is designed for single-user use (you managing your own apps), Cloudflare Zero Trust is ideal:
 - You're already using Cloudflare Tunnels for your apps
 - No need to maintain OAuth apps or JWT secrets
 - Cloudflare authenticates before traffic reaches your server
@@ -51,7 +51,7 @@ Since selfhost-automaton is designed for single-user use (you managing your own 
 **Configure the application:**
 
 ```yaml
-Application name: Selfhost Automaton
+Application name: Selfhost selfhostly
 Session Duration: 24 hours (or your preference)
 Application domain: 
   - selfhostly.yourdomain.com
@@ -160,7 +160,7 @@ CLOUDFLARE_ACCOUNT_ID=your_account_id
 ┌─────────────────────────────────────────────────────────────────┐
 │              Your Infrastructure (Raspberry Pi)                  │
 │  ┌────────────────────────────────────────────────────────────┐ │
-│  │              Selfhost Automaton                            │ │
+│  │              Selfhost selfhostly                            │ │
 │  │  • AUTH_ENABLED=false                                      │ │
 │  │  • No OAuth configuration needed                           │ │
 │  │  • Cloudflare already authenticated the user               │ │
@@ -335,7 +335,7 @@ That's it! Much simpler. ✨
 
 ## Summary
 
-**For single-user selfhost-automaton deployments, Cloudflare Zero Trust is the ideal choice:**
+**For single-user selfhostly deployments, Cloudflare Zero Trust is the ideal choice:**
 
 ✅ **Simple**: 3 steps, no OAuth configuration  
 ✅ **Secure**: Authentication at the edge, zero trust model  

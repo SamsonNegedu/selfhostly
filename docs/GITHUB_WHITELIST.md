@@ -2,7 +2,7 @@
 
 ## Overview
 
-The GitHub username whitelist is a security feature that restricts access to your selfhost-automaton instance to specific GitHub users only.
+The GitHub username whitelist is a security feature that restricts access to your selfhostly instance to specific GitHub users only.
 
 ## How It Works
 

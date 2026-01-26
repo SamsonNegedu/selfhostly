@@ -12,6 +12,7 @@ import (
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/docker"
 	"github.com/selfhostly/internal/domain"
+	"github.com/selfhostly/internal/validation"
 )
 
 // appService implements the AppService interface
@@ -40,6 +41,26 @@ func NewAppService(
 // CreateApp creates a new application
 func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest) (*db.App, error) {
 	s.logger.InfoContext(ctx, "creating app", "name", req.Name)
+
+	// Validate app name
+	if err := validation.ValidateAppName(req.Name); err != nil {
+		s.logger.WarnContext(ctx, "invalid app name", "name", req.Name, "error", err)
+		return nil, domain.WrapValidationError("app name", err)
+	}
+
+	// Validate compose content
+	if err := validation.ValidateComposeContent(req.ComposeContent); err != nil {
+		s.logger.WarnContext(ctx, "invalid compose content", "error", err)
+		return nil, domain.WrapValidationError("compose content", err)
+	}
+
+	// Validate description if provided
+	if req.Description != "" {
+		if err := validation.ValidateDescription(req.Description); err != nil {
+			s.logger.WarnContext(ctx, "invalid description", "error", err)
+			return nil, domain.WrapValidationError("description", err)
+		}
+	}
 
 	// Get Cloudflare settings
 	settings, err := s.database.GetSettings()
@@ -199,6 +220,14 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 				if err := tunnelManager.UpdateTunnelIngress(tunnelID, cfRules, "", ""); err != nil {
 					s.logger.ErrorContext(ctx, "failed to apply ingress rules", "app", req.Name, "error", err)
 					// Don't fail app creation if ingress update fails
+				} else {
+					// Restart cloudflared container to pick up new ingress configuration
+					// This is a best-effort operation - we don't fail the app creation if it fails
+					if err := s.dockerManager.RestartCloudflared(app.Name); err != nil {
+						s.logger.WarnContext(ctx, "failed to restart cloudflared container, ingress rules updated but container restart may be required", "app", req.Name, "appID", app.ID, "error", err)
+					} else {
+						s.logger.InfoContext(ctx, "cloudflared container restarted successfully after ingress update", "app", req.Name, "appID", app.ID)
+					}
 				}
 			}
 		}
@@ -237,6 +266,30 @@ func (s *appService) ListApps(ctx context.Context) ([]*db.App, error) {
 // UpdateApp updates an existing app
 func (s *appService) UpdateApp(ctx context.Context, appID string, req domain.UpdateAppRequest) (*db.App, error) {
 	s.logger.InfoContext(ctx, "updating app", "appID", appID)
+
+	// Validate name if provided
+	if req.Name != "" {
+		if err := validation.ValidateAppName(req.Name); err != nil {
+			s.logger.WarnContext(ctx, "invalid app name", "name", req.Name, "error", err)
+			return nil, domain.WrapValidationError("app name", err)
+		}
+	}
+
+	// Validate description if provided
+	if req.Description != "" {
+		if err := validation.ValidateDescription(req.Description); err != nil {
+			s.logger.WarnContext(ctx, "invalid description", "error", err)
+			return nil, domain.WrapValidationError("description", err)
+		}
+	}
+
+	// Validate compose content if provided
+	if req.ComposeContent != "" {
+		if err := validation.ValidateComposeContent(req.ComposeContent); err != nil {
+			s.logger.WarnContext(ctx, "invalid compose content", "error", err)
+			return nil, domain.WrapValidationError("compose content", err)
+		}
+	}
 
 	app, err := s.database.GetApp(appID)
 	if err != nil {

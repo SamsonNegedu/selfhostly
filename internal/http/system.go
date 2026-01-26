@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/selfhostly/internal/validation"
 )
 
 // getSystemStats returns comprehensive system and container statistics
@@ -59,7 +60,16 @@ func (s *Server) stopContainer(c *gin.Context) {
 func (s *Server) getDebugDockerStats(c *gin.Context) {
 	containerID := c.Param("id")
 	if containerID == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid container ID"})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Container ID is required"})
+		return
+	}
+
+	// Validate container ID format
+	if err := validation.ValidateContainerID(containerID); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "Invalid container ID format",
+			Details: err.Error(),
+		})
 		return
 	}
 

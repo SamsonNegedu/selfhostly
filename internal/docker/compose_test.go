@@ -179,7 +179,7 @@ func TestInjectCloudflaredNoNetwork(t *testing.T) {
 	}
 
 	// Check if default network was created
-	network, exists := compose.Networks["automaton-network"]
+	network, exists := compose.Networks["selfhostly-network"]
 	if !exists {
 		t.Fatalf("Expected default network to be created")
 	}
@@ -194,8 +194,8 @@ func TestInjectCloudflaredNoNetwork(t *testing.T) {
 		t.Fatalf("Expected cloudflared service to be added")
 	}
 
-	if len(cloudflaredService.Networks) != 1 || cloudflaredService.Networks[0] != "automaton-network" {
-		t.Errorf("Expected networks [automaton-network], got %v", cloudflaredService.Networks)
+	if len(cloudflaredService.Networks) != 1 || cloudflaredService.Networks[0] != "selfhostly-network" {
+		t.Errorf("Expected networks [selfhostly-network], got %v", cloudflaredService.Networks)
 	}
 }
 
@@ -408,7 +408,7 @@ func TestInjectCloudflaredWithServiceWithoutNetwork(t *testing.T) {
 	}
 
 	// Check if default network was created
-	network, exists := compose.Networks["automaton-network"]
+	network, exists := compose.Networks["selfhostly-network"]
 	if !exists {
 		t.Fatalf("Expected default network to be created")
 	}
@@ -423,8 +423,8 @@ func TestInjectCloudflaredWithServiceWithoutNetwork(t *testing.T) {
 		t.Fatalf("Expected cloudflared service to be added")
 	}
 
-	if len(cloudflaredService.Networks) != 1 || cloudflaredService.Networks[0] != "automaton-network" {
-		t.Errorf("Expected networks [automaton-network], got %v", cloudflaredService.Networks)
+	if len(cloudflaredService.Networks) != 1 || cloudflaredService.Networks[0] != "selfhostly-network" {
+		t.Errorf("Expected networks [selfhostly-network], got %v", cloudflaredService.Networks)
 	}
 
 	// THE CRITICAL CHECK: The original service should also be updated to use the same network!
@@ -433,8 +433,8 @@ func TestInjectCloudflaredWithServiceWithoutNetwork(t *testing.T) {
 		t.Error("Original service should be updated to use the same network as cloudflared")
 	}
 
-	if len(uptimeKumaService.Networks) != 1 || uptimeKumaService.Networks[0] != "automaton-network" {
-		t.Errorf("Expected original service to use [automaton-network], got %v", uptimeKumaService.Networks)
+	if len(uptimeKumaService.Networks) != 1 || uptimeKumaService.Networks[0] != "selfhostly-network" {
+		t.Errorf("Expected original service to use [selfhostly-network], got %v", uptimeKumaService.Networks)
 	}
 }
 

@@ -161,6 +161,15 @@ func WrapDatabaseOperation(operation string, cause error) error {
 	}
 }
 
+// WrapValidationError wraps an error as a validation failure
+func WrapValidationError(field string, cause error) error {
+	return &DomainError{
+		Code:    ErrValidationFailed.Code,
+		Message: fmt.Sprintf("validation failed for %s", field),
+		Cause:   cause,
+	}
+}
+
 // ============================================================================
 // Error Checking Helpers
 // ============================================================================

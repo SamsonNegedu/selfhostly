@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the comprehensive versioning and rollback system for Docker Compose configurations implemented in the selfhost-automaton platform.
+This document describes the comprehensive versioning and rollback system for Docker Compose configurations implemented in the selfhostly platform.
 
 ## Features
 
