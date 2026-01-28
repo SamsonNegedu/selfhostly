@@ -3,7 +3,7 @@ package db
 import (
 	"database/sql"
 	"encoding/json"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -145,7 +145,7 @@ func (db *DB) migrate() error {
 	// Check if settings exist and have proper UUIDs
 	var count int
 	if err := db.QueryRow("SELECT COUNT(*) FROM settings").Scan(&count); err != nil {
-		log.Printf("Error checking settings: %v", err)
+		slog.Error("Error checking settings", "error", err)
 		return err
 	}
 
@@ -153,13 +153,13 @@ func (db *DB) migrate() error {
 	if count > 0 {
 		var uuidCount int
 		if err := db.QueryRow("SELECT COUNT(*) FROM settings WHERE id IS NOT NULL").Scan(&uuidCount); err != nil {
-			log.Printf("Error checking UUIDs: %v", err)
+			slog.Error("Error checking UUIDs", "error", err)
 		} else if uuidCount == 0 {
 			// All settings have NULL IDs, need to fix them
 			settings := NewSettings()
 			if _, err := db.Exec("UPDATE settings SET id = ?, updated_at = ? WHERE id IS NULL",
 				settings.ID, time.Now()); err != nil {
-				log.Printf("Error fixing settings UUIDs: %v", err)
+				slog.Error("Error fixing settings UUIDs", "error", err)
 			}
 		}
 	}
@@ -169,7 +169,7 @@ func (db *DB) migrate() error {
 		settings := NewSettings()
 		if _, err := db.Exec("INSERT INTO settings (id, cloudflare_api_token, cloudflare_account_id, auto_start_apps, updated_at) VALUES (?, ?, ?, ?, ?)",
 			settings.ID, settings.CloudflareAPIToken, settings.CloudflareAccountID, settings.AutoStartApps, settings.UpdatedAt); err != nil {
-			log.Printf("Error inserting default settings: %v", err)
+			slog.Error("Error inserting default settings", "error", err)
 		}
 	}
 

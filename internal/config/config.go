@@ -4,7 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -108,8 +108,8 @@ func Load() (*Config, error) {
 	if registrationToken == "" && getEnv("NODE_IS_PRIMARY", "true") == "true" {
 		// Primary nodes generate a token if not provided
 		registrationToken = generateSecureToken()
-		log.Printf("WARNING: No REGISTRATION_TOKEN set - generated: %s", registrationToken)
-		log.Println("INFO: Save this token to .env and share it with secondary nodes for auto-registration")
+		slog.Warn("No REGISTRATION_TOKEN set - generated new token", "token", registrationToken)
+		slog.Info("Save this token to .env and share it with secondary nodes for auto-registration")
 	}
 	
 	cfg := &Config{

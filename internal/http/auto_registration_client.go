@@ -49,8 +49,8 @@ func (s *Server) attemptAutoRegistration() {
 		}
 	}
 
-	slog.Error("auto-registration failed after all retries", "max_retries", maxRetries)
-	slog.Info("INFO: you can manually register this node through the primary UI at: ", s.config.Node.PrimaryNodeURL+"/nodes")
+	slog.Error("ERROR: auto-registration failed after all retries", "max_retries", maxRetries)
+	slog.Info("INFO: you can manually register this node through the primary UI at: " + s.config.Node.PrimaryNodeURL + "/nodes")
 }
 
 // registerWithPrimary sends the auto-registration request to the primary node
