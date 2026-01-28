@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
@@ -25,13 +26,14 @@ type Config struct {
 
 // NodeConfig holds node-specific configuration for multi-node support
 type NodeConfig struct {
-	ID             string // This node's UUID (generated on first run if not set)
-	Name           string // This node's name
-	IsPrimary      bool   // Whether this is the primary node
-	APIEndpoint    string // This node's API endpoint URL for inter-node communication
-	APIKey         string // API key for other nodes to authenticate with this node
-	PrimaryNodeURL string // URL of primary node (only for secondary nodes)
-	PrimaryNodeKey string // API key to authenticate with primary (only for secondary nodes)
+	ID                string // This node's UUID (generated on first run if not set)
+	Name              string // This node's name
+	IsPrimary         bool   // Whether this is the primary node
+	APIEndpoint       string // This node's API endpoint URL for inter-node communication
+	APIKey            string // API key for other nodes to authenticate with this node
+	PrimaryNodeURL    string // URL of primary node (only for secondary nodes)
+	PrimaryNodeKey    string // API key to authenticate with primary (only for secondary nodes)
+	RegistrationToken string // Token for auto-registration (shared secret between primary and secondaries)
 }
 
 // CORSConfig holds CORS configuration
@@ -100,6 +102,16 @@ func Load() (*Config, error) {
 	}
 
 	nodeAPIEndpoint := getEnv("NODE_API_ENDPOINT", "http://localhost:8080")
+	
+	// Generate or load registration token for cluster joining
+	registrationToken := os.Getenv("REGISTRATION_TOKEN")
+	if registrationToken == "" && getEnv("NODE_IS_PRIMARY", "true") == "true" {
+		// Primary nodes generate a token if not provided
+		registrationToken = generateSecureToken()
+		log.Printf("WARNING: No REGISTRATION_TOKEN set - generated: %s", registrationToken)
+		log.Println("INFO: Save this token to .env and share it with secondary nodes for auto-registration")
+	}
+	
 	cfg := &Config{
 		ServerAddress: getEnv("SERVER_ADDRESS", ":8080"),
 		DatabasePath:  getEnv("DATABASE_PATH", "./data/selfhostly.db"),
@@ -125,13 +137,14 @@ func Load() (*Config, error) {
 			AllowedOrigins: allowedOrigins,
 		},
 		Node: NodeConfig{
-			ID:             nodeID,
-			Name:           nodeName,
-			IsPrimary:      getEnv("NODE_IS_PRIMARY", "true") == "true", // Default to primary for backward compatibility
-			APIEndpoint:    nodeAPIEndpoint,
-			APIKey:         apiKey,
-			PrimaryNodeURL: getEnv("PRIMARY_NODE_URL", ""),
-			PrimaryNodeKey: getEnv("PRIMARY_NODE_API_KEY", ""),
+			ID:                nodeID,
+			Name:              nodeName,
+			IsPrimary:         getEnv("NODE_IS_PRIMARY", "true") == "true", // Default to primary for backward compatibility
+			APIEndpoint:       nodeAPIEndpoint,
+			APIKey:            apiKey,
+			PrimaryNodeURL:    getEnv("PRIMARY_NODE_URL", ""),
+			PrimaryNodeKey:    getEnv("PRIMARY_NODE_API_KEY", ""),
+			RegistrationToken: registrationToken,
 		},
 	}
 
@@ -166,6 +179,16 @@ func getEnv(key, defaultValue string) string {
 
 // generateSecureAPIKey generates a cryptographically secure random API key
 func generateSecureAPIKey() string {
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		// Fallback to UUID if crypto/rand fails
+		return uuid.New().String()
+	}
+	return base64.URLEncoding.EncodeToString(bytes)
+}
+
+// generateSecureToken generates a cryptographically secure random token for registration
+func generateSecureToken() string {
 	bytes := make([]byte, 32)
 	if _, err := rand.Read(bytes); err != nil {
 		// Fallback to UUID if crypto/rand fails

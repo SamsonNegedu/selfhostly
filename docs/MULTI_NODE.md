@@ -140,6 +140,10 @@ Some endpoints are public for operational purposes:
 
 ## Setup Guide
 
+Selfhostly supports **two registration methods**:
+1. **Auto-Registration** (Recommended) - Secondary nodes register themselves automatically
+2. **Manual Registration** - Register through the primary UI (fallback option)
+
 ### Prerequisites
 
 - Go 1.21+ and Node.js 18+ (for building from source)
@@ -148,23 +152,37 @@ Some endpoints are public for operational purposes:
 - (Optional) GitHub OAuth app credentials
 - (Optional) Cloudflare account with API token
 
-### Step 1: Generate API Keys
+### Step 1: Generate Cluster Credentials
 
-Generate a unique API key for each node:
+**Generate a registration token for the cluster:**
 
 ```bash
-# For each node, generate a secure random key
+# Generate a secure registration token (shared across all nodes)
 openssl rand -base64 32
 ```
 
-Save these keys securely - you'll need them during setup.
+**Example Output**:
+```
+Registration Token: abc123XYZ789SecureTokenForCluster==
+```
+
+This token acts like a cluster join token - keep it secure and share it with all nodes in your cluster.
+
+**Generate API keys (optional - can be auto-generated):**
+
+```bash
+# For each node, optionally generate a unique API key
+openssl rand -base64 32
+```
 
 **Example Output**:
 ```
-Primary:   Kx9mP2vQ8wR5tY7uI0oP3aS4dF6gH8jK9lZ1xC2vB4n=
+Primary:    Kx9mP2vQ8wR5tY7uI0oP3aS4dF6gH8jK9lZ1xC2vB4n=
 Secondary1: Mq3nR5vT9xS7yU1jL4oQ7bS9dG2hJ5kM8pZ3xD6wC9n=
 Secondary2: Np7qS9wU3zT5yV8kM2oR5cT7eH4jL7nP1qZ6xE9xD2o=
 ```
+
+**Note**: If you don't set `NODE_API_KEY`, the system will auto-generate one for you.
 
 ### Step 2: Setup Primary Node
 
@@ -193,13 +211,16 @@ AUTH_ENABLED=false
 # Node Configuration
 NODE_IS_PRIMARY=true
 NODE_NAME=primary
-NODE_API_ENDPOINT=http://192.168.1.10:8080  # This node's reachable URL
+NODE_API_ENDPOINT=http://192.168.1.10:8080   # This node's reachable URL
 NODE_API_KEY=Kx9mP2vQ8wR5tY7uI0oP3aS4dF6gH8jK9lZ1xC2vB4n=
+REGISTRATION_TOKEN=abc123XYZ789SecureTokenForCluster==  # ✨ NEW - For auto-registration
 
 # Cloudflare (optional)
 CLOUDFLARE_API_TOKEN=your_token
 CLOUDFLARE_ACCOUNT_ID=your_account_id
 ```
+
+**Important**: Save the `REGISTRATION_TOKEN` - you'll need it for secondary nodes!
 
 **2. Start Primary Node**
 
@@ -216,7 +237,7 @@ go build -o selfhostly ./cmd/server
 
 Navigate to `http://your-primary-ip:8080` and log in.
 
-### Step 3: Setup Secondary Nodes
+### Step 3: Setup Secondary Nodes (Auto-Registration) ✨
 
 **1. Configure Environment**
 
@@ -231,21 +252,24 @@ DATABASE_PATH=./data/selfhostly.db
 # Node Configuration - SECONDARY
 NODE_IS_PRIMARY=false
 NODE_NAME=worker-1
-NODE_API_ENDPOINT=http://192.168.1.50:8080  # This secondary's reachable URL
-NODE_API_KEY=Mq3nR5vT9xS7yU1jL4oQ7bS9dG2hJ5kM8pZ3xD6wC9n=
+NODE_API_ENDPOINT=http://192.168.1.50:8080            # This secondary's reachable URL
+NODE_API_KEY=Mq3nR5vT9xS7yU1jL4oQ7bS9dG2hJ5kM8pZ3xD6wC9n=  # Can be auto-generated if omitted
 
 # Primary Node Connection
 PRIMARY_NODE_URL=http://192.168.1.10:8080
+REGISTRATION_TOKEN=abc123XYZ789SecureTokenForCluster==  # ✨ SAME token as primary!
 
 # DO NOT set Cloudflare vars - synced from primary
 # DO NOT set authentication - not needed on secondary
 ```
 
+**Critical**: The `REGISTRATION_TOKEN` must match the primary's token for auto-registration to work!
+
 **Important Notes**:
 - `NODE_API_ENDPOINT`: This node's reachable URL for inter-node communication
-- `NODE_API_KEY`: This secondary's own API key (for authentication)
+- `NODE_API_KEY`: This secondary's own API key (auto-generated if not set)
 - `PRIMARY_NODE_URL`: Must be reachable from this secondary node
-- `PRIMARY_NODE_API_KEY`: Currently unused, reserved for future features
+- `REGISTRATION_TOKEN`: Shared secret for auto-registration
 - Secondary nodes sync Cloudflare credentials from primary automatically
 
 **2. Start Secondary Node**
@@ -259,17 +283,28 @@ go build -o selfhostly ./cmd/server
 ./selfhostly
 ```
 
-**3. Verify Startup Heartbeat**
+**3. Auto-Registration Happens! 🎉**
 
-Check logs for successful heartbeat:
+The secondary automatically registers with the primary on startup:
 
 ```bash
-# Should see:
-INFO sending startup heartbeat to primary url=http://192.168.1.10:8080/api/internal/nodes/{id}/heartbeat
+# Startup logs show:
+INFO attempting auto-registration with primary primary_url=http://192.168.1.10:8080
+INFO auto-registration attempt attempt=1 max=5
+INFO auto-registration response message="Node registered successfully" status="online"
+✅ auto-registration successful!
 INFO startup heartbeat sent successfully to primary
 ```
 
-### Step 4: Register Secondary on Primary
+**That's it!** No manual registration needed. The node appears in the primary UI automatically.
+
+### Step 4: Verify Registration (Optional)
+
+Navigate to **Settings → Nodes** in the primary UI - your secondary node should appear with a green "Online" badge! ✅
+
+### Alternative: Manual Registration (Fallback)
+
+If auto-registration fails or you don't want to use a registration token, you can still register manually:
 
 **1. Navigate to Nodes Page**
 

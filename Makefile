@@ -1,3 +1,18 @@
+# =============================================================================
+# Selfhostly Makefile
+# =============================================================================
+#
+# Run with different .env files:
+#   make run-local                          # Uses .env (default)
+#   make run-local ENV_FILE=.env.primary    # Uses .env.primary
+#   make run-local ENV_FILE=.env.secondary  # Uses .env.secondary
+#
+# Multi-Node Local Development:
+#   Terminal 1: make run-local ENV_FILE=.env.primary
+#   Terminal 2: make run-local ENV_FILE=.env.secondary
+#
+# =============================================================================
+
 .PHONY: dev dev-backend dev-frontend prod down clean install-air run-local test test-verbose test-coverage help
 
 # Development commands
@@ -35,11 +50,31 @@ clean: ## Clean build artifacts and containers
 install-air: ## Install Air for local development
 	go install github.com/air-verse/air@latest
 
-run-local: ## Run backend locally with Air (no Docker)
-	air
+run-local: ## Run backend with Air (usage: make run-local [ENV_FILE=.env.custom])
+	@if [ -n "$(ENV_FILE)" ]; then \
+		if [ ! -f "$(ENV_FILE)" ]; then \
+			echo "ERROR: $(ENV_FILE) not found."; \
+			exit 1; \
+		fi; \
+		echo "Starting with $(ENV_FILE)"; \
+		ENV_FILE=$(ENV_FILE) air; \
+	else \
+		echo "Starting with .env"; \
+		air; \
+	fi
 
-run-local-no-air: ## Run backend locally without Air
-	go run cmd/server/main.go
+run-local-no-air: ## Run backend without Air (usage: make run-local-no-air [ENV_FILE=.env.custom])
+	@if [ -n "$(ENV_FILE)" ]; then \
+		if [ ! -f "$(ENV_FILE)" ]; then \
+			echo "ERROR: $(ENV_FILE) not found."; \
+			exit 1; \
+		fi; \
+		echo "Starting with $(ENV_FILE)"; \
+		ENV_FILE=$(ENV_FILE) go run cmd/server/main.go; \
+	else \
+		echo "Starting with .env"; \
+		go run cmd/server/main.go; \
+	fi
 
 # Testing commands
 test: ## Run all tests

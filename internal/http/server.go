@@ -186,9 +186,9 @@ func (s *Server) startBackgroundTasks() {
 	// Start periodic health checks for all nodes
 	go s.runPeriodicHealthChecks()
 	
-	// If this is a secondary node with a configured primary, send startup heartbeat
+	// If this is a secondary node with a configured primary, attempt auto-registration
 	if !s.config.Node.IsPrimary && s.config.Node.PrimaryNodeURL != "" {
-		go s.sendStartupHeartbeat()
+		go s.attemptAutoRegistration()
 	}
 	
 	slog.Info("background tasks started", "health_check_interval", "30s")

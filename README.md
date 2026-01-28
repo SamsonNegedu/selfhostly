@@ -191,22 +191,25 @@ Deploy across multiple servers for distributed app management:
 # Primary Node (main server with UI and database)
 NODE_IS_PRIMARY=true
 NODE_NAME=primary
-NODE_API_ENDPOINT=http://192.168.1.10:8080  # This node's reachable URL
-NODE_API_KEY=your-secure-api-key-here       # Generate with: openssl rand -base64 32
+NODE_API_ENDPOINT=http://192.168.1.10:8080        # This node's reachable URL
+NODE_API_KEY=your-secure-api-key-here             # Generate with: openssl rand -base64 32
+REGISTRATION_TOKEN=your-secure-registration-token # Generate with: openssl rand -base64 32
 
-# Secondary Node (worker server)
+# Secondary Node (worker server) - Auto-registers on startup!
 NODE_IS_PRIMARY=false
 NODE_NAME=worker-1
-NODE_API_ENDPOINT=http://192.168.1.50:9090  # This node's reachable URL
-NODE_API_KEY=your-secure-api-key-here       # Must match key registered on primary
-PRIMARY_NODE_URL=http://192.168.1.10:8080   # URL of primary node
+NODE_API_ENDPOINT=http://192.168.1.50:9090        # This node's reachable URL
+NODE_API_KEY=your-secure-api-key-here             # Auto-generated or set explicitly
+PRIMARY_NODE_URL=http://192.168.1.10:8080         # URL of primary node
+REGISTRATION_TOKEN=your-secure-registration-token # Same as primary - enables auto-registration
 ```
 
 **Benefits:**
-- Manage multiple servers from one UI
-- Deploy apps to any node in the cluster
-- Unified monitoring across all nodes
-- Automatic health checks and heartbeats
+- ✨ **Auto-registration** - Secondary nodes register themselves on startup
+- 🚀 **Zero copy-paste** - Just set env vars and go
+- 🔄 Manage multiple servers from one UI
+- 📊 Unified monitoring across all nodes
+- 💓 Automatic health checks and heartbeats
 
 📖 [Multi-Node Setup Guide](./docs/MULTI_NODE.md) - Complete configuration, authentication, and troubleshooting
 

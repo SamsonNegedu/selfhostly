@@ -15,11 +15,16 @@ func main() {
 	cwd, _ := os.Getwd()
 	log.Printf("Current working directory: %s", cwd)
 
-	// Load .env file if it exists (optional, won't error if missing)
-	if err := godotenv.Load(); err != nil {
-		log.Printf("No .env file found in %s: %v", cwd, err)
+	// Load .env file - can be overridden with ENV_FILE environment variable
+	envFile := os.Getenv("ENV_FILE")
+	if envFile == "" {
+		envFile = ".env"
+	}
+	
+	if err := godotenv.Load(envFile); err != nil {
+		log.Printf("No %s file found in %s: %v", envFile, cwd, err)
 	} else {
-		log.Println("Loaded .env file successfully")
+		log.Printf("Loaded %s file successfully", envFile)
 	}
 
 	// Load configuration
@@ -67,15 +72,15 @@ func main() {
 	// For SECONDARY nodes: may have zero nodes (until registered)
 	if len(nodes) == 0 && cfg.Node.IsPrimary {
 		// This should never happen for primary nodes
-		log.Fatal("❌ No nodes found on primary node - this is a critical error")
+		log.Fatal("ERROR: No nodes found on primary node - this is a critical error")
 	} else if len(nodes) == 0 {
 		// Secondary node not yet registered - show registration information
 		log.Println("")
 		log.Println("═══════════════════════════════════════════════════════════")
-		log.Println("⚠️  SECONDARY NODE - NOT YET REGISTERED")
+		log.Println("SECONDARY NODE - NOT YET REGISTERED")
 		log.Println("═══════════════════════════════════════════════════════════")
 		log.Println("")
-		log.Println("📝 Use these details to register this node on the primary:")
+		log.Println("Use these details to register this node on the primary:")
 		log.Println("")
 		log.Printf("   Node ID:       %s", cfg.Node.ID)
 		log.Printf("   Node Name:     %s", cfg.Node.Name)
@@ -86,16 +91,16 @@ func main() {
 		} else {
 			log.Printf("   API Endpoint:  http://<this-server-ip>%s", cfg.ServerAddress)
 			log.Println("")
-			log.Println("   ⚠️  Set NODE_API_ENDPOINT to this node's reachable URL")
+			log.Println("   WARNING: Set NODE_API_ENDPOINT to this node's reachable URL")
 		}
 		
 		log.Printf("   API Key:       %s", cfg.Node.APIKey)
 		log.Println("")
-		log.Printf("💡 Register at:   %s/nodes", cfg.Node.PrimaryNodeURL)
+		log.Printf("Register at:   %s/nodes", cfg.Node.PrimaryNodeURL)
 		log.Println("")
-		log.Println("⚠️  CRITICAL: Copy the Node ID above - required for heartbeat authentication!")
-		log.Println("⚠️  IMPORTANT: Save NODE_ID and NODE_API_KEY to .env to keep them consistent")
-		log.Println("ℹ️  Server will start but cannot manage apps until registered")
+		log.Println("CRITICAL: Copy the Node ID above - required for heartbeat authentication!")
+		log.Println("IMPORTANT: Save NODE_ID and NODE_API_KEY to .env to keep them consistent")
+		log.Println("INFO: Server will start but cannot manage apps until registered")
 		log.Println("═══════════════════════════════════════════════════════════")
 		log.Println("")
 	} else {
@@ -109,9 +114,9 @@ func main() {
 		}
 
 		if primaryNode != nil {
-			log.Printf("✓ Running as: %s (Primary)", primaryNode.Name)
+			log.Printf("Running as: %s (Primary)", primaryNode.Name)
 		} else {
-			log.Printf("✓ Running as: %s (Secondary)", cfg.Node.Name)
+			log.Printf("Running as: %s (Secondary)", cfg.Node.Name)
 		}
 
 		// Verify all apps have node assignments (for migration verification)
@@ -125,9 +130,9 @@ func main() {
 			}
 
 			if unassignedCount > 0 {
-				log.Printf("⚠️  Warning: %d apps without node assignment", unassignedCount)
+				log.Printf("WARNING: %d apps without node assignment", unassignedCount)
 			} else if len(apps) > 0 {
-				log.Printf("✓ All %d apps have valid node assignments", len(apps))
+				log.Printf("All %d apps have valid node assignments", len(apps))
 			}
 		}
 	}

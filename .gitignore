@@ -35,6 +35,7 @@ build-errors.log
 
 # Environment
 .env
+.env*
 .env.local
 
 data/

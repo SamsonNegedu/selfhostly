@@ -190,7 +190,7 @@ func (s *nodeService) HealthCheckNode(ctx context.Context, nodeID string) error 
 		// Health check failed
 		node.ConsecutiveFailures++
 		node.LastHealthCheck = &now
-		
+
 		// After 3 consecutive failures, mark as offline
 		// After 10 consecutive failures, mark as unreachable (will be checked less frequently)
 		if node.ConsecutiveFailures >= 10 {
@@ -198,9 +198,9 @@ func (s *nodeService) HealthCheckNode(ctx context.Context, nodeID string) error 
 		} else if node.ConsecutiveFailures >= 3 {
 			node.Status = "offline"
 		}
-		
-		s.logger.WarnContext(ctx, "node health check failed", 
-			"nodeID", nodeID, 
+
+		s.logger.WarnContext(ctx, "node health check failed",
+			"nodeID", nodeID,
 			"consecutive_failures", node.ConsecutiveFailures,
 			"status", node.Status,
 			"error", err)
@@ -247,18 +247,18 @@ func (s *nodeService) HealthCheckAllNodes(ctx context.Context) error {
 		}
 
 		// Implement exponential backoff based on consecutive failures
-		// 0 failures: check every cycle (30s)
-		// 1-2 failures: check every cycle (30s)
-		// 3-5 failures: check every 2 minutes
-		// 6-9 failures: check every 5 minutes
-		// 10+ failures: check every 15 minutes
+		// 0 failures (online): check every cycle (30s)
+		// 1-2 failures (offline): check every cycle (30s)
+		// 3-5 failures (offline->unreachable at 5): check every 2 minutes
+		// 6-9 failures (unreachable): check every 5 minutes
+		// 10+ failures (unreachable): check every 15 minutes
 		shouldCheck := s.shouldCheckNode(node, now)
-		
+
 		if shouldCheck {
 			// Perform health check on remote nodes (ignore individual errors)
 			_ = s.HealthCheckNode(ctx, node.ID)
 		} else {
-			s.logger.DebugContext(ctx, "skipping health check due to backoff", 
+			s.logger.DebugContext(ctx, "skipping health check due to backoff",
 				"nodeID", node.ID,
 				"nodeName", node.Name,
 				"consecutive_failures", node.ConsecutiveFailures)

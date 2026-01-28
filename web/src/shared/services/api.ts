@@ -567,9 +567,12 @@ export function useSystemStats(refreshInterval: number = 10000, nodeIdsOverride?
         const nodeIdsParam = nodeIds.join(',');
         return apiClient.get<SystemStats[]>('/api/system/stats', { node_ids: nodeIdsParam });
       }
-      // Default: fetch from all nodes
-      return apiClient.get<SystemStats[]>('/api/system/stats', { node_ids: 'all' });
+      // If no nodes selected (empty array during initialization), don't make the request yet
+      // Return empty array to avoid fetching with node_ids=all
+      return Promise.resolve([]);
     },
+    // Don't run the query until we have selected nodes
+    enabled: nodeIds && nodeIds.length > 0,
     refetchInterval: refreshInterval,
     refetchIntervalInBackground: false, // Only poll when tab is visible
   });

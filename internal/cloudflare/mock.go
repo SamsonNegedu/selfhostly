@@ -34,7 +34,7 @@ type RequestRecord struct {
 // NewMockHTTPClient creates a new mock HTTP client
 func NewMockHTTPClient() *MockHTTPClient {
 	return &MockHTTPClient{
-		MockResponses:   make(map[string]MockResponse),
+		MockResponses:    make(map[string]MockResponse),
 		RecordedRequests: make([]RequestRecord, 0),
 	}
 }
@@ -45,10 +45,10 @@ func (m *MockHTTPClient) Do(req *http.Request) (*http.Response, error) {
 	if req.Body != nil {
 		bodyBytes, _ := io.ReadAll(req.Body)
 		bodyStr := string(bodyBytes)
-		
+
 		// Restore the request body for subsequent reads
 		req.Body = io.NopCloser(strings.NewReader(bodyStr))
-		
+
 		record := RequestRecord{
 			Method:  req.Method,
 			URL:     req.URL.String(),
@@ -65,7 +65,7 @@ func (m *MockHTTPClient) Do(req *http.Request) (*http.Response, error) {
 		}
 		m.RecordedRequests = append(m.RecordedRequests, record)
 	}
-	
+
 	// Find a matching mock response
 	if response, exists := m.MockResponses[req.URL.String()]; exists {
 		// Create a new response with the mocked data
@@ -73,22 +73,22 @@ func (m *MockHTTPClient) Do(req *http.Request) (*http.Response, error) {
 		if statusCode == 0 {
 			statusCode = http.StatusOK
 		}
-		
+
 		mockResp := &http.Response{
 			StatusCode: statusCode,
 			Status:     fmt.Sprintf("%d %s", statusCode, http.StatusText(statusCode)),
 			Header:     make(http.Header),
 			Body:       io.NopCloser(strings.NewReader(response.Body)),
 		}
-		
+
 		// Set headers
 		for key, value := range response.Headers {
 			mockResp.Header.Set(key, value)
 		}
-		
+
 		return mockResp, nil
 	}
-	
+
 	// Default response - 404 Not Found
 	return &http.Response{
 		StatusCode: http.StatusNotFound,
@@ -108,13 +108,13 @@ func (m *MockHTTPClient) SetJSONMockResponse(url string, statusCode int, body in
 	if err != nil {
 		return err
 	}
-	
+
 	m.MockResponses[url] = MockResponse{
 		StatusCode: statusCode,
 		Body:       string(jsonBytes),
-		Headers: map[string]string{"Content-Type": "application/json"},
+		Headers:    map[string]string{"Content-Type": "application/json"},
 	}
-	
+
 	return nil
 }
 

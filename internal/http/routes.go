@@ -61,6 +61,9 @@ func (s *Server) setupRoutes() {
 		// Node heartbeat - allows nodes to announce they're online
 		internal.POST("/nodes/:id/heartbeat", s.sendNodeHeartbeat)
 
+		// Node auto-registration - allows secondary nodes to register themselves
+		internal.POST("/nodes/register", s.autoRegisterNode)
+
 		// App management for inter-node communication (local only, no aggregation)
 		internal.GET("/apps", s.listLocalApps)
 		internal.GET("/apps/:id", s.getLocalApp)
