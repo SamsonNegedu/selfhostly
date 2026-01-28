@@ -1,8 +1,10 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -19,6 +21,11 @@ type DB struct {
 	dbPath string
 }
 
+// Tx wraps a database transaction
+type Tx struct {
+	*sql.Tx
+}
+
 // Init initializes the database connection and runs migrations
 func Init(dbPath string) (*DB, error) {
 	// Ensure data directory exists
@@ -27,7 +34,7 @@ func Init(dbPath string) (*DB, error) {
 		return nil, err
 	}
 
-	// Open database connection
+	// Open database connection with foreign keys enabled
 	sqlDB, err := sql.Open("sqlite", dbPath+"?_foreign_keys=on")
 	if err != nil {
 		return nil, err
@@ -35,18 +42,133 @@ func Init(dbPath string) (*DB, error) {
 
 	db := &DB{sqlDB, dbPath}
 
+	// Configure SQLite for reliability and performance
+	if err := db.configureSQLite(); err != nil {
+		sqlDB.Close()
+		return nil, err
+	}
+
 	// Run migrations
 	if err := db.migrate(); err != nil {
 		sqlDB.Close()
 		return nil, err
 	}
 
+	// Run integrity check
+	if err := db.IntegrityCheck(); err != nil {
+		slog.Warn("Database integrity check found issues", "error", err)
+		// Don't fail startup, but log the issue
+	}
+
 	return db, nil
+}
+
+// configureSQLite sets optimal SQLite pragmas for reliability and performance
+func (db *DB) configureSQLite() error {
+	pragmas := []string{
+		// Enable WAL mode for better concurrency and crash recovery
+		// WAL allows readers and writers to operate concurrently
+		"PRAGMA journal_mode=WAL",
+
+		// NORMAL synchronous mode is safe with WAL and faster than FULL
+		// Data is written to disk at critical moments but not after every transaction
+		"PRAGMA synchronous=NORMAL",
+
+		// Wait up to 5 seconds when database is locked instead of failing immediately
+		"PRAGMA busy_timeout=5000",
+
+		// Store temporary tables and indices in memory for performance
+		"PRAGMA temp_store=MEMORY",
+
+		// Use memory-mapped I/O for better performance (128MB)
+		"PRAGMA mmap_size=134217728",
+
+		// Increase cache size to 10MB (negative value = KB)
+		"PRAGMA cache_size=-10000",
+	}
+
+	for _, pragma := range pragmas {
+		if _, err := db.Exec(pragma); err != nil {
+			slog.Error("Failed to set pragma", "pragma", pragma, "error", err)
+			return err
+		}
+	}
+
+	// Verify WAL mode was enabled
+	var journalMode string
+	if err := db.QueryRow("PRAGMA journal_mode").Scan(&journalMode); err != nil {
+		return err
+	}
+
+	slog.Info("SQLite configured", "journal_mode", journalMode, "synchronous", "NORMAL")
+	return nil
+}
+
+// IntegrityCheck runs SQLite's integrity check
+func (db *DB) IntegrityCheck() error {
+	var result string
+	if err := db.QueryRow("PRAGMA integrity_check").Scan(&result); err != nil {
+		return err
+	}
+
+	if result != "ok" {
+		return fmt.Errorf("integrity check failed: %s", result)
+	}
+
+	slog.Debug("Database integrity check passed")
+	return nil
 }
 
 // GetDBPath returns the database file path
 func (db *DB) GetDBPath() string {
 	return db.dbPath
+}
+
+// BeginTx starts a new transaction
+func (db *DB) BeginTx(ctx context.Context) (*Tx, error) {
+	tx, err := db.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &Tx{tx}, nil
+}
+
+// CreateAppTx creates a new app within a transaction
+func (tx *Tx) CreateApp(app *App) error {
+	var errorMessage interface{}
+	if app.ErrorMessage != nil {
+		errorMessage = *app.ErrorMessage
+	} else {
+		errorMessage = nil
+	}
+
+	_, err := tx.Exec(
+		"INSERT INTO apps (id, name, description, compose_content, tunnel_token, tunnel_id, tunnel_domain, public_url, status, error_message, node_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		app.ID, app.Name, app.Description, app.ComposeContent, app.TunnelToken, app.TunnelID, app.TunnelDomain, app.PublicURL, app.Status, errorMessage, app.NodeID, app.CreatedAt, time.Now(),
+	)
+	return err
+}
+
+// UpdateAppTx updates an app within a transaction
+func (tx *Tx) UpdateApp(app *App) error {
+	var errorMessage interface{}
+	if app.ErrorMessage != nil {
+		errorMessage = *app.ErrorMessage
+	} else {
+		errorMessage = nil
+	}
+
+	_, err := tx.Exec(
+		"UPDATE apps SET name = ?, description = ?, compose_content = ?, tunnel_token = ?, tunnel_id = ?, tunnel_domain = ?, public_url = ?, status = ?, error_message = ?, updated_at = ? WHERE id = ?",
+		app.Name, app.Description, app.ComposeContent, app.TunnelToken, app.TunnelID, app.TunnelDomain, app.PublicURL, app.Status, errorMessage, time.Now(), app.ID,
+	)
+	return err
+}
+
+// DeleteAppTx deletes an app within a transaction
+func (tx *Tx) DeleteApp(id string) error {
+	_, err := tx.Exec("DELETE FROM apps WHERE id = ?", id)
+	return err
 }
 
 // migrate runs database migrations

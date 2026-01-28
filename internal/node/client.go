@@ -13,7 +13,8 @@ import (
 
 // Client handles communication with other nodes
 type Client struct {
-	httpClient *http.Client
+	httpClient     *http.Client
+	circuitBreaker *CircuitBreaker
 }
 
 // NewClient creates a new inter-node API client
@@ -22,6 +23,7 @@ func NewClient() *Client {
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		circuitBreaker: NewCircuitBreaker(),
 	}
 }
 
@@ -33,8 +35,15 @@ func (c *Client) setNodeAuthHeaders(req *http.Request, node *db.Node) {
 
 // GetApps fetches all apps from a remote node
 func (c *Client) GetApps(node *db.Node) ([]*db.App, error) {
+	// Check circuit breaker
+	if c.circuitBreaker.IsOpen(node.ID) {
+		stats := c.circuitBreaker.GetStats(node.ID)
+		return nil, &CircuitOpenError{NodeID: node.ID, Stats: stats}
+	}
+
 	req, err := http.NewRequest("GET", node.APIEndpoint+"/api/internal/apps", nil)
 	if err != nil {
+		c.circuitBreaker.RecordFailure(node.ID)
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
@@ -43,17 +52,20 @@ func (c *Client) GetApps(node *db.Node) ([]*db.App, error) {
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		c.circuitBreaker.RecordFailure(node.ID)
 		return nil, fmt.Errorf("failed to fetch apps from node %s: %w", node.Name, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		c.circuitBreaker.RecordFailure(node.ID)
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("node returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var apps []*db.App
 	if err := json.NewDecoder(resp.Body).Decode(&apps); err != nil {
+		c.circuitBreaker.RecordFailure(node.ID)
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -62,6 +74,8 @@ func (c *Client) GetApps(node *db.Node) ([]*db.App, error) {
 		app.NodeID = node.ID
 	}
 
+	// Record success
+	c.circuitBreaker.RecordSuccess(node.ID)
 	return apps, nil
 }
 
@@ -247,8 +261,15 @@ func (c *Client) UpdateAppContainers(node *db.Node, appID string) (*db.App, erro
 
 // GetSystemStats fetches system statistics from a remote node
 func (c *Client) GetSystemStats(node *db.Node) (map[string]interface{}, error) {
+	// Check circuit breaker
+	if c.circuitBreaker.IsOpen(node.ID) {
+		stats := c.circuitBreaker.GetStats(node.ID)
+		return nil, &CircuitOpenError{NodeID: node.ID, Stats: stats}
+	}
+
 	req, err := http.NewRequest("GET", node.APIEndpoint+"/api/internal/system/stats", nil)
 	if err != nil {
+		c.circuitBreaker.RecordFailure(node.ID)
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
@@ -256,27 +277,39 @@ func (c *Client) GetSystemStats(node *db.Node) (map[string]interface{}, error) {
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		c.circuitBreaker.RecordFailure(node.ID)
 		return nil, fmt.Errorf("failed to fetch stats from node %s: %w", node.Name, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		c.circuitBreaker.RecordFailure(node.ID)
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("node returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var stats map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&stats); err != nil {
+		c.circuitBreaker.RecordFailure(node.ID)
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
+	// Record success
+	c.circuitBreaker.RecordSuccess(node.ID)
 	return stats, nil
 }
 
 // HealthCheck performs a health check on a remote node
 func (c *Client) HealthCheck(node *db.Node) error {
+	// Check circuit breaker
+	if c.circuitBreaker.IsOpen(node.ID) {
+		stats := c.circuitBreaker.GetStats(node.ID)
+		return &CircuitOpenError{NodeID: node.ID, Stats: stats}
+	}
+
 	req, err := http.NewRequest("GET", node.APIEndpoint+"/api/health", nil)
 	if err != nil {
+		c.circuitBreaker.RecordFailure(node.ID)
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
@@ -284,14 +317,18 @@ func (c *Client) HealthCheck(node *db.Node) error {
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		c.circuitBreaker.RecordFailure(node.ID)
 		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		c.circuitBreaker.RecordFailure(node.ID)
 		return fmt.Errorf("health check failed with status %d", resp.StatusCode)
 	}
 
+	// Record success
+	c.circuitBreaker.RecordSuccess(node.ID)
 	return nil
 }
 

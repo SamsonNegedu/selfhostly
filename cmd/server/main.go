@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/selfhostly/internal/config"
@@ -140,10 +144,37 @@ func main() {
 	// Create HTTP server
 	server := http.NewServer(cfg, database)
 
-	// Start server
-	slog.Info("Starting server", "address", cfg.ServerAddress)
-	if err := server.Run(); err != nil {
-		slog.Error("Failed to start server", "error", err)
+	// Setup graceful shutdown
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	// Start server in goroutine
+	serverErr := make(chan error, 1)
+	go func() {
+		slog.Info("Starting server", "address", cfg.ServerAddress)
+		if err := server.Run(); err != nil {
+			serverErr <- err
+		}
+	}()
+
+	// Wait for interrupt signal or server error
+	select {
+	case <-ctx.Done():
+		slog.Info("Received shutdown signal, gracefully shutting down...")
+		stop() // Stop signal notifications
+	case err := <-serverErr:
+		slog.Error("Server error", "error", err)
 		os.Exit(1)
 	}
+
+	// Graceful shutdown with 30 second timeout
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		slog.Error("Server forced to shutdown with error", "error", err)
+		os.Exit(1)
+	}
+
+	slog.Info("Server shutdown complete")
 }

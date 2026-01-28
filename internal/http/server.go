@@ -30,6 +30,9 @@ type Server struct {
 	nodeService    domain.NodeService
 	engine         *gin.Engine
 	authService    *auth.Service
+	httpServer     *http.Server
+	shutdownCtx    context.Context
+	shutdownCancel context.CancelFunc
 }
 
 // NewServer creates a new HTTP server
@@ -72,6 +75,9 @@ func NewServer(cfg *config.Config, database *db.DB) *Server {
 	composeService := service.NewComposeService(database, dockerManager, logger)
 	nodeService := service.NewNodeService(database, cfg, logger)
 
+	// Create shutdown context
+	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
+
 	// Initialize server
 	server := &Server{
 		config:         cfg,
@@ -84,6 +90,8 @@ func NewServer(cfg *config.Config, database *db.DB) *Server {
 		nodeService:    nodeService,
 		engine:         engine,
 		authService:    authService,
+		shutdownCtx:    shutdownCtx,
+		shutdownCancel: shutdownCancel,
 	}
 
 	// Setup routes
@@ -169,7 +177,7 @@ func (s *Server) Run() error {
 	s.startBackgroundTasks()
 
 	// Configure server with timeouts
-	server := &http.Server{
+	s.httpServer = &http.Server{
 		Addr:           addr,
 		Handler:        s.engine,
 		ReadTimeout:    readTimeout,
@@ -178,7 +186,39 @@ func (s *Server) Run() error {
 		MaxHeaderBytes: 1 << 20, // 1MB max header size
 	}
 
-	return server.ListenAndServe()
+	return s.httpServer.ListenAndServe()
+}
+
+// Shutdown gracefully shuts down the server
+func (s *Server) Shutdown(ctx context.Context) error {
+	slog.Info("Starting graceful shutdown...")
+
+	// Cancel background tasks
+	if s.shutdownCancel != nil {
+		slog.Info("Stopping background tasks...")
+		s.shutdownCancel()
+	}
+
+	// Shutdown HTTP server (stops accepting new connections, waits for existing requests)
+	if s.httpServer != nil {
+		slog.Info("Shutting down HTTP server...")
+		if err := s.httpServer.Shutdown(ctx); err != nil {
+			slog.Error("Error during HTTP server shutdown", "error", err)
+			return err
+		}
+	}
+
+	// Close database connections
+	if s.database != nil {
+		slog.Info("Closing database connections...")
+		if err := s.database.Close(); err != nil {
+			slog.Error("Error closing database", "error", err)
+			return err
+		}
+	}
+
+	slog.Info("Graceful shutdown completed successfully")
+	return nil
 }
 
 // startBackgroundTasks starts periodic background tasks like health checks
@@ -189,6 +229,8 @@ func (s *Server) startBackgroundTasks() {
 	// If this is a secondary node with a configured primary, attempt auto-registration
 	if !s.config.Node.IsPrimary && s.config.Node.PrimaryNodeURL != "" {
 		go s.attemptAutoRegistration()
+		// After registration, start continuous heartbeats
+		go s.sendPeriodicHeartbeats()
 	}
 	
 	slog.Info("background tasks started", "health_check_interval", "30s")
@@ -206,12 +248,18 @@ func (s *Server) runPeriodicHealthChecks() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		ctx := context.Background()
-		if err := s.nodeService.HealthCheckAllNodes(ctx); err != nil {
-			slog.Warn("periodic health check failed", "error", err)
-		} else {
-			slog.Debug("periodic health check completed successfully")
+	for {
+		select {
+		case <-s.shutdownCtx.Done():
+			slog.Info("Health check routine shutting down...")
+			return
+		case <-ticker.C:
+			ctx := context.Background()
+			if err := s.nodeService.HealthCheckAllNodes(ctx); err != nil {
+				slog.Warn("periodic health check failed", "error", err)
+			} else {
+				slog.Debug("periodic health check completed successfully")
+			}
 		}
 	}
 }
