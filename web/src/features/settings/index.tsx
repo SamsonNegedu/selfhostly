@@ -37,19 +37,18 @@ function Settings() {
 
     return (
         <div>
-            {/* Breadcrumb Navigation */}
-            <div className="mb-6">
-                <AppBreadcrumb
-                    items={[
-                        { label: 'Home', path: '/apps' },
-                        { label: 'Settings', isCurrentPage: true }
-                    ]}
-                />
-            </div>
+            {/* Breadcrumb Navigation - Desktop only */}
+            <AppBreadcrumb
+                items={[
+                    { label: 'Home', path: '/apps' },
+                    { label: 'Settings', isCurrentPage: true }
+                ]}
+                className="mb-4 sm:mb-6"
+            />
 
-            <div className="mb-6">
-                <h1 className="text-3xl font-bold">Settings</h1>
-                <p className="text-muted-foreground mt-2">
+            <div className="mb-4 sm:mb-6">
+                <h1 className="text-2xl sm:text-3xl font-bold">Settings</h1>
+                <p className="text-muted-foreground mt-1 sm:mt-2 text-sm sm:text-base">
                     Configure application settings
                 </p>
             </div>

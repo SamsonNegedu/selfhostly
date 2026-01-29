@@ -149,7 +149,7 @@ function AppList({ filteredApps }: AppListProps) {
 
     return (
         <>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 lg:gap-5">
                 {apps.map((app, index) => {
                     const isDeleting = deletingAppId === app.id
                     const statusColorMap = {
@@ -163,8 +163,7 @@ function AppList({ filteredApps }: AppListProps) {
                     return (
                         <Card
                             key={app.id}
-                            className={`group cursor-pointer card-hover fade-in stagger-${(index % 6) + 1} relative overflow-hidden border-l-4 ${statusColor} ${isDeleting ? 'opacity-60 pointer-events-none' : ''}`}
-                            onClick={() => !isDeleting && navigate(`/apps/${app.id}${app.node_id ? `?node_id=${app.node_id}` : ''}`)}
+                            className={`group relative overflow-hidden border-l-4 ${statusColor} ${isDeleting ? 'opacity-60 pointer-events-none' : 'card-hover cursor-pointer'} fade-in stagger-${(index % 6) + 1} flex flex-col`}
                         >
                             {/* Deletion Overlay */}
                             {isDeleting && (
@@ -179,118 +178,184 @@ function AppList({ filteredApps }: AppListProps) {
                                 </div>
                             )}
 
-                            {/* Card Header */}
-                            <CardHeader className="pb-3">
-                                <div className="flex items-start justify-between gap-3">
-                                    <div className="flex-1 min-w-0">
-                                        <CardTitle className="text-lg font-semibold truncate mb-1">{app.name}</CardTitle>
-                                        <div className="flex items-center gap-2">
-                                            <div
-                                                className={`px-2 py-0.5 rounded-md text-xs font-medium flex items-center gap-1 ${getStatusColor(app.status)}`}
+                            {/* Clickable Card Area */}
+                            <div 
+                                className="flex-1 flex flex-col"
+                                onClick={() => !isDeleting && navigate(`/apps/${app.id}${app.node_id ? `?node_id=${app.node_id}` : ''}`)}
+                            >
+                                {/* Card Header */}
+                                <CardHeader className="pb-3 p-4 sm:p-5 space-y-2">
+                                    {/* Title Row */}
+                                    <div className="flex items-start justify-between gap-2">
+                                        <CardTitle className="text-base sm:text-lg lg:text-xl font-bold truncate flex-1 pr-2">{app.name}</CardTitle>
+                                        
+                                        {/* Desktop Actions Menu */}
+                                        <div onClick={(e) => e.stopPropagation()} className="hidden sm:block">
+                                            <SimpleDropdown
+                                                trigger={
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <MoreVertical className="h-4 w-4" />
+                                                    </Button>
+                                                }
                                             >
-                                                {getStatusIcon(app.status)}
-                                                {app.status}
-                                            </div>
-                                            {app.public_url && (
-                                                <a
-                                                    href={app.public_url}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="text-primary hover:text-primary/80 transition-colors"
-                                                    onClick={(e) => e.stopPropagation()}
-                                                    title="Open app"
-                                                >
-                                                    <ExternalLink className="h-3.5 w-3.5" />
-                                                </a>
-                                            )}
+                                                <div className="py-1 min-w-[160px]">
+                                                    {app.status === 'running' && (
+                                                        <SimpleDropdownItem
+                                                            onClick={() => stopApp.mutate({ id: app.id, nodeId: app.node_id }, {
+                                                                onSuccess: () => toast.success('App stopped', `${app.name} has been stopped successfully`),
+                                                                onError: (error) => toast.error('Failed to stop app', error.message)
+                                                            })}
+                                                        >
+                                                            <div className="flex items-center">
+                                                                <Pause className="h-4 w-4 mr-2" />
+                                                                <span>Stop App</span>
+                                                            </div>
+                                                        </SimpleDropdownItem>
+                                                    )}
+                                                    {app.status === 'stopped' && (
+                                                        <SimpleDropdownItem
+                                                            onClick={() => startApp.mutate({ id: app.id, nodeId: app.node_id }, {
+                                                                onSuccess: () => toast.success('App started', `${app.name} has been started successfully`),
+                                                                onError: (error) => toast.error('Failed to start app', error.message)
+                                                            })}
+                                                        >
+                                                            <div className="flex items-center">
+                                                                <Play className="h-4 w-4 mr-2" />
+                                                                <span>Start App</span>
+                                                            </div>
+                                                        </SimpleDropdownItem>
+                                                    )}
+                                                    <SimpleDropdownItem
+                                                        onClick={() => updateApp.mutate({ id: app.id, nodeId: app.node_id }, {
+                                                            onSuccess: () => toast.success('Update started', `${app.name} update process has begun`),
+                                                            onError: (error) => toast.error('Failed to start update', error.message)
+                                                        })}
+                                                    >
+                                                        <div className="flex items-center">
+                                                            <RefreshCw className="h-4 w-4 mr-2" />
+                                                            <span>Update</span>
+                                                        </div>
+                                                    </SimpleDropdownItem>
+                                                    <div className="border-t my-1"></div>
+                                                    <SimpleDropdownItem
+                                                        onClick={() => handleDelete(app.id, app.name)}
+                                                    >
+                                                        <div className="flex items-center text-destructive">
+                                                            <Trash2 className="h-4 w-4 mr-2" />
+                                                            <span>Delete</span>
+                                                        </div>
+                                                    </SimpleDropdownItem>
+                                                </div>
+                                            </SimpleDropdown>
                                         </div>
                                     </div>
-
-                                    {/* Actions Menu */}
-                                    <div onClick={(e) => e.stopPropagation()}>
-                                        <SimpleDropdown
-                                            trigger={
-                                                <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <MoreVertical className="h-4 w-4" />
-                                                </Button>
-                                            }
+                                    
+                                    {/* Status and Quick Actions Row */}
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <div
+                                            className={`px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1.5 ${getStatusColor(app.status)}`}
                                         >
-                                            <div className="py-1 min-w-[160px]">
-                                                {app.status === 'running' && (
-                                                    <SimpleDropdownItem
-                                                        onClick={() => stopApp.mutate({ id: app.id, nodeId: app.node_id }, {
-                                                            onSuccess: () => toast.success('App stopped', `${app.name} has been stopped successfully`),
-                                                            onError: (error) => toast.error('Failed to stop app', error.message)
-                                                        })}
-                                                    >
-                                                        <div className="flex items-center">
-                                                            <Pause className="h-4 w-4 mr-2" />
-                                                            <span>Stop App</span>
-                                                        </div>
-                                                    </SimpleDropdownItem>
-                                                )}
-                                                {app.status === 'stopped' && (
-                                                    <SimpleDropdownItem
-                                                        onClick={() => startApp.mutate({ id: app.id, nodeId: app.node_id }, {
-                                                            onSuccess: () => toast.success('App started', `${app.name} has been started successfully`),
-                                                            onError: (error) => toast.error('Failed to start app', error.message)
-                                                        })}
-                                                    >
-                                                        <div className="flex items-center">
-                                                            <Play className="h-4 w-4 mr-2" />
-                                                            <span>Start App</span>
-                                                        </div>
-                                                    </SimpleDropdownItem>
-                                                )}
-                                                <SimpleDropdownItem
-                                                    onClick={() => updateApp.mutate({ id: app.id, nodeId: app.node_id }, {
-                                                        onSuccess: () => toast.success('Update started', `${app.name} update process has begun`),
-                                                        onError: (error) => toast.error('Failed to start update', error.message)
-                                                    })}
-                                                >
-                                                    <div className="flex items-center">
-                                                        <RefreshCw className="h-4 w-4 mr-2" />
-                                                        <span>Update</span>
-                                                    </div>
-                                                </SimpleDropdownItem>
-                                                <div className="border-t my-1"></div>
-                                                <SimpleDropdownItem
-                                                    onClick={() => handleDelete(app.id, app.name)}
-                                                >
-                                                    <div className="flex items-center text-destructive">
-                                                        <Trash2 className="h-4 w-4 mr-2" />
-                                                        <span>Delete</span>
-                                                    </div>
-                                                </SimpleDropdownItem>
-                                            </div>
-                                        </SimpleDropdown>
+                                            {getStatusIcon(app.status)}
+                                            {app.status}
+                                        </div>
+                                        {app.public_url && (
+                                            <a
+                                                href={app.public_url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                                                onClick={(e) => e.stopPropagation()}
+                                                title="Open app"
+                                            >
+                                                <ExternalLink className="h-3.5 w-3.5" />
+                                                <span className="hidden sm:inline">Open</span>
+                                            </a>
+                                        )}
+                                    </div>
+                                </CardHeader>
+
+                                {/* Card Content */}
+                                <CardContent className="pt-0 pb-3 p-4 sm:p-5 sm:pt-0 flex-1">
+                                    {app.description && (
+                                        <p className="text-xs sm:text-sm text-muted-foreground line-clamp-2 mb-3">
+                                            {app.description}
+                                        </p>
+                                    )}
+
+                                    {app.status === 'error' && app.error_message && (
+                                        <div className="text-xs text-red-600 dark:text-red-400 p-2.5 bg-red-50 dark:bg-red-900/20 rounded border-l-2 border-red-500">
+                                            <span className="font-semibold">Error:</span> {app.error_message}
+                                        </div>
+                                    )}
+                                </CardContent>
+
+                                {/* Card Footer */}
+                                <div className="px-4 sm:px-5 py-2.5 bg-muted/30 border-t">
+                                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                                        <span className="flex items-center gap-1.5">
+                                            <Clock className="h-3.5 w-3.5 flex-shrink-0" />
+                                            <span className="truncate">{new Date(app.updated_at).toLocaleDateString()}</span>
+                                        </span>
+                                        <span className="flex items-center gap-1 text-primary font-medium">
+                                            <span className="hidden sm:inline">Details</span>
+                                            <TrendingUp className="h-3.5 w-3.5" />
+                                        </span>
                                     </div>
                                 </div>
-                            </CardHeader>
+                            </div>
 
-                            {/* Card Content */}
-                            <CardContent className="pt-0 pb-4">
-                                <p className="text-sm text-muted-foreground mb-3 line-clamp-2 min-h-[2.5rem]">
-                                    {app.description || 'No description provided'}
-                                </p>
-
-                                {app.status === 'error' && app.error_message && (
-                                    <div className="text-xs text-red-600 dark:text-red-400 mb-3 p-2 bg-red-50 dark:bg-red-900/20 rounded border-l-2 border-red-500">
-                                        <span className="font-medium">Error:</span> {app.error_message}
-                                    </div>
-                                )}
-                            </CardContent>
-
-                            {/* Card Footer */}
-                            <div className="px-6 py-3 bg-muted/30 border-t flex items-center justify-between text-xs text-muted-foreground">
-                                <span className="flex items-center gap-1.5">
-                                    <Clock className="h-3.5 w-3.5" />
-                                    Updated {new Date(app.updated_at).toLocaleDateString()}
-                                </span>
-                                <span className="flex items-center gap-1 text-primary">
-                                    <TrendingUp className="h-3.5 w-3.5" />
-                                    View Details
-                                </span>
+                            {/* Mobile Action Bar - Outside clickable area */}
+                            <div className="sm:hidden border-t bg-muted/50 px-3 py-2 flex items-center justify-between gap-2" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex items-center gap-1">
+                                    {app.status === 'running' && (
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => stopApp.mutate({ id: app.id, nodeId: app.node_id }, {
+                                                onSuccess: () => toast.success('App stopped', `${app.name} has been stopped successfully`),
+                                                onError: (error) => toast.error('Failed to stop app', error.message)
+                                            })}
+                                            className="h-8 px-3 text-xs"
+                                        >
+                                            <Pause className="h-3.5 w-3.5 mr-1.5" />
+                                            Stop
+                                        </Button>
+                                    )}
+                                    {app.status === 'stopped' && (
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => startApp.mutate({ id: app.id, nodeId: app.node_id }, {
+                                                onSuccess: () => toast.success('App started', `${app.name} has been started successfully`),
+                                                onError: (error) => toast.error('Failed to start app', error.message)
+                                            })}
+                                            className="h-8 px-3 text-xs"
+                                        >
+                                            <Play className="h-3.5 w-3.5 mr-1.5" />
+                                            Start
+                                        </Button>
+                                    )}
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => updateApp.mutate({ id: app.id, nodeId: app.node_id }, {
+                                            onSuccess: () => toast.success('Update started', `${app.name} update process has begun`),
+                                            onError: (error) => toast.error('Failed to start update', error.message)
+                                        })}
+                                        className="h-8 px-3 text-xs"
+                                    >
+                                        <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                                        Update
+                                    </Button>
+                                </div>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleDelete(app.id, app.name)}
+                                    className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                </Button>
                             </div>
                         </Card>
                     )

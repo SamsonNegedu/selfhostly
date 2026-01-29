@@ -153,7 +153,7 @@ function AppDetails() {
     ]
 
     return (
-        <div className="space-y-6 fade-in relative">
+        <div className="space-y-4 sm:space-y-6 fade-in relative">
             {/* Deletion Overlay */}
             {deleteApp.isPending && (
                 <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center">
@@ -171,29 +171,28 @@ function AppDetails() {
                 </div>
             )}
 
-            {/* Breadcrumb Navigation */}
-            <div>
-                <AppBreadcrumb
-                    items={[
-                        { label: 'Home', path: '/apps' },
-                        { label: 'Apps', path: '/apps' },
-                        { label: app.name, isCurrentPage: true }
-                    ]}
-                />
-            </div>
+            {/* Breadcrumb Navigation - Desktop only */}
+            <AppBreadcrumb
+                items={[
+                    { label: 'Home', path: '/apps' },
+                    { label: 'Apps', path: '/apps' },
+                    { label: app.name, isCurrentPage: true }
+                ]}
+            />
 
             <Card className="overflow-hidden">
-                <CardHeader className="pb-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                        <div className="flex items-center gap-3">
-                            <CardTitle className="text-2xl">{app.name}</CardTitle>
-                            <div
-                                className={`px-3 py-1 rounded-full text-sm font-medium flex items-center gap-2 ${getStatusColor(app.status)}`}
-                            >
-                                {getStatusIcon(app.status)}
-                                {app.status}
+                <CardHeader className="pb-3 sm:pb-4 p-4 sm:p-6">
+                    <div className="flex flex-col gap-3 sm:gap-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+                            <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                                <CardTitle className="text-xl sm:text-2xl">{app.name}</CardTitle>
+                                <div
+                                    className={`px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-xs sm:text-sm font-medium flex items-center gap-1.5 sm:gap-2 ${getStatusColor(app.status)}`}
+                                >
+                                    {getStatusIcon(app.status)}
+                                    {app.status}
+                                </div>
                             </div>
-                        </div>
                         <AppActions
                             appStatus={app.status}
                             isStartPending={startApp.isPending}
@@ -233,30 +232,33 @@ function AppDetails() {
                         />
                     </div>
 
-                    {/* Enhanced Tab Navigation */}
-                    <div className="flex overflow-x-auto border-b mt-6 -mx-6 px-6 scrollbar-hide">
-                        {tabs.map((tab) => {
-                            const Icon = tab.icon
-                            return (
-                                <button
-                                    key={tab.id}
-                                    className={`flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors interactive-element ${activeTab === tab.id
-                                        ? 'border-primary text-primary'
-                                        : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted'
-                                        }`}
-                                    onClick={() => setActiveTab(tab.id)}
-                                >
-                                    <Icon className="h-4 w-4" />
-                                    {tab.label}
-                                </button>
-                            )
-                        })}
+                        {/* Enhanced Tab Navigation */}
+                        <div className="flex overflow-x-auto border-b -mx-4 sm:-mx-6 px-4 sm:px-6 scrollbar-hide">
+                            {tabs.map((tab) => {
+                                const Icon = tab.icon
+                                return (
+                                    <button
+                                        key={tab.id}
+                                        className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-sm font-medium whitespace-nowrap border-b-2 transition-colors interactive-element ${activeTab === tab.id
+                                            ? 'border-primary text-primary'
+                                            : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted'
+                                            }`}
+                                        onClick={() => setActiveTab(tab.id)}
+                                    >
+                                        <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                                        <span className="hidden xs:inline">{tab.label}</span>
+                                    </button>
+                                )
+                            })}
+                        </div>
                     </div>
                 </CardHeader>
-                <CardContent className="pt-6">
-                    <p className="text-sm text-muted-foreground mb-4">
-                        {app.description || 'No description'}
-                    </p>
+                <CardContent className="pt-4 sm:pt-6 p-4 sm:p-6">
+                    {app.description && (
+                        <p className="text-xs sm:text-sm text-muted-foreground mb-3 sm:mb-4">
+                            {app.description}
+                        </p>
+                    )}
                     {app.public_url && (
                         <div className="mb-4">
                             <a

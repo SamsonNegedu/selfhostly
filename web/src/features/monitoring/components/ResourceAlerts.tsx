@@ -75,7 +75,7 @@ function ResourceAlerts({ stats }: ResourceAlertsProps) {
       {alerts.map((alert, index) => (
         <div
           key={index}
-          className={`flex items-start gap-3 p-4 rounded-lg border ${alert.type === 'critical'
+          className={`flex items-start gap-2 sm:gap-3 p-3 sm:p-4 rounded-lg border ${alert.type === 'critical'
               ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-900/50'
               : 'bg-yellow-50 dark:bg-yellow-900/10 border-yellow-200 dark:border-yellow-900/50'
             }`}
@@ -85,9 +85,9 @@ function ResourceAlerts({ stats }: ResourceAlertsProps) {
           ) : (
             <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" />
           )}
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <p
-              className={`text-sm font-medium ${alert.type === 'critical'
+              className={`text-xs sm:text-sm font-medium break-words ${alert.type === 'critical'
                   ? 'text-red-900 dark:text-red-200'
                   : 'text-yellow-900 dark:text-yellow-200'
                 }`}

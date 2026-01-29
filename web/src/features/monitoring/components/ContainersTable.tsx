@@ -102,42 +102,46 @@ function ContainersTable({ containers }: ContainersTableProps) {
   }
 
   return (
-    <div className="space-y-4">
-      {/* Sort Controls */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-sm text-muted-foreground mr-2">Sort by:</span>
-        <Button
-          variant={sortField === 'cpu' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => toggleSort('cpu')}
-          className="gap-1.5"
-        >
-          CPU {getSortIcon('cpu')}
-        </Button>
-        <Button
-          variant={sortField === 'memory' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => toggleSort('memory')}
-          className="gap-1.5"
-        >
-          Memory {getSortIcon('memory')}
-        </Button>
-        <Button
-          variant={sortField === 'name' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => toggleSort('name')}
-          className="gap-1.5"
-        >
-          Name {getSortIcon('name')}
-        </Button>
-        <Button
-          variant={sortField === 'app' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => toggleSort('app')}
-          className="gap-1.5"
-        >
-          App {getSortIcon('app')}
-        </Button>
+    <div className="space-y-3 sm:space-y-4">
+      {/* Sort Controls - Horizontal scroll on mobile */}
+      <div className="overflow-x-auto scrollbar-hide -mx-3 sm:mx-0 px-3 sm:px-0 pb-1">
+        <div className="flex items-center gap-2 w-fit">
+          <span className="text-xs text-muted-foreground whitespace-nowrap">Sort by:</span>
+          <div className="flex items-center gap-1.5 bg-muted/50 rounded-lg p-1">
+            <Button
+              variant={sortField === 'cpu' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => toggleSort('cpu')}
+              className="gap-1 text-xs h-8 px-3 whitespace-nowrap"
+            >
+              CPU {getSortIcon('cpu')}
+            </Button>
+            <Button
+              variant={sortField === 'memory' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => toggleSort('memory')}
+              className="gap-1 text-xs h-8 px-3 whitespace-nowrap"
+            >
+              Memory {getSortIcon('memory')}
+            </Button>
+            <Button
+              variant={sortField === 'name' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => toggleSort('name')}
+              className="gap-1 text-xs h-8 px-3 whitespace-nowrap"
+            >
+              Name {getSortIcon('name')}
+            </Button>
+            <Button
+              variant={sortField === 'app' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => toggleSort('app')}
+              className="gap-1 text-xs h-8 px-3 whitespace-nowrap"
+            >
+              App {getSortIcon('app')}
+            </Button>
+          </div>
+        </div>
       </div>
 
       {/* Containers */}
@@ -160,9 +164,9 @@ function ContainersTable({ containers }: ContainersTableProps) {
 
           return (
             <Card key={container.id} className={`overflow-hidden ${borderClass}`}>
-              <CardContent className="pt-6">
+              <CardContent className="pt-4 sm:pt-6 p-4 sm:p-6">
                 {/* Header Row */}
-                <div className="flex items-start justify-between mb-4">
+                <div className="flex items-start justify-between mb-3 sm:mb-4">
                   <div className="flex-1 min-w-0">
                     {/* Container Name and State */}
                     <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -212,7 +216,7 @@ function ContainersTable({ containers }: ContainersTableProps) {
 
                 {/* Stats Grid - Only show for running containers */}
                 {container.state === 'running' && (
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
                     {/* CPU */}
                     <div>
                       <p className="text-xs text-muted-foreground mb-1">CPU</p>

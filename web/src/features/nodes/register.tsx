@@ -30,30 +30,30 @@ export function RegisterNodePage() {
   const isValid = formData.id && formData.name && formData.api_endpoint && formData.api_key;
 
   return (
-    <div className="fade-in space-y-6">
+    <div className="fade-in space-y-4 sm:space-y-6">
       {/* Header */}
       <div>
         <Button
           variant="ghost"
           onClick={() => navigate('/nodes')}
-          className="mb-4"
+          className="mb-3 sm:mb-4"
         >
           <ArrowLeft className="h-4 w-4 mr-2" />
           Back to Nodes
         </Button>
-        <h1 className="text-3xl font-bold">Register New Node</h1>
-        <p className="text-muted-foreground mt-2">
+        <h1 className="text-2xl sm:text-3xl font-bold">Register New Node</h1>
+        <p className="text-muted-foreground mt-1 sm:mt-2 text-sm sm:text-base">
           Add a secondary node to your cluster for distributed app deployment
         </p>
       </div>
 
       {/* Instructions */}
-      <Card className="p-6 bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800">
-        <div className="flex gap-3">
+      <Card className="p-4 sm:p-6 bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800">
+        <div className="flex gap-2 sm:gap-3">
           <HelpCircle className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
-          <div>
-            <h3 className="font-medium mb-2">Before registering a node</h3>
-            <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
+          <div className="flex-1 min-w-0">
+            <h3 className="font-medium mb-2 text-sm sm:text-base">Before registering a node</h3>
+            <ol className="text-xs sm:text-sm text-muted-foreground space-y-1 list-decimal list-inside">
               <li>Install Selfhostly on the secondary machine</li>
               <li>Configure with <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">NODE_IS_PRIMARY=false</code></li>
               <li>Set <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">PRIMARY_NODE_URL</code> to this node's URL</li>
@@ -68,8 +68,8 @@ export function RegisterNodePage() {
       </Card>
 
       {/* Registration Form */}
-      <Card className="p-6">
-        <form onSubmit={handleSubmit} className="space-y-6">
+      <Card className="p-4 sm:p-6">
+        <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
           <div>
             <label className="block text-sm font-medium mb-2">
               Node ID <span className="text-red-500">*</span>
@@ -142,17 +142,19 @@ export function RegisterNodePage() {
           )}
 
           {/* Actions */}
-          <div className="flex gap-3 justify-end pt-4">
+          <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-3 justify-end pt-4">
             <Button
               type="button"
               variant="ghost"
               onClick={() => navigate('/nodes')}
+              className="w-full sm:w-auto"
             >
               Cancel
             </Button>
             <Button
               type="submit"
               disabled={!isValid || registerMutation.isPending}
+              className="w-full sm:w-auto"
             >
               {registerMutation.isPending ? 'Registering...' : 'Register Node'}
             </Button>

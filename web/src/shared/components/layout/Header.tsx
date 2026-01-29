@@ -23,14 +23,14 @@ function Header({ onMenuToggle }: HeaderProps) {
     }
 
     return (
-        <header className="border-b bg-background sticky top-0 z-50">
-            <div className="px-4 py-4 flex items-center justify-between">
+        <header className="border-b bg-background flex-shrink-0 z-50">
+            <div className="px-3 sm:px-4 py-3 sm:py-4 flex items-center justify-between">
                 {/* Mobile hamburger menu */}
                 <Button
                     variant="ghost"
                     size="icon"
                     onClick={onMenuToggle}
-                    className="md:hidden"
+                    className="md:hidden h-9 w-9"
                     aria-label="Open menu"
                 >
                     <Menu className="h-5 w-5" />
@@ -39,7 +39,7 @@ function Header({ onMenuToggle }: HeaderProps) {
                 {/* Logo */}
                 <Link to="/apps" className="flex items-center space-x-2 hover:opacity-80 transition-opacity">
                     <Server className="h-6 w-6 text-primary" />
-                    <span className="font-bold text-xl">Selfhostly</span>
+                    <span className="font-bold text-lg sm:text-xl">Selfhostly</span>
                 </Link>
 
                 {/* User Menu */}

@@ -59,7 +59,7 @@ function ContainerActions({ containerId, containerName, containerState, appName,
   const isStopped = containerState === 'stopped';
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1 sm:gap-2">
       {/* Restart/Start Button */}
       <Button
         variant="outline"
@@ -67,6 +67,7 @@ function ContainerActions({ containerId, containerName, containerState, appName,
         onClick={() => setRestartDialogOpen(true)}
         disabled={restartMutation.isPending}
         title={isStopped ? 'Start container' : 'Restart container'}
+        className="h-9 w-9 p-0"
       >
         <RotateCw className={`h-4 w-4 ${restartMutation.isPending ? 'animate-spin' : ''}`} />
       </Button>
@@ -78,6 +79,7 @@ function ContainerActions({ containerId, containerName, containerState, appName,
         onClick={() => setStopDialogOpen(true)}
         disabled={stopMutation.isPending || !isRunning}
         title="Stop container"
+        className="h-9 w-9 p-0"
       >
         <Square className="h-4 w-4" />
       </Button>
@@ -90,7 +92,7 @@ function ContainerActions({ containerId, containerName, containerState, appName,
           onClick={() => setDeleteDialogOpen(true)}
           disabled={deleteMutation.isPending}
           title="Delete container (not managed by system)"
-          className="text-destructive hover:text-destructive"
+          className="text-destructive hover:text-destructive h-9 w-9 p-0"
         >
           <Trash2 className="h-4 w-4" />
         </Button>

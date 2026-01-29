@@ -35,7 +35,7 @@ export function AppActions({
     const isStopped = appStatus === 'stopped'
 
     return (
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap sm:flex-nowrap">
             {/* Refresh Button */}
             {onRefresh && (
                 <TooltipProvider>
@@ -45,7 +45,7 @@ export function AppActions({
                             size="icon"
                             onClick={onRefresh}
                             disabled={isRefreshing}
-                            className="h-9 w-9 text-muted-foreground hover:text-foreground"
+                            className="h-8 w-8 sm:h-9 sm:w-9 text-muted-foreground hover:text-foreground"
                         >
                             <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
                         </Button>
@@ -68,14 +68,14 @@ export function AppActions({
                             size="sm"
                             onClick={onStart}
                             disabled={isAnyActionPending}
-                            className="h-9 px-3 bg-green-600 hover:bg-green-700 text-white gap-1.5"
+                            className="h-9 px-2 sm:px-3 bg-green-600 hover:bg-green-700 text-white gap-1 sm:gap-1.5 text-xs sm:text-sm"
                         >
                             {isStartPending ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
                             ) : (
                                 <Play className="h-4 w-4" />
                             )}
-                            <span className="hidden sm:inline">Start</span>
+                            <span className="hidden xs:inline">Start</span>
                         </Button>
                     </TooltipTrigger>
                     <TooltipContent>
@@ -93,14 +93,14 @@ export function AppActions({
                             size="sm"
                             onClick={onStop}
                             disabled={isAnyActionPending}
-                            className="h-9 px-3 gap-1.5"
+                            className="h-9 px-2 sm:px-3 gap-1 sm:gap-1.5 text-xs sm:text-sm"
                         >
                             {isStopPending ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
                             ) : (
                                 <Square className="h-4 w-4" />
                             )}
-                            <span className="hidden sm:inline">Stop</span>
+                            <span className="hidden xs:inline">Stop</span>
                         </Button>
                     </TooltipTrigger>
                     <TooltipContent>
@@ -117,14 +117,14 @@ export function AppActions({
                         size="sm"
                         onClick={onUpdate}
                         disabled={isAnyActionPending}
-                        className="h-9 px-3 gap-1.5"
+                        className="h-9 px-2 sm:px-3 gap-1 sm:gap-1.5 text-xs sm:text-sm"
                     >
                         {isUpdatePending ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
                             <RotateCcw className="h-4 w-4" />
                         )}
-                        <span className="hidden sm:inline">Update</span>
+                        <span className="hidden xs:inline">Update</span>
                     </Button>
                 </TooltipTrigger>
                 <TooltipContent>

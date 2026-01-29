@@ -43,9 +43,123 @@ interface TunnelTableProps {
 
 function TunnelTable({ tunnels, apps, onSync, onDelete, onCopy, isSyncing, isDeleting }: TunnelTableProps) {
     return (
-        <Card className="border-2">
-            <div className="overflow-x-auto">
-                <table className="w-full">
+        <>
+            {/* Mobile Card View */}
+            <div className="block lg:hidden space-y-3">
+                {tunnels.map((tunnel) => (
+                    <Card key={tunnel.id} className="border-2">
+                        <CardContent className="p-4">
+                            <div className="space-y-3">
+                                {/* Header */}
+                                <div className="flex items-start justify-between gap-2">
+                                    <div className="flex-1 min-w-0">
+                                        <div className="font-medium text-sm mb-1 truncate">{tunnel.tunnel_name}</div>
+                                        {tunnel.is_active ? (
+                                            <Badge variant="default" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 border-green-200 text-xs">
+                                                <CheckCircle2 className="h-3 w-3 mr-1" />
+                                                Active
+                                            </Badge>
+                                        ) : (
+                                            <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 border-yellow-200 text-xs">
+                                                <Clock className="h-3 w-3 mr-1" />
+                                                Inactive
+                                            </Badge>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Details */}
+                                <div className="space-y-2 text-xs">
+                                    {tunnel.public_url && (
+                                        <div>
+                                            <span className="text-muted-foreground block mb-1">Public URL:</span>
+                                            <div className="flex items-center gap-2">
+                                                <a
+                                                    href={tunnel.public_url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 truncate flex-1 min-w-0"
+                                                >
+                                                    <ExternalLink className="h-3.5 w-3.5 flex-shrink-0" />
+                                                    <span className="truncate">{new URL(tunnel.public_url).hostname}</span>
+                                                </a>
+                                                <button onClick={() => onCopy(tunnel.public_url, 'Public URL')} className="p-1">
+                                                    <Copy className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                    <div>
+                                        <span className="text-muted-foreground block mb-1">Tunnel ID:</span>
+                                        <div className="flex items-center gap-2">
+                                            <code className="text-xs font-mono text-muted-foreground">{tunnel.tunnel_id.substring(0, 12)}...</code>
+                                            <button onClick={() => onCopy(tunnel.tunnel_id, 'Tunnel ID')} className="p-1">
+                                                <Copy className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <span className="text-muted-foreground">Created: </span>
+                                        <span>{new Date(tunnel.created_at).toLocaleDateString()}</span>
+                                    </div>
+                                </div>
+
+                                {/* Error Details */}
+                                {tunnel.error_details && (
+                                    <div className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1 p-2 bg-red-50 dark:bg-red-950 rounded">
+                                        <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
+                                        <span>{tunnel.error_details}</span>
+                                    </div>
+                                )}
+
+                                {/* Actions */}
+                                <div className="flex items-center gap-2 pt-2 border-t">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => onSync(tunnel.app_id, tunnel.tunnel_name)}
+                                        disabled={isSyncing}
+                                        className="flex-1 h-9 text-xs"
+                                        title="Sync tunnel"
+                                    >
+                                        <RefreshCw className={`h-4 w-4 mr-1.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                                        Sync
+                                    </Button>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => {
+                                            const app = apps.find(a => a.id === tunnel.app_id)
+                                            const nodeIdParam = app?.node_id ? `?node_id=${app.node_id}` : ''
+                                            window.location.href = `/apps/${tunnel.app_id}${nodeIdParam}`
+                                        }}
+                                        className="flex-1 h-9 text-xs"
+                                        title="View app"
+                                    >
+                                        <Eye className="h-4 w-4 mr-1.5" />
+                                        View
+                                    </Button>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => onDelete(tunnel.app_id, tunnel.tunnel_name)}
+                                        disabled={isDeleting}
+                                        className="h-9 w-9 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950"
+                                        title="Delete tunnel"
+                                    >
+                                        <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                ))}
+            </div>
+
+            {/* Desktop Table View */}
+            <Card className="border-2 hidden lg:block">
+                <div className="overflow-x-auto">
+                    <table className="w-full">
                     <thead className="border-b-2 bg-muted/50">
                         <tr>
                             <th className="text-left p-4 text-sm font-semibold">Status</th>
@@ -163,6 +277,7 @@ function TunnelTable({ tunnels, apps, onSync, onDelete, onCopy, isSyncing, isDel
                 </table>
             </div>
         </Card>
+        </>
     )
 }
 
@@ -370,12 +485,12 @@ function CloudflareManagement() {
     const activeCount = tunnels.filter(t => t.is_active).length
 
     return (
-        <div className="space-y-6 fade-in">
+        <div className="space-y-4 sm:space-y-6 fade-in">
             {/* Header */}
-            <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center justify-between flex-wrap gap-3 sm:gap-4">
                 <div className="space-y-1">
-                    <h1 className="flex items-center gap-3 text-3xl font-bold">
-                        <div className="p-2 rounded-lg bg-primary/10">
+                    <h1 className="flex items-center gap-2 sm:gap-3 text-2xl sm:text-3xl font-bold">
+                        <div className="p-1.5 sm:p-2 rounded-lg bg-primary/10">
                             <Activity className="h-6 w-6 text-primary" />
                         </div>
                         Cloudflare Tunnels
@@ -385,23 +500,23 @@ function CloudflareManagement() {
                     onClick={() => refetch()}
                     variant="outline"
                     size="sm"
-                    className="button-press"
+                    className="button-press h-9 text-xs sm:text-sm"
                 >
-                    <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+                    <RefreshCw className={`h-4 w-4 mr-1.5 sm:mr-2 ${isLoading ? 'animate-spin' : ''}`} />
                     Refresh
                 </Button>
             </div>
 
-            <div className="space-y-6">
+            <div className="space-y-4 sm:space-y-6">
                 {/* Info Banner */}
                 {tunnels.length > 0 && (
-                    <div className="flex items-start gap-3 p-4 rounded-lg bg-muted/50 border-2">
+                    <div className="flex items-start gap-2 sm:gap-3 p-3 sm:p-4 rounded-lg bg-muted/50 border-2">
                         <Activity className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
                         <div className="flex-1">
-                            <p className="text-sm font-medium mb-1">
+                            <p className="text-xs sm:text-sm font-medium mb-1">
                                 Cloudflare Tunnel Status
                             </p>
-                            <p className="text-sm text-muted-foreground">
+                            <p className="text-xs sm:text-sm text-muted-foreground">
                                 {activeCount > 0
                                     ? `${activeCount} tunnel${activeCount !== 1 ? 's' : ''} actively routing traffic to your applications.`
                                     : 'No active tunnels. Start your applications to establish secure connections.'
@@ -411,36 +526,16 @@ function CloudflareManagement() {
                     </div>
                 )}
 
-                {/* Search and Filters */}
-                <div className="flex flex-col sm:flex-row gap-3">
-                    <div className="relative flex-1">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                        <input
-                            type="text"
-                            placeholder="Search tunnels by name, ID, or URL..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="flex h-11 w-full rounded-lg border-2 border-input bg-background px-3 py-2 pl-10 pr-10 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-primary transition-colors"
-                        />
-                        {searchQuery && (
-                            <button
-                                onClick={() => setSearchQuery('')}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                                aria-label="Clear search"
-                            >
-                                <span className="text-xl font-light">×</span>
-                            </button>
-                        )}
-                    </div>
-
-                    <div className="flex items-center gap-2">
+                {/* Filters Row - Status and Sort */}
+                <div className="overflow-x-auto scrollbar-hide -mx-3 sm:mx-0 px-3 sm:px-0 pb-1">
+                    <div className="flex items-center gap-2 w-fit">
                         {/* Status Filter */}
-                        <div className="flex items-center gap-1 border-2 rounded-lg p-1 bg-muted/50">
+                        <div className="flex items-center gap-1 rounded-lg p-1 bg-muted/50 flex-shrink-0">
                             <Button
                                 variant={statusFilter === 'all' ? 'default' : 'ghost'}
                                 size="sm"
                                 onClick={() => setStatusFilter('all')}
-                                className="h-8 px-3"
+                                className="h-8 px-3 text-xs whitespace-nowrap"
                             >
                                 All
                             </Button>
@@ -448,7 +543,7 @@ function CloudflareManagement() {
                                 variant={statusFilter === 'active' ? 'default' : 'ghost'}
                                 size="sm"
                                 onClick={() => setStatusFilter('active')}
-                                className="h-8 px-3"
+                                className="h-8 px-3 text-xs whitespace-nowrap"
                             >
                                 <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
                                 Active
@@ -457,7 +552,7 @@ function CloudflareManagement() {
                                 variant={statusFilter === 'inactive' ? 'default' : 'ghost'}
                                 size="sm"
                                 onClick={() => setStatusFilter('inactive')}
-                                className="h-8 px-3"
+                                className="h-8 px-3 text-xs whitespace-nowrap"
                             >
                                 <Clock className="h-3.5 w-3.5 mr-1" />
                                 Inactive
@@ -466,24 +561,45 @@ function CloudflareManagement() {
                                 variant={statusFilter === 'error' ? 'default' : 'ghost'}
                                 size="sm"
                                 onClick={() => setStatusFilter('error')}
-                                className="h-8 px-3"
+                                className="h-8 px-3 text-xs whitespace-nowrap"
                             >
                                 <AlertCircle className="h-3.5 w-3.5 mr-1" />
                                 Error
                             </Button>
                         </div>
 
-                        {/* Sort */}
+                        {/* Sort Button */}
                         <Button
                             variant="outline"
                             size="sm"
                             onClick={() => toggleSort('name')}
-                            className="h-9 border-2"
+                            className="h-8 px-3 text-xs whitespace-nowrap flex-shrink-0"
                         >
-                            <ArrowUpDown className="h-4 w-4 mr-2" />
+                            <ArrowUpDown className="h-4 w-4 mr-1.5" />
                             Sort
                         </Button>
                     </div>
+                </div>
+
+                {/* Search Bar - Full width */}
+                <div className="relative w-full">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                    <input
+                        type="text"
+                        placeholder="Search tunnels..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="flex h-10 w-full rounded-lg border-2 border-input bg-background px-3 py-2 pl-10 pr-10 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-primary transition-colors"
+                    />
+                    {searchQuery && (
+                        <button
+                            onClick={() => setSearchQuery('')}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                            aria-label="Clear search"
+                        >
+                            <span className="text-xl font-light">×</span>
+                        </button>
+                    )}
                 </div>
 
                 {/* Empty State */}
@@ -536,9 +652,9 @@ function CloudflareManagement() {
 
                 {/* Tunnels List */}
                 {processedTunnels.length > 0 && (
-                    <div className="space-y-4">
+                    <div className="space-y-3 sm:space-y-4">
                         <div className="flex items-center justify-between">
-                            <p className="text-sm font-medium text-muted-foreground">
+                            <p className="text-xs sm:text-sm font-medium text-muted-foreground">
                                 Showing <span className="text-foreground font-semibold">{processedTunnels.length}</span> of <span className="text-foreground font-semibold">{tunnels.length}</span> tunnel{tunnels.length !== 1 ? 's' : ''}
                             </p>
                         </div>

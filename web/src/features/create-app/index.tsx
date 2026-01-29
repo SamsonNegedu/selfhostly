@@ -177,20 +177,19 @@ function CreateApp() {
 
     return (
         <div className="fade-in">
-            {/* Breadcrumb Navigation */}
-            <div className="mb-6">
-                <AppBreadcrumb
-                    items={[
-                        { label: 'Home', path: '/apps' },
-                        { label: 'Apps', path: '/apps' },
-                        { label: 'New App', isCurrentPage: true }
-                    ]}
-                />
-            </div>
+            {/* Breadcrumb Navigation - Desktop only */}
+            <AppBreadcrumb
+                items={[
+                    { label: 'Home', path: '/apps' },
+                    { label: 'Apps', path: '/apps' },
+                    { label: 'New App', isCurrentPage: true }
+                ]}
+                className="mb-4 sm:mb-6"
+            />
 
-            <div className="mb-6">
-                <h1 className="text-3xl font-bold">Create New App</h1>
-                <p className="text-muted-foreground mt-2">
+            <div className="mb-4 sm:mb-6">
+                <h1 className="text-2xl sm:text-3xl font-bold">Create New App</h1>
+                <p className="text-muted-foreground mt-1 sm:mt-2 text-sm sm:text-base">
                     Deploy a new self-hosted application
                 </p>
             </div>
@@ -391,10 +390,12 @@ function CreateApp() {
                                                 <span className="text-muted-foreground">Name:</span>
                                                 <p className="font-medium mt-1">{formData.name}</p>
                                             </div>
-                                            <div>
-                                                <span className="text-muted-foreground">Description:</span>
-                                                <p className="font-medium mt-1">{formData.description || 'No description'}</p>
-                                            </div>
+                                            {formData.description && (
+                                                <div>
+                                                    <span className="text-muted-foreground">Description:</span>
+                                                    <p className="font-medium mt-1">{formData.description}</p>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
 

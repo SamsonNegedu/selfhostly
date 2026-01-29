@@ -57,6 +57,13 @@
     @apply bg-background text-foreground;
     transition: background-color 0.2s ease, color 0.2s ease;
   }
+  
+  /* Mobile-optimized font sizes */
+  @media (max-width: 640px) {
+    html {
+      font-size: 14px;
+    }
+  }
 }
 
 @layer components {
@@ -190,4 +197,26 @@
   .stagger-4 { animation-delay: 0.4s; }
   .stagger-5 { animation-delay: 0.5s; }
   .stagger-6 { animation-delay: 0.6s; }
+  
+  /* Hide scrollbar utility */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  
+  /* Mobile touch improvements */
+  @media (max-width: 640px) {
+    /* Improve tap targets on mobile */
+    button, a, input, select, textarea {
+      -webkit-tap-highlight-color: rgba(0, 0, 0, 0.1);
+    }
+    
+    /* Prevent text size adjust on orientation change */
+    html {
+      -webkit-text-size-adjust: 100%;
+    }
+  }
 }

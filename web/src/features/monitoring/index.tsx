@@ -132,15 +132,15 @@ function Monitoring() {
   } : null;
 
   return (
-    <div className="fade-in space-y-6">
+    <div className="fade-in space-y-4 sm:space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold">System Monitoring</h1>
-        <p className="text-muted-foreground mt-2">
+        <h1 className="text-2xl sm:text-3xl font-bold">System Monitoring</h1>
+        <p className="text-muted-foreground mt-1 sm:mt-2 text-sm sm:text-base">
           {nodeNames.length > 0 
             ? `Real-time monitoring of ${nodeNames.length > 1 ? `${nodeNames.length} nodes` : nodeNames[0]}`
             : 'Real-time monitoring'
-          } • Updated {secondsAgo > 0 ? `${secondsAgo}s` : 'just now'} ago
+          } • Updated {secondsAgo > 0 ? `${secondsAgo}s ago` : 'just now'}
         </p>
       </div>
 
@@ -198,18 +198,47 @@ function Monitoring() {
 
       {/* Containers Section - Only show if we have online nodes */}
       {stats && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold">
+        <div className="space-y-3 sm:space-y-4">
+          {/* Header with count */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <h2 className="text-xl sm:text-2xl font-bold">
               All Containers ({filteredContainers.length})
             </h2>
+            
+            {/* Status Filter Buttons - Compact on mobile */}
+            {allContainers.length > 0 && (
+              <div className="flex items-center gap-1.5 sm:gap-2 bg-muted/50 rounded-lg p-1 w-fit">
+                <Button
+                  variant={statusFilter === 'all' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setStatusFilter('all')}
+                  className="h-8 px-3 text-xs"
+                >
+                  All
+                </Button>
+                <Button
+                  variant={statusFilter === 'running' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setStatusFilter('running')}
+                  className="h-8 px-3 text-xs"
+                >
+                  Running
+                </Button>
+                <Button
+                  variant={statusFilter === 'stopped' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setStatusFilter('stopped')}
+                  className="h-8 px-3 text-xs"
+                >
+                  Stopped
+                </Button>
+              </div>
+            )}
           </div>
 
-          {/* Search and Filters */}
+          {/* Search Bar - Full width */}
           {allContainers.length > 0 && (
-          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-            {/* Search Bar */}
-            <div className="relative flex-1 max-w-md w-full">
+            <div className="relative w-full">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <input
                 type="text"
@@ -227,33 +256,7 @@ function Monitoring() {
                 </button>
               )}
             </div>
-
-            {/* Status Filter */}
-            <div className="flex items-center gap-2">
-              <Button
-                variant={statusFilter === 'all' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setStatusFilter('all')}
-              >
-                All
-              </Button>
-              <Button
-                variant={statusFilter === 'running' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setStatusFilter('running')}
-              >
-                Running
-              </Button>
-              <Button
-                variant={statusFilter === 'stopped' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setStatusFilter('stopped')}
-              >
-                Stopped
-              </Button>
-            </div>
-          </div>
-        )}
+          )}
 
           {/* Containers Table */}
           <ContainersTable containers={filteredContainers} />

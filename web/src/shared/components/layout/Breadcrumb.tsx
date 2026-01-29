@@ -30,7 +30,7 @@ function AppBreadcrumb({ items, className }: AppBreadcrumbProps) {
     : generateBreadcrumbsFromPath(location.pathname)
 
   return (
-    <Breadcrumb className={className}>
+    <Breadcrumb className={`hidden sm:block ${className}`}>
       <BreadcrumbList>
         {breadcrumbItems.map((item, index) => (
           <React.Fragment key={index}>

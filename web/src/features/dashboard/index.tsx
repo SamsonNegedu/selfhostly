@@ -126,69 +126,69 @@ function Dashboard() {
     }
 
     return (
-        <div className="fade-in space-y-6">
+        <div className="fade-in space-y-4 sm:space-y-6">
             {/* Header */}
-            <div className="flex items-start justify-between">
-                <div>
-                    <h1 className="text-3xl font-bold">Applications</h1>
-                    <p className="text-muted-foreground mt-2">
+            <div className="flex flex-col sm:flex-row items-start gap-3 sm:gap-0 sm:justify-between">
+                <div className="flex-1">
+                    <h1 className="text-2xl sm:text-3xl font-bold">Applications</h1>
+                    <p className="text-muted-foreground mt-1 sm:mt-2 text-sm sm:text-base">
                         Manage and monitor your self-hosted apps
                     </p>
                 </div>
-                <Link to="/apps/new">
-                    <Button className="button-press">
+                <Link to="/apps/new" className="w-full sm:w-auto">
+                    <Button className="button-press w-full sm:w-auto">
                         <Plus className="h-4 w-4 mr-2" />
-                        New App
+                        <span className="sm:inline">New App</span>
                     </Button>
                 </Link>
             </div>
 
             {/* Statistics Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6 card-hover">
-                    <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-muted-foreground">Total Apps</span>
-                        <Server className="h-4 w-4 text-muted-foreground" />
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+                <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-4 sm:p-6 card-hover">
+                    <div className="flex items-center justify-between mb-1 sm:mb-2">
+                        <span className="text-xs sm:text-sm font-medium text-muted-foreground">Total Apps</span>
+                        <Server className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
                     </div>
-                    <div className="text-2xl font-bold">{stats.total}</div>
-                    <div className="text-xs text-muted-foreground mt-1">Across all environments</div>
+                    <div className="text-xl sm:text-2xl font-bold">{stats.total}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5 sm:mt-1 hidden sm:block">Across all environments</div>
                 </div>
 
-                <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6 card-hover">
-                    <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-muted-foreground">Running</span>
-                        <Activity className="h-4 w-4 text-green-500" />
+                <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-4 sm:p-6 card-hover">
+                    <div className="flex items-center justify-between mb-1 sm:mb-2">
+                        <span className="text-xs sm:text-sm font-medium text-muted-foreground">Running</span>
+                        <Activity className="h-4 w-4 sm:h-5 sm:w-5 text-green-500" />
                     </div>
-                    <div className="text-2xl font-bold text-green-600 dark:text-green-400">{stats.running}</div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                        {stats.total > 0 ? `${Math.round((stats.running / stats.total) * 100)}%` : '0%'} of total
+                    <div className="text-xl sm:text-2xl font-bold text-green-600 dark:text-green-400">{stats.running}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5 sm:mt-1">
+                        {stats.total > 0 ? `${Math.round((stats.running / stats.total) * 100)}%` : '0%'}
                     </div>
                 </div>
 
-                <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6 card-hover">
-                    <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-muted-foreground">Updating</span>
-                        <TrendingUp className="h-4 w-4 text-blue-500" />
+                <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-4 sm:p-6 card-hover">
+                    <div className="flex items-center justify-between mb-1 sm:mb-2">
+                        <span className="text-xs sm:text-sm font-medium text-muted-foreground">Updating</span>
+                        <TrendingUp className="h-4 w-4 sm:h-5 sm:w-5 text-blue-500" />
                     </div>
-                    <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{stats.updating}</div>
-                    <div className="text-xs text-muted-foreground mt-1">In progress</div>
+                    <div className="text-xl sm:text-2xl font-bold text-blue-600 dark:text-blue-400">{stats.updating}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5 sm:mt-1 hidden sm:block">In progress</div>
                 </div>
 
-                <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6 card-hover">
-                    <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-muted-foreground">Errors</span>
-                        <AlertTriangle className="h-4 w-4 text-red-500" />
+                <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-4 sm:p-6 card-hover">
+                    <div className="flex items-center justify-between mb-1 sm:mb-2">
+                        <span className="text-xs sm:text-sm font-medium text-muted-foreground">Errors</span>
+                        <AlertTriangle className="h-4 w-4 sm:h-5 sm:w-5 text-red-500" />
                     </div>
-                    <div className="text-2xl font-bold text-red-600 dark:text-red-400">{stats.errors}</div>
-                    <div className="text-xs text-muted-foreground mt-1">Require attention</div>
+                    <div className="text-xl sm:text-2xl font-bold text-red-600 dark:text-red-400">{stats.errors}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5 sm:mt-1 hidden sm:block">Require attention</div>
                 </div>
             </div>
 
             {/* Search and Filters - only show if apps exist */}
             {stats.total > 0 && (
-                <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+                <div className="flex flex-col gap-3 sm:gap-4">
                     {/* Search Bar */}
-                    <div className="relative flex-1 max-w-md w-full">
+                    <div className="relative w-full">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                         <input
                             type="text"
@@ -208,12 +208,12 @@ function Dashboard() {
                     </div>
 
                     {/* Node Selector and Filters */}
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                         <Button
                             variant="outline"
                             size="sm"
                             onClick={() => setShowFilters(!showFilters)}
-                            className="button-press"
+                            className="button-press flex-shrink-0"
                         >
                             <Filter className="h-4 w-4 mr-2" />
                             Filters
@@ -229,7 +229,7 @@ function Dashboard() {
                                 variant="ghost"
                                 size="sm"
                                 onClick={clearFilters}
-                                className="button-press"
+                                className="button-press flex-shrink-0"
                             >
                                 Clear all
                             </Button>
