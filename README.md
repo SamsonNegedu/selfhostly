@@ -1,75 +1,75 @@
 # Selfhostly
 
-A comprehensive web-based platform for managing self-hosted applications on your Raspberry Pi or any Linux server. Deploy apps, configure Cloudflare tunnels, monitor resources, and manage containers—all without SSH access.
+A web-based platform for managing self-hosted applications on your Raspberry Pi or Linux server. Deploy Docker Compose apps, configure Cloudflare tunnels, monitor system resources, and manage containers through a centralized interface.
 
 ## Features
 
 ### Multi-Node Architecture
-- 🌐 **Distributed Deployment** - Manage applications across multiple servers from a single UI
-- 🔄 **Automatic Health Checks** - Smart monitoring with exponential backoff for offline nodes
-- 💓 **Node Heartbeats** - Secondary nodes proactively report online status
-- 🔐 **Secure Node Communication** - API key-based authentication between nodes
-- 📊 **Unified Monitoring** - View stats from all nodes in one dashboard
-- ⚡ **Horizontal Scaling** - Add more nodes to distribute workload
+- **Distributed Deployment** - Manage applications across multiple servers from a single UI
+- **Automatic Health Checks** - Smart monitoring with exponential backoff for offline nodes
+- **Node Heartbeats** - Secondary nodes proactively report online status
+- **Secure Node Communication** - API key-based authentication between nodes
+- **Unified Monitoring** - View stats from all nodes in one dashboard
+- **Horizontal Scaling** - Add more nodes to distribute workload
 
-### App Management
-- 🚀 **Create & Deploy Apps** - Deploy Docker Compose applications through an intuitive web UI
-- 📝 **Compose Editor** - Built-in Monaco editor with YAML syntax highlighting and validation
-- 📜 **Version History** - Automatic versioning with complete rollback capability for all compose file changes
-- 🔄 **Zero-Downtime Updates** - Pull new images and update containers without service interruption
-- 📋 **Activity Timeline** - Track all changes, deployments, and updates for each app
+### Application Management
+- **Deploy Docker Compose Apps** - Deploy applications through an intuitive web interface
+- **Built-in Editor** - Monaco editor with YAML syntax highlighting and validation
+- **Version History** - Automatic versioning with complete rollback capability
+- **Zero-Downtime Updates** - Pull new images and update containers without interruption
+- **Activity Timeline** - Track all changes, deployments, and updates
 
 ### Cloudflare Integration
-- 🌐 **Automatic Tunnel Setup** - Create and configure Cloudflare tunnels directly from the UI
-- 🔗 **Ingress Rules Management** - Configure and edit ingress rules without touching the Cloudflare dashboard
-- 🚇 **Tunnel Management** - View, restart, and manage cloudflared containers per app
-- 📍 **DNS Record Management** - Automatic DNS record creation for tunnel routes
+- **Automatic Tunnel Setup** - Create and configure Cloudflare tunnels directly from the UI
+- **Ingress Rules Management** - Configure routing rules without accessing the Cloudflare dashboard
+- **Tunnel Management** - View, restart, and manage cloudflared containers
+- **DNS Management** - Automatic DNS record creation for tunnel routes
 
 ### Monitoring & Observability
-- 📊 **System Monitoring** - Real-time CPU, memory, disk, and Docker daemon statistics
-- 🐳 **Container Metrics** - View CPU, memory, network I/O, and disk I/O for every container
-- 🔍 **Container Search & Filter** - Find containers across all apps by name, ID, or status
-- 🚨 **Resource Alerts** - Automatic alerts for high CPU, memory, disk usage, and container issues
-- ⚡ **Quick Actions** - Restart or stop any container directly from the monitoring dashboard
-- 🔄 **Auto-Refresh** - Metrics update every 10 seconds (pauses when tab is inactive)
+- **System Monitoring** - Real-time CPU, memory, disk, and Docker daemon statistics
+- **Container Metrics** - View resource usage for every container
+- **Search & Filter** - Find containers across all apps by name, ID, or status
+- **Resource Alerts** - Automatic warnings for high CPU, memory, or disk usage
+- **Quick Actions** - Restart or stop containers directly from the dashboard
+- **Auto-Refresh** - Metrics update every 10 seconds (pauses when tab is inactive)
 
-### User Experience
-- 🎨 **Theme Support** - Beautiful light and dark modes with system preference detection
-- 📱 **Responsive Design** - Fully functional on mobile, tablet, and desktop
-- ⚡ **Fast & Modern UI** - Built with React, TypeScript, TailwindCSS, and Radix UI
-- 🔐 **Optional Authentication** - Cloudflare Zero Trust or GitHub OAuth support
+### User Interface
+- **Theme Support** - Light and dark modes with system preference detection
+- **Responsive Design** - Works on mobile, tablet, and desktop devices
+- **Modern Stack** - Built with React, TypeScript, TailwindCSS, and Radix UI
+- **Flexible Authentication** - Cloudflare Zero Trust or GitHub OAuth support
 
 ## Tech Stack
 
-**Backend:** Go • Fiber • SQLite (modernc.org/sqlite - pure Go, no CGO) • Docker API • gopsutil
+**Backend:** Go • Gin • SQLite (modernc.org/sqlite - pure Go, no CGO) • Docker API • gopsutil
 
 **Frontend:** React • TypeScript • TanStack Query • Zustand • TailwindCSS • Radix UI • Monaco Editor • Lucide Icons
 
 **Infrastructure:** Docker • Docker Compose • Cloudflare Tunnels • Air (live reload)
 
-## ⚠️ Security Notice
+## Security Notice
 
-**Single-user design only.** Intended for personal use (e.g., Raspberry Pi hosting).
+**Single-user design only.** This application is intended for personal use (e.g., managing a home server or Raspberry Pi).
 
-- ✅ **Recommended:** Deploy behind [Cloudflare Zero Trust](./docs/CLOUDFLARE_ZERO_TRUST.md) (no OAuth needed)
-- ✅ Alternative: [GitHub OAuth authentication](./docs/GITHUB_WHITELIST.md)
-- ❌ Not suitable for multi-user environments
+- **Recommended:** Deploy behind [Cloudflare Zero Trust](./docs/CLOUDFLARE_ZERO_TRUST.md) for secure authentication
+- **Alternative:** [GitHub OAuth authentication](./docs/GITHUB_WHITELIST.md) with username whitelist
+- **Not suitable** for multi-user or multi-tenant environments
 
-📖 Full details: [Security Documentation](./docs/SECURITY.md)
+See [Security Documentation](./docs/SECURITY.md) for full details.
 
-## ✨ Recent Updates
+## Recent Updates
 
-- **🌐 Multi-Node Architecture** - Manage applications across multiple servers from a single UI with automatic health checks
-- **💓 Smart Health Monitoring** - Exponential backoff for health checks and heartbeat mechanism for faster node recovery
-- **🔧 System Monitoring** - Comprehensive dashboard showing CPU, memory, disk, and per-container metrics with real-time updates
-- **🎨 Theme Support** - Beautiful dark and light modes with automatic system preference detection
-- **📜 Version Control** - Automatic versioning and rollback capability for all compose file changes
-- **⚡ Development Environment** - Air integration for Go live reload and hot module reloading for frontend
-- **🐳 Container Actions** - Quick restart/stop actions for any container from the monitoring dashboard
-- **🚇 Cloudflare Improvements** - Enhanced tunnel management with better duplicate handling and restart functionality
-- **🗄️ Pure Go SQLite** - Switched to modernc.org/sqlite (no CGO dependencies) for easier cross-compilation
+- **Multi-Node Architecture** - Manage applications across multiple servers from a single UI with automatic health checks
+- **Smart Health Monitoring** - Exponential backoff for health checks and heartbeat mechanism for faster node recovery
+- **System Monitoring** - Comprehensive dashboard showing CPU, memory, disk, and per-container metrics with real-time updates
+- **Theme Support** - Dark and light modes with automatic system preference detection
+- **Version Control** - Automatic versioning and rollback capability for all compose file changes
+- **Development Environment** - Air integration for Go live reload and hot module reloading for frontend
+- **Container Actions** - Quick restart/stop actions for any container from the monitoring dashboard
+- **Cloudflare Improvements** - Enhanced tunnel management with better duplicate handling and restart functionality
+- **Pure Go SQLite** - Switched to modernc.org/sqlite (no CGO dependencies) for easier cross-compilation
 
-## 📋 Requirements
+## Requirements
 
 - **Docker** - Version 20.10+ with Docker Compose
 - **Linux/macOS** - Tested on Raspberry Pi OS, Ubuntu, and macOS (Windows via WSL2)
@@ -77,7 +77,7 @@ A comprehensive web-based platform for managing self-hosted applications on your
 - **Resources** - Minimum 1GB RAM, 2GB+ recommended
 - **Optional** - Cloudflare account for tunnel integration
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Production Deployment
 
@@ -162,7 +162,7 @@ Summary: **Primary 8082 → Gateway 8080 → Frontend proxy → Browser 5173.**
 
 See [Development Guide](./docs/DEVELOPMENT.md) for more details.
 
-## 🛠️ Make Commands
+## Make Commands
 
 The project includes a Makefile with convenient commands for common tasks. Run `make help` to see all available commands.
 
@@ -211,16 +211,16 @@ make help             # Show all available commands with descriptions
 
 | Command | Description |
 |---------|-------------|
-| `make dev` | 🚀 Start full dev environment |
-| `make run-local` | 🖥️ Run backend locally (Air) |
-| `make run-gateway` | 🌐 Run API gateway locally |
-| `make prod` | 🏭 Start production |
-| `make logs` | 📜 View all logs |
-| `make down` | 🛑 Stop everything |
-| `make clean` | 🧹 Clean up completely |
-| `make help` | ❓ Show all commands |
+| `make dev` | Start full dev environment |
+| `make run-local` | Run backend locally (Air) |
+| `make run-gateway` | Run API gateway locally |
+| `make prod` | Start production |
+| `make logs` | View all logs |
+| `make down` | Stop everything |
+| `make clean` | Clean up completely |
+| `make help` | Show all commands |
 
-## ⚙️ Configuration
+## Configuration
 
 ### Core Settings
 
@@ -252,13 +252,13 @@ REGISTRATION_TOKEN=your-secure-registration-token # Same as primary - enables au
 ```
 
 **Benefits:**
-- ✨ **Auto-registration** - Secondary nodes register themselves on startup
-- 🚀 **Zero copy-paste** - Just set env vars and go
-- 🔄 Manage multiple servers from one UI
-- 📊 Unified monitoring across all nodes
-- 💓 Automatic health checks and heartbeats
+- **Auto-registration** - Secondary nodes register themselves on startup
+- **Simple Configuration** - Set environment variables and deploy
+- **Centralized Management** - Control multiple servers from one UI
+- **Unified Monitoring** - View metrics across all nodes
+- **Automatic Health Checks** - Continuous monitoring and heartbeats
 
-📖 [Multi-Node Setup Guide](./docs/MULTI_NODE.md) - Complete configuration, authentication, and troubleshooting
+See [Multi-Node Setup Guide](./docs/MULTI_NODE.md) for complete configuration, authentication, and troubleshooting.
 
 ### Cloudflare Integration (Optional)
 
@@ -276,7 +276,7 @@ CLOUDFLARE_ACCOUNT_ID=your_cloudflare_account_id
 
 ### Authentication (Optional)
 
-**Option 1 - Cloudflare Zero Trust** ✅ Recommended
+**Option 1: Cloudflare Zero Trust (Recommended)**
 
 Deploy behind Cloudflare Zero Trust Access for enterprise-grade authentication:
 
@@ -287,14 +287,14 @@ CLOUDFLARE_ACCOUNT_ID=your_account_id
 ```
 
 **Benefits:**
-- No OAuth configuration needed
+- No OAuth configuration required
 - Support for multiple identity providers (Google, GitHub, Okta, etc.)
 - Email-based access control
 - Built-in 2FA support
 
-📖 [Cloudflare Zero Trust Setup Guide](./docs/CLOUDFLARE_ZERO_TRUST.md)
+See [Cloudflare Zero Trust Setup Guide](./docs/CLOUDFLARE_ZERO_TRUST.md)
 
-**Option 2 - GitHub OAuth**
+**Option 2: GitHub OAuth**
 
 Use GitHub OAuth for simple username-based authentication:
 
@@ -306,15 +306,15 @@ GITHUB_ALLOWED_USERS=username1,username2
 NODE_API_ENDPOINT=https://your-domain.com
 ```
 
-📖 [GitHub OAuth Setup Guide](./docs/GITHUB_WHITELIST.md)
+See [GitHub OAuth Setup Guide](./docs/GITHUB_WHITELIST.md)
 
-**⚠️ Security Note:** This is a single-user tool. See [Security Documentation](./docs/SECURITY.md) for details.
+**Security Note:** This application is designed for single-user deployments. See [Security Documentation](./docs/SECURITY.md) for details.
 
-## 🔧 Development
+## Development
 
 ### Local Development
 
-**Option 1 - Make Commands (Easiest)**
+**Option 1: Make Commands (Easiest)**
 
 ```bash
 # Start everything with one command
@@ -325,7 +325,7 @@ make dev-backend      # Terminal 1: Backend with live reload
 make dev-frontend     # Terminal 2: Frontend dev server
 ```
 
-**Option 2 - Docker Compose**
+**Option 2: Docker Compose**
 
 ```bash
 # Start backend with Air (live reload)
@@ -335,7 +335,7 @@ docker compose -f docker-compose.dev.yml up backend
 cd web && npm install && npm run dev
 ```
 
-**Option 3 - Native Go + npm**
+**Option 3: Native Go + npm**
 
 ```bash
 # Install Air for live reload
@@ -360,25 +360,41 @@ cd web && npm install && npm run dev
 # Build frontend assets
 cd web && npm run build
 
-# Build Go binary
+# Build Go binaries
 go build -o bin/server cmd/server/main.go
+go build -o bin/gateway cmd/gateway/main.go
 
-# Or build Docker image
-docker build -t selfhostly -f Dockerfile.unified .
+# Or build Docker images
+docker build -t selfhostly-primary -f Dockerfile.primary .
+docker build -t selfhostly-gateway -f Dockerfile.gateway .
+docker build -t selfhostly-backend -f Dockerfile.backend .  # Backend only (no frontend)
 ```
+
+**Available Dockerfiles:**
+- `Dockerfile.primary` - Primary backend with embedded frontend (used in production)
+- `Dockerfile.gateway` - API gateway for routing requests
+- `Dockerfile.backend` - Backend-only image without frontend
+- `Dockerfile.dev` - Development environment with live reload
 
 ### Project Structure
 
 ```
 selfhostly/
-├── cmd/server/           # Main application entry point
+├── cmd/
+│   ├── server/           # Primary backend entry point
+│   └── gateway/          # Gateway entry point
 ├── internal/
 │   ├── cloudflare/       # Cloudflare API client and tunnel management
 │   ├── config/           # Configuration loading
 │   ├── db/               # Database models and queries
 │   ├── docker/           # Docker and Compose management
+│   ├── gateway/          # Gateway proxy logic
 │   ├── http/             # HTTP handlers and routing
-│   └── system/           # System metrics collection
+│   ├── node/             # Multi-node communication
+│   ├── routing/          # Request routing and aggregation
+│   ├── service/          # Business logic layer
+│   ├── system/           # System metrics collection
+│   └── tunnel/           # Tunnel provider abstraction
 ├── web/
 │   └── src/
 │       ├── features/     # Feature-based modules (dashboard, monitoring, etc.)
@@ -422,9 +438,9 @@ make down
 make clean
 ```
 
-📖 See [Development Guide](./docs/DEVELOPMENT.md) for live reload setup and debugging tips.
+See [Development Guide](./docs/DEVELOPMENT.md) for live reload setup and debugging tips.
 
-## 📚 Documentation
+## Documentation
 
 ### Getting Started
 - [Development Guide](./docs/DEVELOPMENT.md) - Local setup, live reload, and debugging
@@ -441,7 +457,7 @@ make clean
 - [Cloudflare Zero Trust Setup](./docs/CLOUDFLARE_ZERO_TRUST.md) - Recommended authentication method
 - [GitHub OAuth Setup](./docs/GITHUB_WHITELIST.md) - Alternative authentication option
 
-## 🚦 Key Workflows
+## Key Workflows
 
 ### Deploying a New App
 
@@ -479,23 +495,23 @@ make clean
 3. **Rollback** - Click "Rollback" on any version to restore previous configuration
 4. **Activity Timeline** - Track all changes and deployments in the activity log
 
-## 🎯 Use Cases
+## Use Cases
 
-Perfect for:
-- 🏠 Self-hosting enthusiasts managing apps on a Raspberry Pi
-- 🌐 Multi-server home labs with distributed workloads
-- 🔧 Developers running multiple services across different machines
-- 📦 Anyone tired of SSH-ing to manage Docker containers
-- 🚀 Quick deployment of Docker Compose applications with public URLs
-- 📊 Monitoring resource usage across multiple nodes without SSH access
-- 🏗️ Geographic distribution of services (e.g., edge nodes + main server)
+**Ideal for:**
+- Self-hosting enthusiasts managing apps on a Raspberry Pi or home server
+- Multi-server home labs with distributed workloads
+- Developers running multiple services across different machines
+- Managing Docker containers without SSH access
+- Quick deployment of Docker Compose applications with public URLs
+- Monitoring resource usage across multiple nodes
+- Geographic distribution of services (edge nodes + main server)
 
-Not suitable for:
-- ❌ Multi-user/multi-tenant environments (single-user design)
-- ❌ Production SaaS platforms (no resource isolation between users)
-- ❌ Enterprise deployments requiring RBAC and audit logs
+**Not suitable for:**
+- Multi-user or multi-tenant environments (single-user design)
+- Production SaaS platforms (no resource isolation between users)
+- Enterprise deployments requiring RBAC and audit logs
 
-## 🔧 Troubleshooting
+## Troubleshooting
 
 ### Application won't start
 
@@ -536,7 +552,7 @@ Not suitable for:
 - Verify firewall allows port 8080
 - For remote access, consider using Cloudflare tunnel instead of exposing port
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
@@ -546,17 +562,15 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 📝 License
+## License
 
 MIT License - see [LICENSE](./LICENSE) file for details
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
-- Built with [Fiber](https://gofiber.io/) - Fast HTTP framework for Go
+- Built with [Gin](https://github.com/gin-gonic/gin) - HTTP web framework for Go
+- Authentication via [go-pkgz/auth](https://github.com/go-pkgz/auth) - OAuth and JWT handling
 - UI powered by [Radix UI](https://www.radix-ui.com/) and [TailwindCSS](https://tailwindcss.com/)
 - System metrics via [gopsutil](https://github.com/shirou/gopsutil)
 - Code editor via [Monaco Editor](https://microsoft.github.io/monaco-editor/)
-
----
-
-**Made with ❤️ for the self-hosting community**
+- Database via [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite) - Pure Go SQLite implementation

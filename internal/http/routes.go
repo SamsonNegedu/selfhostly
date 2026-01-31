@@ -70,6 +70,13 @@ func (s *Server) setupRoutes() {
 	s.engine.StaticFile("/favicon.svg", "./web/dist/favicon.svg")
 
 	s.engine.NoRoute(func(c *gin.Context) {
+		path := c.Request.URL.Path
+		// Return 404 for unmatched API/auth routes instead of serving HTML
+		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/auth/") {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Not found"})
+			return
+		}
+		// Serve frontend for all other routes (SPA routing)
 		c.File("./web/dist/index.html")
 	})
 }
