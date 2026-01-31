@@ -34,6 +34,7 @@ type NodeConfig struct {
 	PrimaryNodeURL    string // URL of primary node (only for secondary nodes)
 	PrimaryNodeKey    string // API key to authenticate with primary (only for secondary nodes)
 	RegistrationToken string // Token for auto-registration (shared secret between primary and secondaries)
+	GatewayAPIKey     string // API key the gateway sends; backends accept this alongside node auth
 }
 
 // CORSConfig holds CORS configuration
@@ -53,7 +54,7 @@ type AuthConfig struct {
 	JWTSecret    string
 	GitHub       GitHubOAuthConfig
 	SecureCookie bool
-	BaseURL      string // Base URL for OAuth callbacks (e.g., http://localhost:8080)
+	BaseURL      string // Base URL for OAuth callbacks (when behind gateway, primary rewrites redirects using X-Forwarded-Host)
 }
 
 // GitHubOAuthConfig holds GitHub OAuth configuration
@@ -102,7 +103,7 @@ func Load() (*Config, error) {
 	}
 
 	nodeAPIEndpoint := getEnv("NODE_API_ENDPOINT", "http://localhost:8080")
-	
+
 	// Generate or load registration token for cluster joining
 	registrationToken := os.Getenv("REGISTRATION_TOKEN")
 	if registrationToken == "" && getEnv("NODE_IS_PRIMARY", "true") == "true" {
@@ -145,6 +146,7 @@ func Load() (*Config, error) {
 			PrimaryNodeURL:    getEnv("PRIMARY_NODE_URL", ""),
 			PrimaryNodeKey:    getEnv("PRIMARY_NODE_API_KEY", ""),
 			RegistrationToken: registrationToken,
+			GatewayAPIKey:     os.Getenv("GATEWAY_API_KEY"),
 		},
 	}
 

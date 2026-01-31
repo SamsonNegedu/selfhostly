@@ -44,7 +44,9 @@ clean: ## Clean build artifacts and containers
 	docker-compose -f docker-compose.dev.yml down -v
 	docker-compose -f docker-compose.prod.yml down -v
 	rm -rf tmp/
+	rm -rf tmp-gateway/
 	rm -f build-errors.log
+	rm -f build-errors-gateway.log
 
 # Local development (no Docker)
 install-air: ## Install Air for local development
@@ -75,6 +77,35 @@ run-local-no-air: ## Run backend without Air (usage: make run-local-no-air [ENV_
 		echo "Starting with .env"; \
 		go run cmd/server/main.go; \
 	fi
+
+run-gateway: ## Run API gateway with Air hot reload (usage: make run-gateway [ENV_FILE=.env.gateway])
+	@if [ -n "$(ENV_FILE)" ]; then \
+		if [ ! -f "$(ENV_FILE)" ]; then \
+			echo "ERROR: $(ENV_FILE) not found."; \
+			exit 1; \
+		fi; \
+		echo "Starting gateway with $(ENV_FILE)"; \
+		ENV_FILE=$(ENV_FILE) air -c .air-gateway.toml; \
+	else \
+		echo "Starting gateway with .env"; \
+		air -c .air-gateway.toml; \
+	fi
+
+run-gateway-no-air: ## Run API gateway without Air (usage: make run-gateway-no-air [ENV_FILE=.env.gateway])
+	@if [ -n "$(ENV_FILE)" ]; then \
+		if [ ! -f "$(ENV_FILE)" ]; then \
+			echo "ERROR: $(ENV_FILE) not found."; \
+			exit 1; \
+		fi; \
+		echo "Starting gateway with $(ENV_FILE)"; \
+		ENV_FILE=$(ENV_FILE) go run cmd/gateway/main.go; \
+	else \
+		echo "Starting gateway with .env"; \
+		go run cmd/gateway/main.go; \
+	fi
+
+build-gateway: ## Build gateway binary
+	go build -o bin/gateway ./cmd/gateway
 
 # Testing commands
 test: ## Run all tests

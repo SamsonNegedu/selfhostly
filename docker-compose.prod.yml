@@ -1,33 +1,33 @@
-# Selfhostly Production Deployment
-# Usage: docker compose -f docker-compose.prod.yml up -d
-
+# Selfhostly Production Deployment with Gateway Architecture
+# Usage:
+#   1. Copy .env.prod.example to .env
+#   2. Customize paths and credentials in .env
+#   3. docker compose -f docker-compose.prod.yml up -d
+#
+# Architecture:
+#   Internet → Cloudflared → Gateway (port 8080) → Primary Backend (port 8082)
+#
 services:
-  selfhostly:
-    image: ghcr.io/selfhostly/selfhostly:latest
-    container_name: selfhostly
-    ports:
-      - "8080:8080"
+  # Gateway - Single entry point that routes to backend nodes
+  gateway:
+    image: ghcr.io/samsonnegedu/selfhostly-gateway:latest
+    container_name: selfhostly-gateway
     environment:
-      # Database
-      DATABASE_PATH: /app/data/selfhostly.db
-      APPS_DIR: /app/apps
+      # Gateway Configuration
+      PRIMARY_BACKEND_URL: http://primary:8082
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY}
+      GATEWAY_LISTEN_ADDRESS: ":8080"
+      GATEWAY_REGISTRY_TTL_SEC: "60"
 
-      # Cloudflare (optional)
-      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
-      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
-
-      # Authentication
+      # Authentication (same as backend for JWT validation)
       AUTH_ENABLED: ${AUTH_ENABLED:-true}
-      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
-      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
-      NODE_API_ENDPOINT: ${NODE_API_ENDPOINT:-http://localhost:8080}
-    volumes:
-      - selfhostly-data:/app/data
-      - selfhostly-apps:/app/apps
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      JWT_SECRET: ${JWT_SECRET}
     networks:
       - selfhostly-network
     restart: unless-stopped
+    depends_on:
+      primary:
+        condition: service_healthy
     healthcheck:
       test:
         [
@@ -43,7 +43,66 @@ services:
       retries: 3
       start_period: 10s
 
-  # Optional: Cloudflare Tunnel for public access
+  # Primary Backend - Main application server (not publicly exposed)
+  primary:
+    image: ghcr.io/samsonnegedu/selfhostly-primary:latest
+    container_name: selfhostly-primary
+    user: 1000:984
+    environment:
+      # Server Configuration
+      SERVER_ADDRESS: ":8082"
+
+      # Database
+      DATABASE_PATH: /app/data/selfhostly.db
+      APPS_DIR: /app/apps
+
+      # Cloudflare (optional)
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
+
+      # Authentication
+      AUTH_ENABLED: ${AUTH_ENABLED:-true}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      JWT_SECRET: ${JWT_SECRET}
+      AUTH_BASE_URL: ${AUTH_BASE_URL:-https://selfhostly.localnest.de}
+      GITHUB_ALLOWED_USERS: ${GITHUB_ALLOWED_USERS:-}
+      AUTH_SECURE_COOKIE: ${AUTH_SECURE_COOKIE:-true}
+
+      # Gateway Authentication
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY}
+
+      # Node Configuration
+      NODE_IS_PRIMARY: "true"
+      NODE_ID: ${NODE_ID:-450359e5-52c3-47e8-a256-6ea537528a06}
+      NODE_NAME: ${NODE_NAME:-primary}
+      NODE_API_ENDPOINT: ${NODE_API_ENDPOINT:-http://primary:8082}
+      REGISTRATION_TOKEN: ${REGISTRATION_TOKEN}
+    volumes:
+      - ${DATA_DIR:-./data}:/app/data
+      - ${APPS_DIR:-./apps}:/app/apps
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - selfhostly-network
+    restart: unless-stopped
+    expose:
+      - "8082" # Internal port only (not exposed to host)
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:8082/api/health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Optional: Cloudflare Tunnel for public access (connects to gateway)
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: selfhostly-cloudflared
@@ -54,8 +113,9 @@ services:
       - selfhostly-network
     restart: unless-stopped
     depends_on:
-      selfhostly:
+      gateway:
         condition: service_healthy
+
 networks:
   selfhostly-network:
     driver: bridge

@@ -1,0 +1,86 @@
+# =============================================================================
+# Selfhostly Backend - Full Application Server (with Frontend)
+# =============================================================================
+
+# Stage 1: Build Frontend
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /app/web
+
+# Copy package files
+COPY web/package*.json ./
+
+# Install dependencies
+RUN npm ci --silent
+
+# Copy source and build
+COPY web/ ./
+RUN npm run build
+
+# Stage 2: Build Backend
+FROM golang:1.24-alpine AS backend-builder
+
+WORKDIR /app
+
+# Copy go mod files first (cached unless dependencies change)
+COPY go.mod go.sum ./
+
+# Download dependencies (cached layer)
+RUN go mod download
+
+# Copy only necessary source files (respects .dockerignore)
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
+
+# Copy frontend build from previous stage
+COPY --from=frontend-builder /app/web/dist ./web/dist
+
+# Build backend binary (no CGO needed with modernc.org/sqlite)
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -o selfhostly cmd/server/main.go
+
+# Stage 3: Production Image
+FROM alpine:latest
+
+# Install runtime dependencies (including Docker CLI and Compose plugin)
+RUN apk add --no-cache ca-certificates tzdata docker-cli docker-cli-compose
+
+# Create non-root user with fixed UID/GID (1000) for predictable permissions
+# Add to docker group for socket access
+RUN set -ex; \
+    # Create docker group if it doesn't exist (let system assign GID)
+    if ! getent group docker >/dev/null; then \
+        addgroup -S docker; \
+    fi; \
+    # Create selfhostly group if it doesn't exist
+    if ! getent group selfhostly >/dev/null; then \
+        addgroup -g 1000 -S selfhostly; \
+    fi; \
+    # Create selfhostly user if it doesn't exist
+    if ! getent passwd selfhostly >/dev/null; then \
+        adduser -u 1000 -S selfhostly -G selfhostly; \
+    fi; \
+    # Add selfhostly user to docker group
+    addgroup selfhostly docker
+
+WORKDIR /app
+
+# Copy backend binary from builder
+COPY --from=backend-builder /app/selfhostly .
+
+# Copy frontend dist
+COPY --from=backend-builder /app/web/dist ./web/dist
+
+# Create directories with proper permissions
+RUN mkdir -p /app/data /app/apps && \
+    chown -R selfhostly:selfhostly /app
+
+# Switch to non-root user
+USER selfhostly
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8082/api/health || exit 1
+
+# Run the application
+CMD ["./selfhostly"]

@@ -30,8 +30,5 @@ COPY --from=builder /app/selfhostly .
 # Create directories
 RUN mkdir -p /app/data /app/apps
 
-# Expose port
-EXPOSE 8080
-
 # Run the application
 CMD ["./selfhostly"]

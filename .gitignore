@@ -31,7 +31,9 @@ Thumbs.db
 dist/
 build/
 tmp/
+tmp-gateway/
 build-errors.log
+build-errors-gateway.log
 
 # Environment
 .env
@@ -46,3 +48,8 @@ web/node_modules/
 web/dist/
 
 automaton
+
+/bin
+
+gateway
+server

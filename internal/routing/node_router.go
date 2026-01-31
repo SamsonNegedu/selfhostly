@@ -107,38 +107,6 @@ func (r *NodeRouter) AggregateFromNodes(
 	return results, nil
 }
 
-// RouteToNode routes an operation to local or remote node
-// Returns an error if the node is not found or the operation fails
-func (r *NodeRouter) RouteToNode(
-	ctx context.Context,
-	nodeID string,
-	localOp func() (interface{}, error),
-	remoteOp func(*db.Node) (interface{}, error),
-) (interface{}, error) {
-	// Route directly to the specified node
-	if nodeID == r.localNodeID {
-		// Execute on local node
-		return localOp()
-	}
-
-	// Execute on remote node - forward the request
-	node, err := r.database.GetNode(nodeID)
-	if err != nil {
-		r.logger.WarnContext(ctx, "node not found", "nodeID", nodeID, "error", err)
-		return nil, domain.WrapDatabaseOperation("get node", err)
-	}
-
-	r.logger.InfoContext(ctx, "forwarding request to remote node", "nodeID", nodeID, "nodeName", node.Name)
-	result, err := remoteOp(node)
-	if err != nil {
-		r.logger.ErrorContext(ctx, "operation failed on remote node", "nodeID", nodeID, "nodeName", node.Name)
-		return nil, err
-	}
-
-	r.logger.DebugContext(ctx, "operation completed on remote node", "nodeID", nodeID)
-	return result, nil
-}
-
 // IsLocalNode checks if a node ID is the local node
 func (r *NodeRouter) IsLocalNode(nodeID string) bool {
 	return nodeID == r.localNodeID || nodeID == ""

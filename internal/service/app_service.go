@@ -106,42 +106,9 @@ func NewAppService(
 	}
 }
 
-// CreateApp creates a new application
+// CreateApp creates a new application (local only; gateway forwards POST /api/apps to target node)
 func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest) (*db.App, error) {
 	s.logger.InfoContext(ctx, "creating app", "name", req.Name, "targetNode", req.NodeID)
-
-	// If node_id is specified and it's not this node, forward to that node
-	if req.NodeID != "" && req.NodeID != s.config.Node.ID {
-		s.logger.InfoContext(ctx, "forwarding app creation to remote node", "name", req.Name, "nodeID", req.NodeID)
-
-		targetNode, err := s.database.GetNode(req.NodeID)
-		if err != nil {
-			return nil, fmt.Errorf("target node not found: %w", err)
-		}
-
-		// Forward request to target node
-		app, err := s.nodeClient.CreateApp(targetNode, req)
-		if err != nil {
-			s.logger.ErrorContext(ctx, "failed to create app on remote node", "name", req.Name, "nodeID", req.NodeID, "error", err)
-			return nil, err
-		}
-
-		// Quick Tunnel on remote node: if URL was not returned (e.g. extraction not done yet), fetch it via same API surface
-		if app.TunnelMode == "quick" && app.PublicURL == "" {
-			s.logger.InfoContext(ctx, "fetching Quick Tunnel URL from remote node after create", "appID", app.ID, "nodeID", req.NodeID)
-			url, err := s.nodeClient.GetQuickTunnelURL(targetNode, app.ID)
-			if err != nil {
-				s.logger.WarnContext(ctx, "failed to get Quick Tunnel URL from remote node, app may need manual refresh", "app", app.Name, "nodeID", req.NodeID, "error", err)
-			} else if url != "" {
-				app.PublicURL = url
-				app.TunnelDomain = strings.TrimPrefix(url, "https://")
-				s.logger.InfoContext(ctx, "Quick Tunnel URL captured from remote node", "app", app.Name, "public_url", url)
-			}
-		}
-
-		s.logger.InfoContext(ctx, "app created on remote node", "name", req.Name, "nodeID", req.NodeID, "appID", app.ID)
-		return app, nil
-	}
 
 	// Validate app name
 	if err := validation.ValidateAppName(req.Name); err != nil {
@@ -430,31 +397,13 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 	return app, nil
 }
 
-// GetApp retrieves an app by ID, optionally with a node_id hint for optimization
+// GetApp retrieves an app by ID (local only; gateway routes to this node)
 func (s *appService) GetApp(ctx context.Context, appID string, nodeID string) (*db.App, error) {
 	s.logger.DebugContext(ctx, "getting app", "appID", appID, "nodeID", nodeID)
-
-	result, err := s.router.RouteToNode(
-		ctx,
-		nodeID,
-		func() (interface{}, error) {
-			app, err := s.database.GetApp(appID)
-			if err != nil {
-				return nil, domain.WrapAppNotFound(appID, err)
-			}
-			return app, nil
-		},
-		func(n *db.Node) (interface{}, error) {
-			return s.nodeClient.GetApp(n, appID)
-		},
-	)
-
+	app, err := s.database.GetApp(appID)
 	if err != nil {
-		return nil, err
+		return nil, domain.WrapAppNotFound(appID, err)
 	}
-
-	app := result.(*db.App)
-	// Set the node_id for consistency with ListApps
 	app.NodeID = nodeID
 	return app, nil
 }
@@ -512,352 +461,257 @@ func (s *appService) UpdateApp(ctx context.Context, appID string, nodeID string,
 		}
 	}
 
-	result, err := s.router.RouteToNode(ctx, nodeID,
-		func() (interface{}, error) {
-			app, err := s.database.GetApp(appID)
-			if err != nil {
-				return nil, domain.WrapAppNotFound(appID, err)
-			}
+	app, err := s.database.GetApp(appID)
+	if err != nil {
+		return nil, domain.WrapAppNotFound(appID, err)
+	}
 
-			// Get settings
-			settings, err := s.settingsManager.GetSettings()
-			if err != nil {
-				s.logger.ErrorContext(ctx, "failed to get settings", "error", err)
-				return nil, err
-			}
+	settings, err := s.settingsManager.GetSettings()
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to get settings", "error", err)
+		return nil, err
+	}
 
-			// Parse compose content if provided
-			composeContent := app.ComposeContent // Default to existing
-			if req.ComposeContent != "" {
-				composeContent = req.ComposeContent
-			}
+	composeContent := app.ComposeContent
+	if req.ComposeContent != "" {
+		composeContent = req.ComposeContent
+	}
 
-			// Quick Tunnel: when updating compose, re-inject the Quick Tunnel container so it is not lost
-			if app.TunnelMode == "quick" && req.ComposeContent != "" {
-				if targetService, targetPort, ok := docker.ExtractQuickTunnelTargetFromCompose(app.ComposeContent); ok {
-					compose, err := docker.ParseCompose([]byte(composeContent))
+	if app.TunnelMode == "quick" && req.ComposeContent != "" {
+		if targetService, targetPort, ok := docker.ExtractQuickTunnelTargetFromCompose(app.ComposeContent); ok {
+			compose, err := docker.ParseCompose([]byte(composeContent))
+			if err == nil {
+				metricsPort := 2000
+				if p, ok := docker.ExtractQuickTunnelMetricsHostPort(app.ComposeContent); ok {
+					metricsPort = p
+				}
+				containerConfig := cloudflareProvider.QuickTunnelContainerConfig(targetService, targetPort, metricsPort)
+				networks := docker.ExtractNetworks(compose)
+				network := ""
+				if len(networks) > 0 {
+					network = networks[0]
+				}
+				injected, err := docker.InjectTunnelContainer(compose, app.Name, containerConfig, network)
+				if err == nil && injected {
+					composeBytes, err := docker.MarshalComposeFile(compose)
 					if err == nil {
-						metricsPort := 2000
-						if p, ok := docker.ExtractQuickTunnelMetricsHostPort(app.ComposeContent); ok {
-							metricsPort = p
-						}
-						containerConfig := cloudflareProvider.QuickTunnelContainerConfig(targetService, targetPort, metricsPort)
+						composeContent = string(composeBytes)
+						s.logger.InfoContext(ctx, "re-injected Quick Tunnel container into updated compose", "appID", appID, "target", targetService+":"+fmt.Sprint(targetPort))
+					}
+				}
+			}
+		}
+	}
+
+	if app.TunnelToken != "" {
+		providerName := settings.GetActiveProviderName()
+		providerConfig, err := settings.GetProviderConfig(providerName)
+		if err == nil && providerConfig != nil {
+			provider, err := s.providerRegistry.GetProvider(providerName, providerConfig)
+			if err == nil {
+				if containerProvider, ok := provider.(tunnel.ContainerProvider); ok {
+					compose, err := docker.ParseCompose([]byte(composeContent))
+					if err != nil {
+						s.logger.WarnContext(ctx, "invalid compose file", "appID", appID, "error", err)
+						return nil, domain.WrapComposeInvalid(err)
+					}
+					containerConfig := containerProvider.GetContainerConfig(app.TunnelToken, app.Name)
+					if containerConfig != nil {
 						networks := docker.ExtractNetworks(compose)
 						network := ""
 						if len(networks) > 0 {
 							network = networks[0]
 						}
 						injected, err := docker.InjectTunnelContainer(compose, app.Name, containerConfig, network)
-						if err == nil && injected {
+						if err != nil {
+							s.logger.ErrorContext(ctx, "failed to inject tunnel container", "appID", appID, "error", err)
+							return nil, fmt.Errorf("failed to inject tunnel container: %w", err)
+						}
+						if injected {
 							composeBytes, err := docker.MarshalComposeFile(compose)
-							if err == nil {
-								composeContent = string(composeBytes)
-								s.logger.InfoContext(ctx, "re-injected Quick Tunnel container into updated compose", "appID", appID, "target", targetService+":"+fmt.Sprint(targetPort))
-							}
-						}
-					}
-				}
-			}
-
-			// If app has a tunnel token (custom domain), ensure tunnel container is in the compose using provider abstraction
-			if app.TunnelToken != "" {
-				providerName := settings.GetActiveProviderName()
-				providerConfig, err := settings.GetProviderConfig(providerName)
-				if err == nil && providerConfig != nil {
-					provider, err := s.providerRegistry.GetProvider(providerName, providerConfig)
-					if err == nil {
-						// Check if provider needs container injection
-						if containerProvider, ok := provider.(tunnel.ContainerProvider); ok {
-							compose, err := docker.ParseCompose([]byte(composeContent))
 							if err != nil {
-								s.logger.WarnContext(ctx, "invalid compose file", "appID", appID, "error", err)
-								return nil, domain.WrapComposeInvalid(err)
+								s.logger.ErrorContext(ctx, "failed to marshal compose file", "appID", appID, "error", err)
+								return nil, fmt.Errorf("failed to marshal compose file: %w", err)
 							}
-							containerConfig := containerProvider.GetContainerConfig(app.TunnelToken, app.Name)
-							if containerConfig != nil {
-								networks := docker.ExtractNetworks(compose)
-								network := ""
-								if len(networks) > 0 {
-									network = networks[0]
-								}
-								injected, err := docker.InjectTunnelContainer(compose, app.Name, containerConfig, network)
-								if err != nil {
-									s.logger.ErrorContext(ctx, "failed to inject tunnel container", "appID", appID, "error", err)
-									return nil, fmt.Errorf("failed to inject tunnel container: %w", err)
-								}
-								if injected {
-									composeBytes, err := docker.MarshalComposeFile(compose)
-									if err != nil {
-										s.logger.ErrorContext(ctx, "failed to marshal compose file", "appID", appID, "error", err)
-										return nil, fmt.Errorf("failed to marshal compose file: %w", err)
-									}
-									composeContent = string(composeBytes)
-								}
-							}
+							composeContent = string(composeBytes)
 						}
 					}
 				}
 			}
-
-			if req.Name != "" {
-				app.Name = req.Name
-			}
-			if req.Description != "" {
-				app.Description = req.Description
-			}
-
-			composeChanged := composeContent != app.ComposeContent
-			app.ComposeContent = composeContent
-			app.UpdatedAt = time.Now()
-
-			if err := s.database.UpdateApp(app); err != nil {
-				s.logger.ErrorContext(ctx, "failed to update app in database", "appID", appID, "error", err)
-				return nil, domain.WrapDatabaseOperation("update app", err)
-			}
-
-			if composeChanged {
-				latestVersion, err := s.database.GetLatestVersionNumber(appID)
-				if err != nil {
-					s.logger.WarnContext(ctx, "failed to get latest version number", "appID", appID, "error", err)
-					latestVersion = 0
-				}
-				if err := s.database.MarkAllVersionsAsNotCurrent(appID); err != nil {
-					s.logger.WarnContext(ctx, "failed to mark versions as not current", "appID", appID, "error", err)
-				}
-				updateReason := "Compose file updated"
-				newVersion := db.NewComposeVersion(appID, latestVersion+1, app.ComposeContent, &updateReason, nil)
-				if err := s.database.CreateComposeVersion(newVersion); err != nil {
-					s.logger.WarnContext(ctx, "failed to create compose version", "appID", appID, "error", err)
-				}
-			}
-
-			if err := s.dockerManager.WriteComposeFile(app.Name, app.ComposeContent); err != nil {
-				s.logger.ErrorContext(ctx, "failed to update compose file", "app", app.Name, "error", err)
-				return nil, domain.WrapContainerOperationFailed("write compose file", err)
-			}
-
-			s.logger.InfoContext(ctx, "app updated successfully", "app", app.Name, "appID", appID)
-			return app, nil
-		},
-		func(n *db.Node) (interface{}, error) {
-			return s.nodeClient.UpdateApp(n, appID, req)
-		},
-	)
-	if err != nil {
-		return nil, err
+		}
 	}
-	return result.(*db.App), nil
+
+	if req.Name != "" {
+		app.Name = req.Name
+	}
+	if req.Description != "" {
+		app.Description = req.Description
+	}
+
+	composeChanged := composeContent != app.ComposeContent
+	app.ComposeContent = composeContent
+	app.UpdatedAt = time.Now()
+
+	if err := s.database.UpdateApp(app); err != nil {
+		s.logger.ErrorContext(ctx, "failed to update app in database", "appID", appID, "error", err)
+		return nil, domain.WrapDatabaseOperation("update app", err)
+	}
+
+	if composeChanged {
+		latestVersion, err := s.database.GetLatestVersionNumber(appID)
+		if err != nil {
+			s.logger.WarnContext(ctx, "failed to get latest version number", "appID", appID, "error", err)
+			latestVersion = 0
+		}
+		if err := s.database.MarkAllVersionsAsNotCurrent(appID); err != nil {
+			s.logger.WarnContext(ctx, "failed to mark versions as not current", "appID", appID, "error", err)
+		}
+		updateReason := "Compose file updated"
+		newVersion := db.NewComposeVersion(appID, latestVersion+1, app.ComposeContent, &updateReason, nil)
+		if err := s.database.CreateComposeVersion(newVersion); err != nil {
+			s.logger.WarnContext(ctx, "failed to create compose version", "appID", appID, "error", err)
+		}
+	}
+
+	if err := s.dockerManager.WriteComposeFile(app.Name, app.ComposeContent); err != nil {
+		s.logger.ErrorContext(ctx, "failed to update compose file", "app", app.Name, "error", err)
+		return nil, domain.WrapContainerOperationFailed("write compose file", err)
+	}
+
+	s.logger.InfoContext(ctx, "app updated successfully", "app", app.Name, "appID", appID)
+	return app, nil
 }
 
-// DeleteApp deletes an app using comprehensive cleanup
+// DeleteApp deletes an app using comprehensive cleanup (local only)
 func (s *appService) DeleteApp(ctx context.Context, appID string, nodeID string) error {
 	s.logger.InfoContext(ctx, "deleting app", "appID", appID, "nodeID", nodeID)
-
-	_, err := s.router.RouteToNode(ctx, nodeID,
-		func() (interface{}, error) {
-			app, err := s.database.GetApp(appID)
-			if err != nil {
-				return nil, domain.WrapAppNotFound(appID, err)
-			}
-
-			tunnelManager, settings, err := s.settingsManager.GetConfiguredTunnelManager()
-			if err != nil {
-				s.logger.WarnContext(ctx, "failed to get settings for cleanup", "app", app.Name, "error", err)
-				settings = nil
-			}
-
-			cleanupManager := cleanup.NewCleanupManager(s.dockerManager, s.database, settings, tunnelManager)
-			results, err := cleanupManager.CleanupApp(app)
-			successCount, failedCount, totalDuration := cleanupManager.GetSummary()
-
-			if err != nil {
-				s.logger.ErrorContext(ctx, "app cleanup completed with errors",
-					"app", app.Name, "appID", app.ID,
-					"successCount", successCount, "failedCount", failedCount, "totalDuration", totalDuration, "error", err)
-			} else {
-				s.logger.InfoContext(ctx, "app cleanup completed successfully",
-					"app", app.Name, "appID", app.ID,
-					"successCount", successCount, "failedCount", failedCount, "totalDuration", totalDuration)
-			}
-			for _, result := range results {
-				if !result.Success {
-					s.logger.ErrorContext(ctx, "cleanup step failed", "app", app.Name, "step", result.Step, "error", result.Error, "duration", result.Duration)
-				}
-			}
-			return nil, err
-		},
-		func(n *db.Node) (interface{}, error) {
-			return nil, s.nodeClient.DeleteApp(n, appID)
-		},
-	)
+	app, err := s.database.GetApp(appID)
+	if err != nil {
+		return domain.WrapAppNotFound(appID, err)
+	}
+	tunnelManager, settings, err := s.settingsManager.GetConfiguredTunnelManager()
+	if err != nil {
+		s.logger.WarnContext(ctx, "failed to get settings for cleanup", "app", app.Name, "error", err)
+		settings = nil
+	}
+	cleanupManager := cleanup.NewCleanupManager(s.dockerManager, s.database, settings, tunnelManager)
+	results, err := cleanupManager.CleanupApp(app)
+	successCount, failedCount, totalDuration := cleanupManager.GetSummary()
+	if err != nil {
+		s.logger.ErrorContext(ctx, "app cleanup completed with errors",
+			"app", app.Name, "appID", app.ID,
+			"successCount", successCount, "failedCount", failedCount, "totalDuration", totalDuration, "error", err)
+	} else {
+		s.logger.InfoContext(ctx, "app cleanup completed successfully",
+			"app", app.Name, "appID", app.ID,
+			"successCount", successCount, "failedCount", failedCount, "totalDuration", totalDuration)
+	}
+	for _, result := range results {
+		if !result.Success {
+			s.logger.ErrorContext(ctx, "cleanup step failed", "app", app.Name, "step", result.Step, "error", result.Error, "duration", result.Duration)
+		}
+	}
 	return err
 }
 
-// StartApp starts an application
+// StartApp starts an application (local only)
 func (s *appService) StartApp(ctx context.Context, appID string, nodeID string) (*db.App, error) {
 	s.logger.InfoContext(ctx, "starting app", "appID", appID, "nodeID", nodeID)
-
-	result, err := s.router.RouteToNode(ctx, nodeID,
-		func() (interface{}, error) {
-			app, err := s.database.GetApp(appID)
-			if err != nil {
-				return nil, domain.WrapAppNotFound(appID, err)
-			}
-			if err := s.dockerManager.StartApp(app.Name); err != nil {
-				app.Status = "error"
-				em := err.Error()
-				app.ErrorMessage = &em
-				app.UpdatedAt = time.Now()
-				_ = s.database.UpdateApp(app)
-				return nil, domain.WrapContainerOperationFailed("start app", err)
-			}
-			app.Status = "running"
-			app.ErrorMessage = nil
-			app.UpdatedAt = time.Now()
-			if err := s.database.UpdateApp(app); err != nil {
-				return nil, domain.WrapDatabaseOperation("update app status", err)
-			}
-			s.logger.InfoContext(ctx, "app started successfully", "app", app.Name, "appID", appID)
-			return app, nil
-		},
-		func(n *db.Node) (interface{}, error) {
-			if err := s.nodeClient.StartApp(n, appID); err != nil {
-				return nil, err
-			}
-			return s.nodeClient.GetApp(n, appID)
-		},
-	)
+	app, err := s.database.GetApp(appID)
 	if err != nil {
-		return nil, err
+		return nil, domain.WrapAppNotFound(appID, err)
 	}
-	return result.(*db.App), nil
+	if err := s.dockerManager.StartApp(app.Name); err != nil {
+		app.Status = "error"
+		em := err.Error()
+		app.ErrorMessage = &em
+		app.UpdatedAt = time.Now()
+		_ = s.database.UpdateApp(app)
+		return nil, domain.WrapContainerOperationFailed("start app", err)
+	}
+	app.Status = "running"
+	app.ErrorMessage = nil
+	app.UpdatedAt = time.Now()
+	if err := s.database.UpdateApp(app); err != nil {
+		return nil, domain.WrapDatabaseOperation("update app status", err)
+	}
+	s.logger.InfoContext(ctx, "app started successfully", "app", app.Name, "appID", appID)
+	return app, nil
 }
 
-// StopApp stops an application
+// StopApp stops an application (local only)
 func (s *appService) StopApp(ctx context.Context, appID string, nodeID string) (*db.App, error) {
 	s.logger.InfoContext(ctx, "stopping app", "appID", appID, "nodeID", nodeID)
-
-	result, err := s.router.RouteToNode(ctx, nodeID,
-		func() (interface{}, error) {
-			app, err := s.database.GetApp(appID)
-			if err != nil {
-				return nil, domain.WrapAppNotFound(appID, err)
-			}
-			if err := s.dockerManager.StopApp(app.Name); err != nil {
-				app.Status = "error"
-				em := err.Error()
-				app.ErrorMessage = &em
-				app.UpdatedAt = time.Now()
-				_ = s.database.UpdateApp(app)
-				return nil, domain.WrapContainerOperationFailed("stop app", err)
-			}
-			app.Status = "stopped"
-			app.ErrorMessage = nil
-			app.UpdatedAt = time.Now()
-			if err := s.database.UpdateApp(app); err != nil {
-				return nil, domain.WrapDatabaseOperation("update app status", err)
-			}
-			s.logger.InfoContext(ctx, "app stopped successfully", "app", app.Name, "appID", appID)
-			return app, nil
-		},
-		func(n *db.Node) (interface{}, error) {
-			if err := s.nodeClient.StopApp(n, appID); err != nil {
-				return nil, err
-			}
-			return s.nodeClient.GetApp(n, appID)
-		},
-	)
+	app, err := s.database.GetApp(appID)
 	if err != nil {
-		return nil, err
+		return nil, domain.WrapAppNotFound(appID, err)
 	}
-	return result.(*db.App), nil
+	if err := s.dockerManager.StopApp(app.Name); err != nil {
+		app.Status = "error"
+		em := err.Error()
+		app.ErrorMessage = &em
+		app.UpdatedAt = time.Now()
+		_ = s.database.UpdateApp(app)
+		return nil, domain.WrapContainerOperationFailed("stop app", err)
+	}
+	app.Status = "stopped"
+	app.ErrorMessage = nil
+	app.UpdatedAt = time.Now()
+	if err := s.database.UpdateApp(app); err != nil {
+		return nil, domain.WrapDatabaseOperation("update app status", err)
+	}
+	s.logger.InfoContext(ctx, "app stopped successfully", "app", app.Name, "appID", appID)
+	return app, nil
 }
 
-// UpdateAppContainers updates app containers with zero downtime
+// UpdateAppContainers updates app containers with zero downtime (local only)
 func (s *appService) UpdateAppContainers(ctx context.Context, appID string, nodeID string) (*db.App, error) {
 	s.logger.InfoContext(ctx, "updating app containers", "appID", appID, "nodeID", nodeID)
-
-	result, err := s.router.RouteToNode(ctx, nodeID,
-		func() (interface{}, error) {
-			app, err := s.database.GetApp(appID)
-			if err != nil {
-				return nil, domain.WrapAppNotFound(appID, err)
-			}
-			app.Status = "updating"
-			app.UpdatedAt = time.Now()
-			if err := s.database.UpdateApp(app); err != nil {
-				return nil, domain.WrapDatabaseOperation("update app status", err)
-			}
-			// Sync compose from DB to disk so UpdateApp uses current config (e.g. after switch Quick → custom tunnel)
-			if err := s.dockerManager.WriteComposeFile(app.Name, app.ComposeContent); err != nil {
-				app.Status = "error"
-				em := err.Error()
-				app.ErrorMessage = &em
-				app.UpdatedAt = time.Now()
-				_ = s.database.UpdateApp(app)
-				return nil, domain.WrapContainerOperationFailed("write compose file", err)
-			}
-			if err := s.dockerManager.UpdateApp(app.Name); err != nil {
-				app.Status = "error"
-				em := err.Error()
-				app.ErrorMessage = &em
-				app.UpdatedAt = time.Now()
-				_ = s.database.UpdateApp(app)
-				return nil, domain.WrapContainerOperationFailed("update app", err)
-			}
-			// Force-recreate the tunnel service so it picks up new config (e.g. new TUNNEL_TOKEN after switch to custom domain).
-			// docker compose up -d often does not recreate when only env vars change; without this the domain would not resolve until manual restart.
-			if err := s.dockerManager.ForceRecreateTunnel(app.Name); err != nil {
-				s.logger.WarnContext(ctx, "could not force-recreate tunnel (app may have no tunnel)", "app", app.Name, "appID", appID, "error", err)
-			}
-			app.Status = "running"
-			app.ErrorMessage = nil
-			app.UpdatedAt = time.Now()
-			if err := s.database.UpdateApp(app); err != nil {
-				return nil, domain.WrapDatabaseOperation("update app status", err)
-			}
-			s.logger.InfoContext(ctx, "app containers updated successfully", "app", app.Name, "appID", appID)
-			return app, nil
-		},
-		func(n *db.Node) (interface{}, error) {
-			return s.nodeClient.UpdateAppContainers(n, appID)
-		},
-	)
+	app, err := s.database.GetApp(appID)
 	if err != nil {
-		return nil, err
+		return nil, domain.WrapAppNotFound(appID, err)
 	}
-	return result.(*db.App), nil
+	app.Status = "updating"
+	app.UpdatedAt = time.Now()
+	if err := s.database.UpdateApp(app); err != nil {
+		return nil, domain.WrapDatabaseOperation("update app status", err)
+	}
+	if err := s.dockerManager.WriteComposeFile(app.Name, app.ComposeContent); err != nil {
+		app.Status = "error"
+		em := err.Error()
+		app.ErrorMessage = &em
+		app.UpdatedAt = time.Now()
+		_ = s.database.UpdateApp(app)
+		return nil, domain.WrapContainerOperationFailed("write compose file", err)
+	}
+	if err := s.dockerManager.UpdateApp(app.Name); err != nil {
+		app.Status = "error"
+		em := err.Error()
+		app.ErrorMessage = &em
+		app.UpdatedAt = time.Now()
+		_ = s.database.UpdateApp(app)
+		return nil, domain.WrapContainerOperationFailed("update app", err)
+	}
+	if err := s.dockerManager.ForceRecreateTunnel(app.Name); err != nil {
+		s.logger.WarnContext(ctx, "could not force-recreate tunnel (app may have no tunnel)", "app", app.Name, "appID", appID, "error", err)
+	}
+	app.Status = "running"
+	app.ErrorMessage = nil
+	app.UpdatedAt = time.Now()
+	if err := s.database.UpdateApp(app); err != nil {
+		return nil, domain.WrapDatabaseOperation("update app status", err)
+	}
+	s.logger.InfoContext(ctx, "app containers updated successfully", "app", app.Name, "appID", appID)
+	return app, nil
 }
 
-// CreateTunnelForApp creates a named (custom domain) tunnel for an app that has none.
-// When nodeID is remote, the request is forwarded to that node (all-or-nothing). Returns (app, handledLocally, error).
+// CreateTunnelForApp creates a named (custom domain) tunnel for an app that has none (local only).
 func (s *appService) CreateTunnelForApp(ctx context.Context, appID string, nodeID string, body interface{}) (*db.App, bool, error) {
-	result, err := s.router.RouteToNode(ctx, nodeID,
-		func() (interface{}, error) {
-			app, err := s.createTunnelForAppLocal(ctx, appID, nodeID)
-			if err != nil {
-				return nil, err
-			}
-			return &createTunnelResult{app: app, local: true}, nil
-		},
-		func(n *db.Node) (interface{}, error) {
-			app, err := s.nodeClient.CreateTunnelForApp(n, appID, body)
-			if err != nil {
-				return nil, err
-			}
-			return &createTunnelResult{app: app, local: false}, nil
-		},
-	)
+	app, err := s.createTunnelForAppLocal(ctx, appID, nodeID)
 	if err != nil {
 		return nil, false, err
 	}
-	res := result.(*createTunnelResult)
-	return res.app, res.local, nil
-}
-
-type createTunnelResult struct {
-	app   *db.App
-	local bool
+	return app, true, nil
 }
 
 // createTunnelForAppLocal runs the create-tunnel logic on this node (DB, provider, compose, UpdateAppContainers).
@@ -954,29 +808,17 @@ func (s *appService) createTunnelForAppLocal(ctx context.Context, appID string, 
 	return app, nil
 }
 
-// SwitchAppToCustomTunnel switches an app from Quick Tunnel to a named (custom domain) tunnel.
-// When nodeID is a remote node, the request is forwarded to that node so it processes the request (its DB, its config). All-or-nothing.
+// SwitchAppToCustomTunnel switches an app from Quick Tunnel to a named (custom domain) tunnel (local only).
 func (s *appService) SwitchAppToCustomTunnel(ctx context.Context, appID string, nodeID string, body interface{}) (*db.App, error) {
-	result, err := s.router.RouteToNode(ctx, nodeID,
-		func() (interface{}, error) {
-			app, err := s.database.GetApp(appID)
-			if err != nil {
-				return nil, domain.WrapAppNotFound(appID, err)
-			}
-			if app.TunnelMode != "quick" {
-				return nil, fmt.Errorf("app is not using Quick Tunnel (tunnel_mode=%q)", app.TunnelMode)
-			}
-			createdApp, _, err := s.CreateTunnelForApp(ctx, appID, nodeID, body)
-			return createdApp, err
-		},
-		func(n *db.Node) (interface{}, error) {
-			return s.nodeClient.SwitchAppToCustomTunnel(n, appID, body)
-		},
-	)
+	app, err := s.database.GetApp(appID)
 	if err != nil {
-		return nil, err
+		return nil, domain.WrapAppNotFound(appID, err)
 	}
-	return result.(*db.App), nil
+	if app.TunnelMode != "quick" {
+		return nil, fmt.Errorf("app is not using Quick Tunnel (tunnel_mode=%q)", app.TunnelMode)
+	}
+	createdApp, _, err := s.CreateTunnelForApp(ctx, appID, nodeID, body)
+	return createdApp, err
 }
 
 // CreateQuickTunnelForApp adds a Quick Tunnel (temporary trycloudflare.com URL) to an app that has no tunnel.
@@ -990,187 +832,133 @@ func (s *appService) CreateQuickTunnelForApp(ctx context.Context, appID string, 
 		return nil, domain.WrapValidationError("port", fmt.Errorf("port must be between 1 and 65535"))
 	}
 
-	result, err := s.router.RouteToNode(ctx, nodeID,
-		func() (interface{}, error) {
-			app, err := s.database.GetApp(appID)
-			if err != nil {
-				return nil, domain.WrapAppNotFound(appID, err)
-			}
-			// Only block when app has a custom (named) tunnel; allow when already quick (treat as refresh/recreate)
-			if app.TunnelMode == "custom" || app.TunnelToken != "" {
-				return nil, domain.WrapValidationError("tunnel", fmt.Errorf("this app uses a custom domain tunnel; delete the tunnel from the Cloudflare tab first if you want a temporary Quick Tunnel URL instead"))
-			}
-
-			compose, err := docker.ParseCompose([]byte(app.ComposeContent))
-			if err != nil {
-				s.logger.WarnContext(ctx, "invalid compose file", "appID", appID, "error", err)
-				return nil, domain.WrapComposeInvalid(err)
-			}
-
-			metricsPort := s.nextFreeQuickTunnelMetricsPort()
-			containerConfig := cloudflareProvider.QuickTunnelContainerConfig(strings.TrimSpace(service), port, metricsPort)
-			networks := docker.ExtractNetworks(compose)
-			network := ""
-			if len(networks) > 0 {
-				network = networks[0]
-			}
-			s.logger.InfoContext(ctx, "injecting Quick Tunnel container into compose", "app", app.Name, "service", service, "port", port, "metricsPort", metricsPort)
-			injected, err := docker.InjectTunnelContainer(compose, app.Name, containerConfig, network)
-			if err != nil {
-				s.logger.ErrorContext(ctx, "failed to inject Quick Tunnel container", "app", app.Name, "error", err)
-				return nil, fmt.Errorf("failed to inject Quick Tunnel container: %w", err)
-			}
-			if !injected {
-				return nil, fmt.Errorf("Quick Tunnel container was not injected (may already exist)")
-			}
-			composeBytes, err := docker.MarshalComposeFile(compose)
-			if err != nil {
-				s.logger.ErrorContext(ctx, "failed to marshal compose file", "app", app.Name, "error", err)
-				return nil, fmt.Errorf("failed to marshal compose file: %w", err)
-			}
-			composeContent := string(composeBytes)
-
-			app.ComposeContent = composeContent
-			app.TunnelMode = "quick"
-			app.TunnelID = ""
-			app.TunnelToken = ""
-			app.TunnelDomain = ""
-			app.PublicURL = ""
-			app.UpdatedAt = time.Now()
-			if err := s.database.UpdateApp(app); err != nil {
-				s.logger.ErrorContext(ctx, "failed to update app in database", "appID", appID, "error", err)
-				return nil, domain.WrapDatabaseOperation("update app", err)
-			}
-
-			latestVersion, err := s.database.GetLatestVersionNumber(appID)
-			if err != nil {
-				s.logger.WarnContext(ctx, "failed to get latest version number", "appID", appID, "error", err)
-				latestVersion = 0
-			}
-			if err := s.database.MarkAllVersionsAsNotCurrent(appID); err != nil {
-				s.logger.WarnContext(ctx, "failed to mark versions as not current", "appID", appID, "error", err)
-			}
-			updateReason := "Quick Tunnel added"
-			newVersion := db.NewComposeVersion(appID, latestVersion+1, app.ComposeContent, &updateReason, nil)
-			if err := s.database.CreateComposeVersion(newVersion); err != nil {
-				s.logger.WarnContext(ctx, "failed to create compose version", "appID", appID, "error", err)
-			}
-
-			if err := s.dockerManager.WriteComposeFile(app.Name, app.ComposeContent); err != nil {
-				s.logger.ErrorContext(ctx, "failed to write compose file", "app", app.Name, "error", err)
-				return nil, domain.WrapContainerOperationFailed("write compose file", err)
-			}
-
-			if err := s.dockerManager.StartApp(app.Name); err != nil {
-				s.logger.ErrorContext(ctx, "failed to start app for Quick Tunnel", "app", app.Name, "error", err)
-				app.Status = "error"
-				em := err.Error()
-				app.ErrorMessage = &em
-				app.UpdatedAt = time.Now()
-				_ = s.database.UpdateApp(app)
-				return nil, domain.WrapContainerOperationFailed("start app", err)
-			}
-			app.Status = "running"
-			app.ErrorMessage = nil
-			app.UpdatedAt = time.Now()
-			if err := s.database.UpdateApp(app); err != nil {
-				s.logger.WarnContext(ctx, "failed to update app status after start", "app", app.Name, "error", err)
-			}
-
-			metricsEndpoint := s.quickTunnelMetricsEndpoint(app.ComposeContent)
-			s.logger.InfoContext(ctx, "extracting Quick Tunnel URL from metrics", "app", app.Name, "endpoint", metricsEndpoint)
-			quickURL, err := cloudflare.ExtractQuickTunnelURL(metricsEndpoint, 30, 2*time.Second)
-			if err != nil {
-				s.logger.WarnContext(ctx, "failed to extract Quick Tunnel URL, app may need manual refresh", "app", app.Name, "error", err)
-			} else {
-				app.PublicURL = quickURL
-				app.TunnelDomain = strings.TrimPrefix(quickURL, "https://")
-				app.UpdatedAt = time.Now()
-				if err := s.database.UpdateApp(app); err != nil {
-					s.logger.WarnContext(ctx, "failed to save Quick Tunnel URL to app", "app", app.Name, "error", err)
-				} else {
-					s.logger.InfoContext(ctx, "Quick Tunnel URL captured", "app", app.Name, "public_url", quickURL)
-				}
-			}
-
-			return app, nil
-		},
-		func(n *db.Node) (interface{}, error) {
-			app, err := s.nodeClient.CreateQuickTunnelForApp(n, appID, service, port)
-			if err != nil {
-				return nil, err
-			}
-			if app.TunnelMode == "quick" && app.PublicURL == "" {
-				s.logger.InfoContext(ctx, "fetching Quick Tunnel URL from remote node after create", "appID", appID, "nodeID", n.ID)
-				url, err := s.nodeClient.GetQuickTunnelURL(n, appID)
-				if err != nil {
-					s.logger.WarnContext(ctx, "failed to get Quick Tunnel URL from remote node", "app", app.Name, "nodeID", n.ID, "error", err)
-				} else if url != "" {
-					app.PublicURL = url
-					app.TunnelDomain = strings.TrimPrefix(url, "https://")
-				}
-			}
-			return app, nil
-		},
-	)
+	app, err := s.database.GetApp(appID)
 	if err != nil {
-		return nil, err
+		return nil, domain.WrapAppNotFound(appID, err)
 	}
-	return result.(*db.App), nil
+	if app.TunnelMode == "custom" || app.TunnelToken != "" {
+		return nil, domain.WrapValidationError("tunnel", fmt.Errorf("this app uses a custom domain tunnel; delete the tunnel from the Cloudflare tab first if you want a temporary Quick Tunnel URL instead"))
+	}
+
+	compose, err := docker.ParseCompose([]byte(app.ComposeContent))
+	if err != nil {
+		s.logger.WarnContext(ctx, "invalid compose file", "appID", appID, "error", err)
+		return nil, domain.WrapComposeInvalid(err)
+	}
+
+	metricsPort := s.nextFreeQuickTunnelMetricsPort()
+	containerConfig := cloudflareProvider.QuickTunnelContainerConfig(strings.TrimSpace(service), port, metricsPort)
+	networks := docker.ExtractNetworks(compose)
+	network := ""
+	if len(networks) > 0 {
+		network = networks[0]
+	}
+	s.logger.InfoContext(ctx, "injecting Quick Tunnel container into compose", "app", app.Name, "service", service, "port", port, "metricsPort", metricsPort)
+	injected, err := docker.InjectTunnelContainer(compose, app.Name, containerConfig, network)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to inject Quick Tunnel container", "app", app.Name, "error", err)
+		return nil, fmt.Errorf("failed to inject Quick Tunnel container: %w", err)
+	}
+	if !injected {
+		return nil, fmt.Errorf("Quick Tunnel container was not injected (may already exist)")
+	}
+	composeBytes, err := docker.MarshalComposeFile(compose)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to marshal compose file", "app", app.Name, "error", err)
+		return nil, fmt.Errorf("failed to marshal compose file: %w", err)
+	}
+	app.ComposeContent = string(composeBytes)
+	app.TunnelMode = "quick"
+	app.TunnelID = ""
+	app.TunnelToken = ""
+	app.TunnelDomain = ""
+	app.PublicURL = ""
+	app.UpdatedAt = time.Now()
+	if err := s.database.UpdateApp(app); err != nil {
+		s.logger.ErrorContext(ctx, "failed to update app in database", "appID", appID, "error", err)
+		return nil, domain.WrapDatabaseOperation("update app", err)
+	}
+
+	latestVersion, err := s.database.GetLatestVersionNumber(appID)
+	if err != nil {
+		s.logger.WarnContext(ctx, "failed to get latest version number", "appID", appID, "error", err)
+		latestVersion = 0
+	}
+	if err := s.database.MarkAllVersionsAsNotCurrent(appID); err != nil {
+		s.logger.WarnContext(ctx, "failed to mark versions as not current", "appID", appID, "error", err)
+	}
+	updateReason := "Quick Tunnel added"
+	newVersion := db.NewComposeVersion(appID, latestVersion+1, app.ComposeContent, &updateReason, nil)
+	if err := s.database.CreateComposeVersion(newVersion); err != nil {
+		s.logger.WarnContext(ctx, "failed to create compose version", "appID", appID, "error", err)
+	}
+
+	if err := s.dockerManager.WriteComposeFile(app.Name, app.ComposeContent); err != nil {
+		s.logger.ErrorContext(ctx, "failed to write compose file", "app", app.Name, "error", err)
+		return nil, domain.WrapContainerOperationFailed("write compose file", err)
+	}
+
+	if err := s.dockerManager.StartApp(app.Name); err != nil {
+		s.logger.ErrorContext(ctx, "failed to start app for Quick Tunnel", "app", app.Name, "error", err)
+		app.Status = "error"
+		em := err.Error()
+		app.ErrorMessage = &em
+		app.UpdatedAt = time.Now()
+		_ = s.database.UpdateApp(app)
+		return nil, domain.WrapContainerOperationFailed("start app", err)
+	}
+	app.Status = "running"
+	app.ErrorMessage = nil
+	app.UpdatedAt = time.Now()
+	if err := s.database.UpdateApp(app); err != nil {
+		s.logger.WarnContext(ctx, "failed to update app status after start", "app", app.Name, "error", err)
+	}
+
+	metricsEndpoint := s.quickTunnelMetricsEndpoint(app.ComposeContent)
+	s.logger.InfoContext(ctx, "extracting Quick Tunnel URL from metrics", "app", app.Name, "endpoint", metricsEndpoint)
+	quickURL, err := cloudflare.ExtractQuickTunnelURL(metricsEndpoint, 30, 2*time.Second)
+	if err != nil {
+		s.logger.WarnContext(ctx, "failed to extract Quick Tunnel URL, app may need manual refresh", "app", app.Name, "error", err)
+	} else {
+		app.PublicURL = quickURL
+		app.TunnelDomain = strings.TrimPrefix(quickURL, "https://")
+		app.UpdatedAt = time.Now()
+		if err := s.database.UpdateApp(app); err != nil {
+			s.logger.WarnContext(ctx, "failed to save Quick Tunnel URL to app", "app", app.Name, "error", err)
+		} else {
+			s.logger.InfoContext(ctx, "Quick Tunnel URL captured", "app", app.Name, "public_url", quickURL)
+		}
+	}
+	return app, nil
 }
 
-// GetQuickTunnelURL runs Quick Tunnel URL extraction on the node that hosts the app and returns the URL.
+// GetQuickTunnelURL runs Quick Tunnel URL extraction on this node and returns the URL (local only).
 func (s *appService) GetQuickTunnelURL(ctx context.Context, appID string, nodeID string) (string, error) {
-	result, err := s.router.RouteToNode(
-		ctx,
-		nodeID,
-		func() (interface{}, error) {
-			app, err := s.database.GetApp(appID)
-			if err != nil {
-				return nil, domain.WrapAppNotFound(appID, err)
-			}
-			if app.TunnelMode != "quick" {
-				return "", fmt.Errorf("app is not in Quick Tunnel mode (tunnel_mode=%q)", app.TunnelMode)
-			}
-			metricsEndpoint := s.quickTunnelMetricsEndpoint(app.ComposeContent)
-			s.logger.InfoContext(ctx, "extracting Quick Tunnel URL from metrics", "app", app.Name, "endpoint", metricsEndpoint)
-			url, err := cloudflare.ExtractQuickTunnelURL(metricsEndpoint, 30, 2*time.Second)
-			if err != nil {
-				return "", err
-			}
-			app.PublicURL = url
-			app.TunnelDomain = strings.TrimPrefix(url, "https://")
-			app.UpdatedAt = time.Now()
-			if err := s.database.UpdateApp(app); err != nil {
-				s.logger.WarnContext(ctx, "failed to save Quick Tunnel URL to app", "app", app.Name, "error", err)
-			}
-			return url, nil
-		},
-		func(n *db.Node) (interface{}, error) {
-			return s.nodeClient.GetQuickTunnelURL(n, appID)
-		},
-	)
+	app, err := s.database.GetApp(appID)
+	if err != nil {
+		return "", domain.WrapAppNotFound(appID, err)
+	}
+	if app.TunnelMode != "quick" {
+		return "", fmt.Errorf("app is not in Quick Tunnel mode (tunnel_mode=%q)", app.TunnelMode)
+	}
+	metricsEndpoint := s.quickTunnelMetricsEndpoint(app.ComposeContent)
+	s.logger.InfoContext(ctx, "extracting Quick Tunnel URL from metrics", "app", app.Name, "endpoint", metricsEndpoint)
+	url, err := cloudflare.ExtractQuickTunnelURL(metricsEndpoint, 30, 2*time.Second)
 	if err != nil {
 		return "", err
 	}
-	return result.(string), nil
+	app.PublicURL = url
+	app.TunnelDomain = strings.TrimPrefix(url, "https://")
+	app.UpdatedAt = time.Now()
+	if err := s.database.UpdateApp(app); err != nil {
+		s.logger.WarnContext(ctx, "failed to save Quick Tunnel URL to app", "app", app.Name, "error", err)
+	}
+	return url, nil
 }
 
-// RestartCloudflared restarts the cloudflared container for an app
-// This is typically called after updating ingress rules to apply the new configuration
+// RestartCloudflared restarts the cloudflared container for an app (local only; gateway routes to this node)
 func (s *appService) RestartCloudflared(ctx context.Context, appID string, nodeID string) error {
 	s.logger.InfoContext(ctx, "restarting cloudflared container", "appID", appID, "nodeID", nodeID)
-
-	// If app is on a remote node, we can't restart cloudflared remotely
-	// The ingress update already happened via Cloudflare API, so this is best-effort
-	// In a multi-node setup, cloudflared restart would need to happen on the target node
-	// For now, we only restart if the app is on this node
-	if !s.router.IsLocalNode(nodeID) {
-		s.logger.WarnContext(ctx, "cannot restart cloudflared on remote node, ingress updated but container restart may be required", "appID", appID, "nodeID", nodeID)
-		return nil // Don't fail - ingress update already succeeded
-	}
-
-	// Get app from local node
 	app, err := s.database.GetApp(appID)
 	if err != nil {
 		s.logger.DebugContext(ctx, "app not found for cloudflared restart", "appID", appID)

@@ -116,7 +116,51 @@ cd web && npm run dev # Terminal 2: Frontend dev server
 Frontend dev server runs at `http://localhost:5173` with hot module reloading.  
 Backend API runs at `http://localhost:8080` with automatic rebuild on code changes.
 
-See [Development Guide](./docs/DEVELOPMENT.md) for detailed instructions.
+#### Run everything locally (no Docker)
+
+| What | Command | Port |
+|------|---------|------|
+| Backend (primary) | `make run-local` (with Air hot reload) | 8080 |
+| Frontend | `cd web && npm run dev` | 5173 |
+
+Use the same `.env` (e.g. `cp env.example .env`). Open **http://localhost:5173**; Vite proxies `/api` and `/auth` to the backend.
+
+#### Run with API gateway (primary + gateway + frontend)
+
+When testing the gateway locally, primary and gateway need different ports. Example:
+
+1. **Primary backend** (e.g. `.env` or `ENV_FILE`):
+   ```env
+   SERVER_ADDRESS=:8082
+   NODE_API_ENDPOINT=http://localhost:8082
+   GATEWAY_API_KEY=dev-gateway-secret
+   ```
+   ```bash
+   make run-local   # or: make run-local ENV_FILE=.env.primary
+   ```
+   → Primary listens on **8082**.
+
+2. **Gateway** (same `.env` or a gateway-specific one):
+   ```env
+   GATEWAY_LISTEN_ADDRESS=:8080
+   PRIMARY_BACKEND_URL=http://localhost:8082
+   GATEWAY_API_KEY=dev-gateway-secret
+   ```
+   ```bash
+   make run-gateway   # with Air hot reload
+   # or: make run-gateway ENV_FILE=.env.gateway
+   ```
+   → Gateway listens on **8080** (hot reloads on code changes).
+
+3. **Frontend** (proxy points at gateway):
+   ```bash
+   cd web && npm run dev
+   ```
+   Vite proxies to `http://localhost:8080` (gateway). Open **http://localhost:5173**.
+
+Summary: **Primary 8082 → Gateway 8080 → Frontend proxy → Browser 5173.**
+
+See [Development Guide](./docs/DEVELOPMENT.md) for more details.
 
 ## 🛠️ Make Commands
 
@@ -154,6 +198,7 @@ make restart-backend  # Restart backend service
 make install-air      # Install Air for local development
 make run-local        # Run backend locally with Air
 make run-local-no-air # Run backend locally without Air
+make run-gateway      # Run API gateway (set GATEWAY_* and GATEWAY_API_KEY in .env)
 ```
 
 ### Getting Help
@@ -167,6 +212,8 @@ make help             # Show all available commands with descriptions
 | Command | Description |
 |---------|-------------|
 | `make dev` | 🚀 Start full dev environment |
+| `make run-local` | 🖥️ Run backend locally (Air) |
+| `make run-gateway` | 🌐 Run API gateway locally |
 | `make prod` | 🏭 Start production |
 | `make logs` | 📜 View all logs |
 | `make down` | 🛑 Stop everything |
