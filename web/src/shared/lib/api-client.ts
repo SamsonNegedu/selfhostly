@@ -46,6 +46,11 @@ class ApiClient {
       throw new Error('UNAUTHORIZED');
     }
 
+    // Handle 404 Not Found (e.g., when auth is disabled)
+    if (response.status === 404) {
+      throw new Error('NOT_FOUND');
+    }
+
     // Handle non-OK responses
     if (!response.ok) {
       let errorMessage = `Request failed with status ${response.status}`;

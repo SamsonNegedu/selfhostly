@@ -366,7 +366,7 @@ export function useCurrentUser() {
       try {
         return await apiClient.get<User>('/api/me');
       } catch (error) {
-        // Return null for 401 instead of throwing
+        // Return null for 401, but let 404 bubble up (auth disabled)
         if (error instanceof Error && error.message === 'UNAUTHORIZED') {
           return null;
         }

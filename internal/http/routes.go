@@ -54,12 +54,14 @@ func (s *Server) setupRoutes() {
 		// Node management routes
 		s.setupNodeRoutes(api)
 
-		// Node-only routes (require node auth)
-		api.POST("/nodes/:id/heartbeat", s.requireNodeAuthMiddleware(), s.sendNodeHeartbeat)
+	// Node-only routes (require node auth)
+	api.POST("/nodes/:id/heartbeat", s.requireNodeAuthMiddleware(), s.sendNodeHeartbeat)
 
-		// User info endpoint (user auth only in practice)
+	// User info endpoint (only when auth is enabled)
+	if s.authService != nil {
 		api.GET("/me", s.getCurrentUser)
 	}
+}
 
 	// Serve frontend static files
 	s.engine.Static("/assets", "./web/dist/assets")
