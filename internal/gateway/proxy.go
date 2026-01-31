@@ -104,6 +104,30 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	outReq.Header.Del("Te")
 	outReq.Header.Del("Trailer")
 
+	// Strip Cloudflare-specific headers to prevent Error 1000 loops
+	// These headers should NOT be forwarded to upstream as they can cause:
+	// - Error 1000 if CF-Connecting-IP is present
+	// - Error 1000 if X-Forwarded-For exceeds 100 chars or appears twice
+	outReq.Header.Del("CF-Connecting-IP")
+	outReq.Header.Del("CF-Ray")
+	outReq.Header.Del("CF-Visitor")
+	outReq.Header.Del("CF-IPCountry")
+	outReq.Header.Del("CF-Request-ID")
+	
+	// Replace X-Forwarded-For with just the original client IP to prevent length issues
+	// Cloudflare adds each hop to X-Forwarded-For which can exceed 100 chars
+	if cfIP := req.Header.Get("CF-Connecting-IP"); cfIP != "" {
+		// Use Cloudflare's original client IP
+		outReq.Header.Set("X-Forwarded-For", cfIP)
+		outReq.Header.Set("X-Real-IP", cfIP)
+	} else if xff := req.Header.Get("X-Forwarded-For"); xff != "" {
+		// If no CF header, use the first IP from X-Forwarded-For
+		// to avoid accumulating a long chain
+		if firstIP := strings.Split(xff, ",")[0]; firstIP != "" {
+			outReq.Header.Set("X-Forwarded-For", strings.TrimSpace(firstIP))
+		}
+	}
+
 	// Add gateway auth only for node registry/management endpoints.
 	// Don't add it for user-facing endpoints (like /api/me, /api/apps, etc.)
 	// because gateway auth bypasses user authentication.
