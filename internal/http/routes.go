@@ -9,12 +9,15 @@ import (
 
 // setupRoutes configures all API routes
 func (s *Server) setupRoutes() {
-	// Mount auth routes (login, logout, callbacks)
-	// go-pkgz/auth expects paths relative to mount point, so we strip /auth prefix
+	// Frontend auth: login, logout, OAuth callbacks. When behind the gateway, the gateway
+	// proxies /auth/* and /avatar/* here; the primary runs OAuth and sets cookies for the
+	// gateway's domain. The primary (not the gateway) implements auth so secrets stay in one place.
+	// go-pkgz/auth expects paths relative to mount point, so we strip /auth prefix.
 	if s.authService != nil {
 		authHandler, avatarHandler := s.AuthHandlers()
 		if authHandler != nil {
-			s.engine.Any("/auth/*path", wrapAuthHandler(authHandler, "/auth"))
+			// Rewrite OAuth redirects to X-Forwarded-Host when behind gateway (no BASE_URL on primary)
+			s.engine.Any("/auth/*path", wrapAuthHandler(s.wrapAuthRedirects(authHandler), "/auth"))
 		}
 		if avatarHandler != nil {
 			s.engine.Any("/avatar/*path", wrapAuthHandler(avatarHandler, "/avatar"))
@@ -28,6 +31,9 @@ func (s *Server) setupRoutes() {
 			"service": "selfhostly",
 		})
 	})
+
+	// Node auto-registration: no pre-auth (node doesn't exist yet). Handler validates REGISTRATION_TOKEN in body.
+	s.engine.POST("/api/nodes/register", s.autoRegisterNode)
 
 	// Single API: user auth OR node auth (composite auth)
 	api := s.engine.Group("/api")
@@ -50,7 +56,6 @@ func (s *Server) setupRoutes() {
 
 		// Node-only routes (require node auth)
 		api.POST("/nodes/:id/heartbeat", s.requireNodeAuthMiddleware(), s.sendNodeHeartbeat)
-		api.POST("/nodes/register", s.requireNodeAuthMiddleware(), s.autoRegisterNode)
 
 		// User info endpoint (user auth only in practice)
 		api.GET("/me", s.getCurrentUser)

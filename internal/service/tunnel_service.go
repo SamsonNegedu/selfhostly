@@ -270,59 +270,33 @@ func (a *cloudflareManagerAdapter) toGenericTunnel(cfTunnel *db.CloudflareTunnel
 	}
 }
 
-// GetTunnelByAppID retrieves a tunnel by app ID using the active provider
+// GetTunnelByAppID retrieves a tunnel by app ID using the active provider (local only)
 func (s *tunnelService) GetTunnelByAppID(ctx context.Context, appID string, nodeID string) (*db.CloudflareTunnel, error) {
 	s.logger.DebugContext(ctx, "getting tunnel by app ID", "appID", appID, "nodeID", nodeID)
-
-	result, err := s.router.RouteToNode(
-		ctx,
-		nodeID,
-		func() (interface{}, error) {
-			// Try to get the active provider
-			provider, err := s.getActiveProvider()
-			if err != nil {
-				// Fallback to direct database query for backward compatibility
-				s.logger.WarnContext(ctx, "failed to get provider, falling back to direct query", "error", err)
-				tunnel, err := s.database.GetCloudflareTunnelByAppID(appID)
-				if err != nil {
-					return nil, domain.NewDomainError("TUNNEL_NOT_FOUND", "tunnel not found", err)
-				}
-				return tunnel, nil
-			}
-
-			// Use provider to get tunnel
-			genericTunnel, err := provider.GetTunnelByAppID(ctx, appID)
-			if err != nil {
-				if err == tunnel.ErrTunnelNotFound {
-					return nil, domain.ErrTunnelNotFound
-				}
-				return nil, fmt.Errorf("failed to get tunnel: %w", err)
-			}
-
-			// Convert generic tunnel back to CloudflareTunnel for backward compatibility
-			// This is a temporary measure until we update all consumers to use generic Tunnel type
-			cfTunnel, err := s.database.GetCloudflareTunnelByAppID(appID)
-			if err != nil {
-				return nil, domain.ErrTunnelNotFound
-			}
-
-			// Update with provider data if available
-			if genericTunnel.PublicURL != "" {
-				cfTunnel.Status = genericTunnel.Status
-			}
-
-			return cfTunnel, nil
-		},
-		func(n *db.Node) (interface{}, error) {
-			return s.nodeClient.GetTunnelByAppID(n, appID)
-		},
-	)
-
+	provider, err := s.getActiveProvider()
 	if err != nil {
-		return nil, err
+		s.logger.WarnContext(ctx, "failed to get provider, falling back to direct query", "error", err)
+		t, err := s.database.GetCloudflareTunnelByAppID(appID)
+		if err != nil {
+			return nil, domain.NewDomainError("TUNNEL_NOT_FOUND", "tunnel not found", err)
+		}
+		return t, nil
 	}
-
-	return result.(*db.CloudflareTunnel), nil
+	genericTunnel, err := provider.GetTunnelByAppID(ctx, appID)
+	if err != nil {
+		if err == tunnel.ErrTunnelNotFound {
+			return nil, domain.ErrTunnelNotFound
+		}
+		return nil, fmt.Errorf("failed to get tunnel: %w", err)
+	}
+	cfTunnel, err := s.database.GetCloudflareTunnelByAppID(appID)
+	if err != nil {
+		return nil, domain.ErrTunnelNotFound
+	}
+	if genericTunnel.PublicURL != "" {
+		cfTunnel.Status = genericTunnel.Status
+	}
+	return cfTunnel, nil
 }
 
 // ListActiveTunnels retrieves all active tunnels from specified nodes.
@@ -354,199 +328,114 @@ func (s *tunnelService) ListActiveTunnels(ctx context.Context, nodeIDs []string)
 func (s *tunnelService) SyncTunnelStatus(ctx context.Context, appID string, nodeID string) error {
 	s.logger.InfoContext(ctx, "syncing tunnel status", "appID", appID, "nodeID", nodeID)
 
-	result, err := s.router.RouteToNode(
-		ctx,
-		nodeID,
-		func() (interface{}, error) {
-			provider, err := s.getActiveProvider()
-			if err != nil {
-				return nil, fmt.Errorf("failed to get provider: %w", err)
-			}
-
-			// Check if provider supports status sync
-			syncProvider, ok := provider.(tunnel.StatusSyncProvider)
-			if !ok {
-				// Provider doesn't support status sync - this is not an error, just log it
-				s.logger.DebugContext(ctx, "provider does not support status sync", "provider", provider.Name())
-				return nil, nil
-			}
-
-			if err := syncProvider.SyncStatus(ctx, appID); err != nil {
-				return nil, fmt.Errorf("failed to sync tunnel status: %w", err)
-			}
-
-			return nil, nil
-		},
-		func(n *db.Node) (interface{}, error) {
-			return nil, s.nodeClient.SyncTunnelStatus(n, appID)
-		},
-	)
-
+	provider, err := s.getActiveProvider()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get provider: %w", err)
 	}
 
-	// Result should be nil on success
-	_ = result
+	// Check if provider supports status sync
+	syncProvider, ok := provider.(tunnel.StatusSyncProvider)
+	if !ok {
+		// Provider doesn't support status sync - this is not an error, just log it
+		s.logger.DebugContext(ctx, "provider does not support status sync", "provider", provider.Name())
+		return nil
+	}
+
+	if err := syncProvider.SyncStatus(ctx, appID); err != nil {
+		return fmt.Errorf("failed to sync tunnel status: %w", err)
+	}
+
+	s.logger.InfoContext(ctx, "tunnel status synced successfully", "appID", appID)
 	return nil
 }
 
-// UpdateTunnelIngress updates the ingress configuration for a tunnel (if supported)
+// UpdateTunnelIngress updates the ingress configuration for a tunnel (if supported) (local only)
 func (s *tunnelService) UpdateTunnelIngress(ctx context.Context, appID string, nodeID string, req domain.UpdateIngressRequest) error {
 	s.logger.InfoContext(ctx, "updating tunnel ingress", "appID", appID, "nodeID", nodeID)
-
-	result, err := s.router.RouteToNode(
-		ctx,
-		nodeID,
-		func() (interface{}, error) {
-			provider, err := s.getActiveProvider()
-			if err != nil {
-				return nil, fmt.Errorf("failed to get provider: %w", err)
-			}
-
-			// Check if provider supports ingress configuration
-			ingressProvider, ok := provider.(tunnel.IngressProvider)
-			if !ok {
-				return nil, tunnel.NewFeatureNotSupportedError(provider.DisplayName(), tunnel.FeatureIngress)
-			}
-
-			// Pass the ingress rules to the provider (provider handles conversion to its format)
-			if err := ingressProvider.UpdateIngress(ctx, appID, req.IngressRules); err != nil {
-				return nil, fmt.Errorf("failed to update ingress: %w", err)
-			}
-
-			s.logger.InfoContext(ctx, "tunnel ingress updated successfully", "appID", appID)
-			return nil, nil
-		},
-		func(n *db.Node) (interface{}, error) {
-			return nil, s.nodeClient.UpdateTunnelIngress(n, appID, req)
-		},
-	)
-
+	provider, err := s.getActiveProvider()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get provider: %w", err)
 	}
-
-	// Result should be nil on success
-	_ = result
+	ingressProvider, ok := provider.(tunnel.IngressProvider)
+	if !ok {
+		return tunnel.NewFeatureNotSupportedError(provider.DisplayName(), tunnel.FeatureIngress)
+	}
+	if err := ingressProvider.UpdateIngress(ctx, appID, req.IngressRules); err != nil {
+		return fmt.Errorf("failed to update ingress: %w", err)
+	}
+	s.logger.InfoContext(ctx, "tunnel ingress updated successfully", "appID", appID)
 	return nil
 }
 
-// CreateDNSRecord creates a DNS record for a tunnel (if supported)
+// CreateDNSRecord creates a DNS record for a tunnel (if supported) (local only)
 func (s *tunnelService) CreateDNSRecord(ctx context.Context, appID string, nodeID string, req domain.CreateDNSRequest) error {
 	s.logger.InfoContext(ctx, "creating DNS record", "appID", appID, "hostname", req.Hostname, "nodeID", nodeID)
-
-	result, err := s.router.RouteToNode(
-		ctx,
-		nodeID,
-		func() (interface{}, error) {
-			provider, err := s.getActiveProvider()
-			if err != nil {
-				return nil, fmt.Errorf("failed to get provider: %w", err)
-			}
-
-			// Check if provider supports DNS management
-			dnsProvider, ok := provider.(tunnel.DNSProvider)
-			if !ok {
-				return nil, tunnel.NewFeatureNotSupportedError(provider.DisplayName(), tunnel.FeatureDNS)
-			}
-
-			// Create DNS record via provider
-			opts := tunnel.DNSOptions{
-				Hostname: req.Hostname,
-				Domain:   req.Domain,
-			}
-
-			if err := dnsProvider.CreateDNSRecord(ctx, appID, opts); err != nil {
-				return nil, fmt.Errorf("failed to create DNS record: %w", err)
-			}
-
-			s.logger.InfoContext(ctx, "DNS record created successfully", "hostname", req.Hostname)
-			return nil, nil
-		},
-		func(n *db.Node) (interface{}, error) {
-			return nil, s.nodeClient.CreateTunnelDNSRecord(n, appID, req)
-		},
-	)
-
+	provider, err := s.getActiveProvider()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get provider: %w", err)
 	}
-
-	// Result should be nil on success
-	_ = result
+	dnsProvider, ok := provider.(tunnel.DNSProvider)
+	if !ok {
+		return tunnel.NewFeatureNotSupportedError(provider.DisplayName(), tunnel.FeatureDNS)
+	}
+	opts := tunnel.DNSOptions{
+		Hostname: req.Hostname,
+		Domain:   req.Domain,
+	}
+	if err := dnsProvider.CreateDNSRecord(ctx, appID, opts); err != nil {
+		return fmt.Errorf("failed to create DNS record: %w", err)
+	}
+	s.logger.InfoContext(ctx, "DNS record created successfully", "hostname", req.Hostname)
 	return nil
 }
 
-// DeleteTunnel deletes a tunnel
+// DeleteTunnel deletes a tunnel (local only)
 func (s *tunnelService) DeleteTunnel(ctx context.Context, appID string, nodeID string) error {
 	s.logger.InfoContext(ctx, "deleting tunnel", "appID", appID, "nodeID", nodeID)
-
-	result, err := s.router.RouteToNode(
-		ctx,
-		nodeID,
-		func() (interface{}, error) {
-			provider, err := s.getActiveProvider()
-			if err != nil {
-				return nil, fmt.Errorf("failed to get provider: %w", err)
-			}
-
-			if err := provider.DeleteTunnel(ctx, appID); err != nil {
-				return nil, fmt.Errorf("failed to delete tunnel: %w", err)
-			}
-
-			// Remove tunnel service from app's compose file and persist
-			if s.dockerManager != nil {
-				app, getErr := s.database.GetApp(appID)
-				if getErr != nil {
-					s.logger.WarnContext(ctx, "failed to get app when removing tunnel from compose", "app_id", appID, "error", getErr)
+	provider, err := s.getActiveProvider()
+	if err != nil {
+		return fmt.Errorf("failed to get provider: %w", err)
+	}
+	if err := provider.DeleteTunnel(ctx, appID); err != nil {
+		return fmt.Errorf("failed to delete tunnel: %w", err)
+	}
+	if s.dockerManager != nil {
+		app, getErr := s.database.GetApp(appID)
+		if getErr != nil {
+			s.logger.WarnContext(ctx, "failed to get app when removing tunnel from compose", "app_id", appID, "error", getErr)
+		} else {
+			compose, parseErr := docker.ParseCompose([]byte(app.ComposeContent))
+			if parseErr != nil {
+				s.logger.WarnContext(ctx, "failed to parse compose when removing tunnel", "app_id", appID, "error", parseErr)
+			} else if docker.RemoveTunnelService(compose) {
+				composeBytes, marshalErr := docker.MarshalComposeFile(compose)
+				if marshalErr != nil {
+					s.logger.WarnContext(ctx, "failed to marshal compose after removing tunnel", "app_id", appID, "error", marshalErr)
 				} else {
-					compose, parseErr := docker.ParseCompose([]byte(app.ComposeContent))
-					if parseErr != nil {
-						s.logger.WarnContext(ctx, "failed to parse compose when removing tunnel", "app_id", appID, "error", parseErr)
-					} else if docker.RemoveTunnelService(compose) {
-						composeBytes, marshalErr := docker.MarshalComposeFile(compose)
-						if marshalErr != nil {
-							s.logger.WarnContext(ctx, "failed to marshal compose after removing tunnel", "app_id", appID, "error", marshalErr)
+					newContent := string(composeBytes)
+					app.ComposeContent = newContent
+					app.UpdatedAt = time.Now()
+					if updateErr := s.database.UpdateApp(app); updateErr != nil {
+						s.logger.WarnContext(ctx, "failed to update app compose after tunnel removal", "app_id", appID, "error", updateErr)
+					} else {
+						latestVersion, _ := s.database.GetLatestVersionNumber(appID)
+						_ = s.database.MarkAllVersionsAsNotCurrent(appID)
+						reason := "Tunnel removed"
+						newVersion := db.NewComposeVersion(appID, latestVersion+1, newContent, &reason, nil)
+						_ = s.database.CreateComposeVersion(newVersion)
+						if writeErr := s.dockerManager.WriteComposeFile(app.Name, newContent); writeErr != nil {
+							s.logger.WarnContext(ctx, "failed to write compose file after tunnel removal", "app", app.Name, "error", writeErr)
+						} else if reconErr := s.dockerManager.ReconcileApp(app.Name); reconErr != nil {
+							s.logger.WarnContext(ctx, "failed to reconcile app after tunnel removal (compose file updated)", "app", app.Name, "error", reconErr)
 						} else {
-							newContent := string(composeBytes)
-							app.ComposeContent = newContent
-							app.UpdatedAt = time.Now()
-							if updateErr := s.database.UpdateApp(app); updateErr != nil {
-								s.logger.WarnContext(ctx, "failed to update app compose after tunnel removal", "app_id", appID, "error", updateErr)
-							} else {
-								latestVersion, _ := s.database.GetLatestVersionNumber(appID)
-								_ = s.database.MarkAllVersionsAsNotCurrent(appID)
-								reason := "Tunnel removed"
-								newVersion := db.NewComposeVersion(appID, latestVersion+1, newContent, &reason, nil)
-								_ = s.database.CreateComposeVersion(newVersion)
-								if writeErr := s.dockerManager.WriteComposeFile(app.Name, newContent); writeErr != nil {
-									s.logger.WarnContext(ctx, "failed to write compose file after tunnel removal", "app", app.Name, "error", writeErr)
-								} else if reconErr := s.dockerManager.ReconcileApp(app.Name); reconErr != nil {
-									s.logger.WarnContext(ctx, "failed to reconcile app after tunnel removal (compose file updated)", "app", app.Name, "error", reconErr)
-								} else {
-									s.logger.InfoContext(ctx, "tunnel service removed from compose and stack reconciled", "appID", appID)
-								}
-							}
+							s.logger.InfoContext(ctx, "tunnel service removed from compose and stack reconciled", "appID", appID)
 						}
 					}
 				}
 			}
-
-			s.logger.InfoContext(ctx, "tunnel deleted successfully", "appID", appID)
-			return nil, nil
-		},
-		func(n *db.Node) (interface{}, error) {
-			return nil, s.nodeClient.DeleteTunnel(n, appID)
-		},
-	)
-
-	if err != nil {
-		return err
+		}
 	}
-
-	// Result should be nil on success
-	_ = result
+	s.logger.InfoContext(ctx, "tunnel deleted successfully", "appID", appID)
 	return nil
 }
 

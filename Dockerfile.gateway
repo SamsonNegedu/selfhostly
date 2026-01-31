@@ -1,0 +1,47 @@
+# =============================================================================
+# Selfhostly Gateway - Lean Routing Service
+# =============================================================================
+
+# Build Stage
+FROM golang:1.24-alpine AS builder
+
+WORKDIR /app
+
+# Copy go mod files first (cached unless dependencies change)
+COPY go.mod go.sum ./
+
+# Download dependencies (cached layer)
+RUN go mod download
+
+# Copy only necessary source files (respects .dockerignore)
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
+
+# Build gateway binary (no CGO needed with modernc.org/sqlite)
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -o gateway cmd/gateway/main.go
+
+# Production Stage - Minimal runtime
+FROM alpine:latest
+
+# Install only essential runtime dependencies
+RUN apk add --no-cache ca-certificates tzdata wget
+
+# Create non-root user
+RUN addgroup -g 1000 -S gateway && \
+    adduser -u 1000 -S gateway -G gateway
+
+WORKDIR /app
+
+# Copy only the gateway binary
+COPY --from=builder /app/gateway .
+
+# Switch to non-root user
+USER gateway
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/api/health || exit 1
+
+# Run gateway
+CMD ["./gateway"]

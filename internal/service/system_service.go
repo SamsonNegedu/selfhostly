@@ -39,7 +39,7 @@ func NewSystemService(
 	nodeClient := node.NewClient()
 	router := routing.NewNodeRouter(database, nodeClient, cfg.Node.ID, logger)
 	statsAgg := routing.NewStatsAggregator(router, logger)
-	
+
 	return &systemService{
 		database:      database,
 		dockerManager: dockerManager,
@@ -107,113 +107,73 @@ func (s *systemService) mapToSystemStats(data map[string]interface{}, nodeID, no
 	return &stats, nil
 }
 
-// GetAppStats retrieves resource statistics for a specific app
+// GetAppStats retrieves resource statistics for a specific app (local only)
 func (s *systemService) GetAppStats(ctx context.Context, appID string, nodeID string) (*domain.AppStats, error) {
 	s.logger.DebugContext(ctx, "getting app stats", "appID", appID, "nodeID", nodeID)
-
-	result, err := s.router.RouteToNode(
-		ctx,
-		nodeID,
-		func() (interface{}, error) {
-			app, err := s.database.GetApp(appID)
-			if err != nil {
-				return nil, domain.WrapAppNotFound(appID, err)
-			}
-
-			// Only fetch stats if app is running
-			if app.Status != "running" {
-				// Return empty stats for non-running apps
-				return &domain.AppStats{
-					AppName:          app.Name,
-					TotalCPUPercent:  0,
-					TotalMemoryBytes: 0,
-					Containers:       []domain.ContainerStats{},
-					Status:           app.Status,
-					Message:          fmt.Sprintf("App is %s", app.Status),
-				}, nil
-			}
-
-			dockerStats, err := s.dockerManager.GetAppStats(app.Name)
-			if err != nil {
-				return nil, domain.WrapContainerOperationFailed("get app stats", err)
-			}
-
-			// Convert docker.AppStats to domain.AppStats
-			containers := make([]domain.ContainerStats, len(dockerStats.Containers))
-			for i, c := range dockerStats.Containers {
-				memPercent := float64(0)
-				if c.MemoryLimit > 0 {
-					memPercent = (float64(c.MemoryUsage) / float64(c.MemoryLimit)) * 100
-				}
-				containers[i] = domain.ContainerStats{
-					ID:            c.ContainerID,
-					Name:          c.ContainerName,
-					CPUPercent:    c.CPUPercent,
-					MemoryBytes:   int64(c.MemoryUsage),
-					MemoryLimit:   int64(c.MemoryLimit),
-					MemoryPercent: memPercent,
-					NetInput:      int64(c.NetworkRx),
-					NetOutput:     int64(c.NetworkTx),
-					BlockInput:    int64(c.BlockRead),
-					BlockOutput:   int64(c.BlockWrite),
-				}
-			}
-
-			domainStats := &domain.AppStats{
-				AppName:          dockerStats.AppName,
-				TotalCPUPercent:  dockerStats.TotalCPU,
-				TotalMemoryBytes: int64(dockerStats.TotalMemory),
-				MemoryLimitBytes: int64(dockerStats.MemoryLimit),
-				Containers:       containers,
-				Timestamp:        dockerStats.Timestamp,
-				Status:           app.Status,
-				Message:          "",
-			}
-
-			return domainStats, nil
-		},
-		func(n *db.Node) (interface{}, error) {
-			return s.nodeClient.GetAppStats(n, appID)
-		},
-	)
-
+	app, err := s.database.GetApp(appID)
 	if err != nil {
-		return nil, err
+		return nil, domain.WrapAppNotFound(appID, err)
 	}
-
-	return result.(*domain.AppStats), nil
+	if app.Status != "running" {
+		return &domain.AppStats{
+			AppName:          app.Name,
+			TotalCPUPercent:  0,
+			TotalMemoryBytes: 0,
+			Containers:       []domain.ContainerStats{},
+			Status:           app.Status,
+			Message:          fmt.Sprintf("App is %s", app.Status),
+		}, nil
+	}
+	dockerStats, err := s.dockerManager.GetAppStats(app.Name)
+	if err != nil {
+		return nil, domain.WrapContainerOperationFailed("get app stats", err)
+	}
+	containers := make([]domain.ContainerStats, len(dockerStats.Containers))
+	for i, c := range dockerStats.Containers {
+		memPercent := float64(0)
+		if c.MemoryLimit > 0 {
+			memPercent = (float64(c.MemoryUsage) / float64(c.MemoryLimit)) * 100
+		}
+		containers[i] = domain.ContainerStats{
+			ID:            c.ContainerID,
+			Name:          c.ContainerName,
+			CPUPercent:    c.CPUPercent,
+			MemoryBytes:   int64(c.MemoryUsage),
+			MemoryLimit:   int64(c.MemoryLimit),
+			MemoryPercent: memPercent,
+			NetInput:      int64(c.NetworkRx),
+			NetOutput:     int64(c.NetworkTx),
+			BlockInput:    int64(c.BlockRead),
+			BlockOutput:   int64(c.BlockWrite),
+		}
+	}
+	return &domain.AppStats{
+		AppName:          dockerStats.AppName,
+		TotalCPUPercent:  dockerStats.TotalCPU,
+		TotalMemoryBytes: int64(dockerStats.TotalMemory),
+		MemoryLimitBytes: int64(dockerStats.MemoryLimit),
+		Containers:       containers,
+		Timestamp:        dockerStats.Timestamp,
+		Status:           app.Status,
+		Message:          "",
+	}, nil
 }
 
 // GetAppLogs retrieves logs for a specific app
 func (s *systemService) GetAppLogs(ctx context.Context, appID string, nodeID string) ([]byte, error) {
 	s.logger.DebugContext(ctx, "getting app logs", "appID", appID, "nodeID", nodeID)
 
-	result, err := s.router.RouteToNode(
-		ctx,
-		nodeID,
-		func() (interface{}, error) {
-			app, err := s.database.GetApp(appID)
-			if err != nil {
-				return nil, domain.WrapAppNotFound(appID, err)
-			}
-
-			logs, err := s.dockerManager.GetAppLogs(app.Name)
-			if err != nil {
-				return nil, domain.WrapContainerOperationFailed("get app logs", err)
-			}
-
-			return logs, nil
-		},
-		func(n *db.Node) (interface{}, error) {
-			return s.nodeClient.GetAppLogs(n, appID)
-		},
-	)
-
+	app, err := s.database.GetApp(appID)
 	if err != nil {
-		return nil, err
+		return nil, domain.WrapAppNotFound(appID, err)
 	}
 
-	return result.([]byte), nil
+	logs, err := s.dockerManager.GetAppLogs(app.Name)
+	if err != nil {
+		return nil, domain.WrapContainerOperationFailed("get app logs", err)
+	}
+
+	return logs, nil
 }
 
 // RestartContainer restarts a specific container
@@ -226,19 +186,7 @@ func (s *systemService) RestartContainer(ctx context.Context, containerID, nodeI
 		return domain.WrapValidationError("container ID", err)
 	}
 
-	// Route to correct node
-	_, err := s.router.RouteToNode(
-		ctx,
-		nodeID,
-		func() (interface{}, error) {
-			return nil, s.dockerManager.RestartContainer(containerID)
-		},
-		func(n *db.Node) (interface{}, error) {
-			return nil, s.nodeClient.RestartContainer(n, containerID)
-		},
-	)
-
-	if err != nil {
+	if err := s.dockerManager.RestartContainer(containerID); err != nil {
 		s.logger.ErrorContext(ctx, "failed to restart container", "containerID", containerID, "nodeID", nodeID, "error", err)
 		return domain.WrapContainerOperationFailed("restart container", err)
 	}
@@ -257,19 +205,7 @@ func (s *systemService) StopContainer(ctx context.Context, containerID, nodeID s
 		return domain.WrapValidationError("container ID", err)
 	}
 
-	// Route to correct node
-	_, err := s.router.RouteToNode(
-		ctx,
-		nodeID,
-		func() (interface{}, error) {
-			return nil, s.dockerManager.StopContainer(containerID)
-		},
-		func(n *db.Node) (interface{}, error) {
-			return nil, s.nodeClient.StopContainer(n, containerID)
-		},
-	)
-
-	if err != nil {
+	if err := s.dockerManager.StopContainer(containerID); err != nil {
 		s.logger.ErrorContext(ctx, "failed to stop container", "containerID", containerID, "nodeID", nodeID, "error", err)
 		return domain.WrapContainerOperationFailed("stop container", err)
 	}
@@ -288,19 +224,7 @@ func (s *systemService) DeleteContainer(ctx context.Context, containerID, nodeID
 		return domain.WrapValidationError("container ID", err)
 	}
 
-	// Route to correct node
-	_, err := s.router.RouteToNode(
-		ctx,
-		nodeID,
-		func() (interface{}, error) {
-			return nil, s.dockerManager.DeleteContainer(containerID)
-		},
-		func(n *db.Node) (interface{}, error) {
-			return nil, s.nodeClient.DeleteContainer(n, containerID)
-		},
-	)
-
-	if err != nil {
+	if err := s.dockerManager.DeleteContainer(containerID); err != nil {
 		s.logger.ErrorContext(ctx, "failed to delete container", "containerID", containerID, "nodeID", nodeID, "error", err)
 		return domain.WrapContainerOperationFailed("delete container", err)
 	}

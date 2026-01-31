@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -164,6 +165,82 @@ func initAuthService(cfg *config.Config) *auth.Service {
 	authService.AddProvider("github", cfg.Auth.GitHub.ClientID, cfg.Auth.GitHub.ClientSecret)
 
 	return authService
+}
+
+// wrapAuthRedirects wraps the auth handler so that when behind a gateway (X-Forwarded-Host set),
+// 3xx redirect Location URLs pointing at the primary's host are rewritten to the public host.
+// This keeps OAuth callbacks on the gateway URL without configuring the gateway URL on the primary.
+func (s *Server) wrapAuthRedirects(handler http.Handler) http.Handler {
+	primaryBase := s.config.Auth.BaseURL
+	primaryURL, _ := url.Parse(primaryBase)
+	primaryHost := ""
+	if primaryURL != nil {
+		primaryHost = primaryURL.Host
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		forwardedHost := r.Header.Get("X-Forwarded-Host")
+		forwardedProto := r.Header.Get("X-Forwarded-Proto")
+		if forwardedHost == "" || primaryHost == "" {
+			handler.ServeHTTP(w, r)
+			return
+		}
+		if forwardedProto == "" {
+			forwardedProto = "http"
+		}
+		rw := &redirectRewriter{
+			ResponseWriter: w,
+			primaryHost:    primaryHost,
+			publicHost:     forwardedHost,
+			publicScheme:   forwardedProto,
+		}
+		handler.ServeHTTP(rw, r)
+	})
+}
+
+// redirectRewriter rewrites 3xx Location headers from primary host to public host (X-Forwarded-*).
+type redirectRewriter struct {
+	http.ResponseWriter
+	primaryHost  string
+	publicHost   string
+	publicScheme string
+	status       int
+	wroteHeader  bool
+}
+
+func (r *redirectRewriter) WriteHeader(code int) {
+	if r.wroteHeader {
+		return
+	}
+	r.status = code
+	r.wroteHeader = true
+	if code >= 300 && code < 400 {
+		if loc := r.Header().Get("Location"); loc != "" {
+			u, err := url.Parse(loc)
+			if err == nil {
+				// Case 1: Direct redirect to primary host (e.g. callback landing page)
+				if u.Host == r.primaryHost {
+					u.Scheme = r.publicScheme
+					u.Host = r.publicHost
+					r.Header().Set("Location", u.String())
+				} else {
+					// Case 2: OAuth redirect to external provider with redirect_uri query param
+					// (e.g. GitHub OAuth URL with redirect_uri=http://primary:8082/auth/callback)
+					// Rewrite redirect_uri if it points to primary host
+					query := u.Query()
+					if redirectURI := query.Get("redirect_uri"); redirectURI != "" {
+						if redirectURL, err := url.Parse(redirectURI); err == nil && redirectURL.Host == r.primaryHost {
+							redirectURL.Scheme = r.publicScheme
+							redirectURL.Host = r.publicHost
+							query.Set("redirect_uri", redirectURL.String())
+							u.RawQuery = query.Encode()
+							r.Header().Set("Location", u.String())
+						}
+					}
+				}
+			}
+		}
+	}
+	r.ResponseWriter.WriteHeader(code)
 }
 
 const (
@@ -396,6 +473,17 @@ func (s *Server) getAuthMiddleware() gin.HandlerFunc {
 	authMiddleware := s.authService.Middleware()
 
 	return func(c *gin.Context) {
+		// Debug: log incoming auth attempt
+		hasCookie := c.Request.Header.Get("Cookie") != ""
+		hasAuth := c.Request.Header.Get("Authorization") != ""
+		slog.InfoContext(c.Request.Context(), "user auth attempt",
+			"path", c.Request.URL.Path,
+			"has_cookie", hasCookie,
+			"has_auth_header", hasAuth,
+			"host", c.Request.Host,
+			"cookie_length", len(c.Request.Header.Get("Cookie")),
+		)
+		
 		// Wrap the Gin handler for go-pkgz/auth middleware
 		var userInfo token.User
 		var authenticated bool
@@ -405,6 +493,12 @@ func (s *Server) getAuthMiddleware() gin.HandlerFunc {
 			if u, err := token.GetUserInfo(r); err == nil {
 				userInfo = u
 				authenticated = true
+				slog.InfoContext(r.Context(), "user authenticated",
+					"user_id", u.ID,
+					"user_name", u.Name,
+				)
+			} else {
+				slog.InfoContext(r.Context(), "user auth failed", "error", err)
 			}
 			// Update request in gin context
 			c.Request = r
@@ -437,10 +531,25 @@ func getUserFromContext(c *gin.Context) (token.User, bool) {
 	return token.User{}, false
 }
 
-// userOrNodeAuthMiddleware accepts either user auth (JWT/session) or node auth (X-Node-ID + X-Node-API-Key).
-// When node auth is valid, sets node_id_param = local node ID and request_scope = "local" so handlers treat the request as local-only.
+// userOrNodeAuthMiddleware accepts gateway auth (X-Gateway-API-Key), node auth (X-Node-ID + X-Node-API-Key), or user auth (JWT/session).
+// When gateway or node auth is valid, sets node_id_param = local node ID and request_scope = "local" so handlers treat the request as local-only.
 // When user auth is valid, does not set target/scope; resolveNodeMiddleware or handlers will use node_id from query/body.
 func (s *Server) userOrNodeAuthMiddleware() gin.HandlerFunc {
+	tryGatewayAuth := func(c *gin.Context) bool {
+		key := c.GetHeader("X-Gateway-API-Key")
+		if key == "" || s.config.Node.GatewayAPIKey == "" {
+			return false
+		}
+		if key != s.config.Node.GatewayAPIKey {
+			c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "invalid gateway API key", Details: "X-Gateway-API-Key invalid"})
+			c.Abort()
+			return true
+		}
+		c.Set("node_id_param", s.config.Node.ID)
+		c.Set("request_scope", "local")
+		c.Next()
+		return true
+	}
 	tryNodeAuth := func(c *gin.Context) bool {
 		nodeID := c.GetHeader("X-Node-ID")
 		apiKey := c.GetHeader("X-Node-API-Key")
@@ -471,10 +580,13 @@ func (s *Server) userOrNodeAuthMiddleware() gin.HandlerFunc {
 	}
 
 	return func(c *gin.Context) {
+		if tryGatewayAuth(c) {
+			return
+		}
 		if tryNodeAuth(c) {
 			return
 		}
-		// No node auth or not valid; require user auth
+		// No gateway or node auth; require user auth
 		s.getAuthMiddleware()(c)
 	}
 }

@@ -1,0 +1,52 @@
+# Git and version control
+.git
+.gitignore
+.github
+
+# Documentation
+*.md
+docs/
+UNUSED_CODE_REPORT.md
+
+# Development files
+.env*
+!env.example
+.air.toml
+.air-gateway.toml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Build artifacts
+/gateway
+/selfhostly
+*.exe
+*.test
+*.out
+
+# Test files
+*_test.go
+
+# Data directories (not needed in build context)
+data/
+apps/
+
+# Frontend (handled separately in Dockerfile.primary)
+web/node_modules/
+web/dist/
+web/.vite/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# CI/CD
+.github/workflows/
+
+# Docker files (not needed inside images)
+Dockerfile*
+docker-compose*.yml
