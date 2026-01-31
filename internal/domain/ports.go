@@ -23,6 +23,17 @@ type AppService interface {
 	StopApp(ctx context.Context, appID string, nodeID string) (*db.App, error)
 	UpdateAppContainers(ctx context.Context, appID string, nodeID string) (*db.App, error)
 	RestartCloudflared(ctx context.Context, appID string, nodeID string) error
+
+	// CreateTunnelForApp creates a named (custom domain) tunnel for an app that has none. When nodeID is remote, the request is forwarded to that node (all-or-nothing).
+	// Returns (app, handledLocally, error). handledLocally is true when the work was done on this node so the HTTP layer may apply optional ingress_rules.
+	CreateTunnelForApp(ctx context.Context, appID string, nodeID string, body interface{}) (*db.App, bool, error)
+	// SwitchAppToCustomTunnel switches an app from Quick Tunnel to a named (custom domain) tunnel.
+	// When nodeID is a remote node, the request is forwarded to that node (all-or-nothing). body is optional (ingress_rules).
+	SwitchAppToCustomTunnel(ctx context.Context, appID string, nodeID string, body interface{}) (*db.App, error)
+	// GetQuickTunnelURL runs Quick Tunnel URL extraction on the node that hosts the app and returns the URL.
+	GetQuickTunnelURL(ctx context.Context, appID string, nodeID string) (string, error)
+	// CreateQuickTunnelForApp adds a Quick Tunnel (temporary trycloudflare.com URL) to an app that has no tunnel.
+	CreateQuickTunnelForApp(ctx context.Context, appID string, nodeID string, service string, port int) (*db.App, error)
 }
 
 // TunnelService defines the primary port for tunnel management use cases
@@ -92,11 +103,14 @@ type NodeService interface {
 
 // CreateAppRequest represents the request to create a new app
 type CreateAppRequest struct {
-	Name           string            `json:"name" binding:"required"`
-	Description    string            `json:"description"`
-	ComposeContent string            `json:"compose_content" binding:"required"`
-	IngressRules   []db.IngressRule  `json:"ingress_rules,omitempty"`
-	NodeID         string            `json:"node_id,omitempty"` // Target node for app deployment
+	Name               string           `json:"name" binding:"required"`
+	Description        string           `json:"description"`
+	ComposeContent    string           `json:"compose_content" binding:"required"`
+	IngressRules      []db.IngressRule `json:"ingress_rules,omitempty"`
+	NodeID            string           `json:"node_id,omitempty"`             // Target node for app deployment
+	TunnelMode        string           `json:"tunnel_mode,omitempty"`        // "custom" | "quick" | "" (empty = no tunnel)
+	QuickTunnelService string          `json:"quick_tunnel_service,omitempty"` // Required when tunnel_mode="quick"
+	QuickTunnelPort   int              `json:"quick_tunnel_port,omitempty"`   // Required when tunnel_mode="quick"
 }
 
 // UpdateAppRequest represents the request to update an app

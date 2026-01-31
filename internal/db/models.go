@@ -39,6 +39,7 @@ type App struct {
 	Status         string    `json:"status" db:"status"`               // running, stopped, updating, error
 	ErrorMessage   *string   `json:"error_message" db:"error_message"` // Make nullable to handle NULL values
 	NodeID         string    `json:"node_id" db:"node_id"`             // Which node this app is deployed on
+	TunnelMode     string    `json:"tunnel_mode" db:"tunnel_mode"`     // "custom" | "quick" | "" (empty = no tunnel)
 	CreatedAt      time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at" db:"updated_at"`
 }

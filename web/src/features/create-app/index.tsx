@@ -28,14 +28,29 @@ function CreateApp() {
         compose_content: '',
         ingress_rules: [] as IngressRule[],
         node_id: '', // Target node for deployment (empty = current node)
+        tunnel_mode: '' as '' | 'custom' | 'quick',
+        quick_tunnel_service: '',
+        quick_tunnel_port: 80,
     })
 
-    const steps = [
-        { id: 1, label: 'Information', status: currentStep === 'information' ? 'current' as const : (['compose', 'ingress', 'review'].includes(currentStep) ? 'completed' as const : 'pending' as const) },
-        { id: 2, label: 'Compose', status: currentStep === 'compose' ? 'current' as const : (['ingress', 'review'].includes(currentStep) ? 'completed' as const : 'pending' as const) },
-        { id: 3, label: 'Ingress (Optional)', status: currentStep === 'ingress' ? 'current' as const : currentStep === 'review' ? 'completed' as const : 'pending' as const },
-        { id: 4, label: 'Review', status: currentStep === 'review' ? 'current' as const : 'pending' as const },
-    ]
+    const showIngressStep = formData.tunnel_mode === 'custom'
+    const STEP_LABELS: Record<StepType, string> = {
+        information: 'Information',
+        compose: 'Compose',
+        ingress: 'Ingress (Optional)',
+        review: 'Review',
+    }
+    const stepOrder: StepType[] = showIngressStep
+        ? ['information', 'compose', 'ingress', 'review']
+        : ['information', 'compose', 'review']
+    const currentIndex = stepOrder.includes(currentStep)
+        ? stepOrder.indexOf(currentStep)
+        : stepOrder.length - 1
+    const steps = stepOrder.map((stepKey, i) => ({
+        id: i + 1,
+        label: STEP_LABELS[stepKey],
+        status: (i < currentIndex ? 'completed' : i === currentIndex ? 'current' : 'pending') as 'pending' | 'current' | 'completed',
+    }))
 
     // Form validation
     const validateField = (name: string, value: string): string | null => {
@@ -68,11 +83,11 @@ function CreateApp() {
         return Object.keys(newErrors).length === 0
     }
 
-    const handleFieldChange = (name: string, value: string | IngressRule[]) => {
-        setFormData({ ...formData, [name]: value })
+    const handleFieldChange = (name: string, value: string | number | IngressRule[] | '' | 'custom' | 'quick') => {
+        setFormData(prev => ({ ...prev, [name]: value }))
 
-        if (touched[name] && typeof value === 'string') {
-            const error = validateField(name, value)
+        if (touched[name] && (typeof value === 'string' || typeof value === 'number')) {
+            const error = typeof value === 'string' ? validateField(name, value) : null
             setErrors(prev => ({
                 ...prev,
                 [name]: error || ''
@@ -103,7 +118,7 @@ function CreateApp() {
             setCurrentStep('compose')
         } else if (currentStep === 'compose') {
             if (!validateForm()) return
-            setCurrentStep('ingress')
+            setCurrentStep(showIngressStep ? 'ingress' : 'review')
         } else if (currentStep === 'ingress') {
             setCurrentStep('review')
         }
@@ -117,7 +132,7 @@ function CreateApp() {
     const handleBack = () => {
         if (currentStep === 'compose') setCurrentStep('information')
         else if (currentStep === 'ingress') setCurrentStep('compose')
-        else if (currentStep === 'review') setCurrentStep('ingress')
+        else if (currentStep === 'review') setCurrentStep(formData.tunnel_mode === 'custom' ? 'ingress' : 'compose')
     }
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -133,6 +148,9 @@ function CreateApp() {
             compose_content: formData.compose_content,
             ingress_rules: validIngressRules.length > 0 ? validIngressRules : undefined,
             node_id: formData.node_id || undefined,
+            tunnel_mode: formData.tunnel_mode || undefined,
+            quick_tunnel_service: formData.tunnel_mode === 'quick' ? formData.quick_tunnel_service.trim() : undefined,
+            quick_tunnel_port: formData.tunnel_mode === 'quick' ? formData.quick_tunnel_port : undefined,
         }
 
         createApp.mutate(submitData, {
@@ -143,30 +161,19 @@ function CreateApp() {
         })
     }
 
-    // Configuration checklist for review step
+    // Configuration checklist for review step (depends on tunnel mode)
     const hasValidIngressRules = formData.ingress_rules.some(rule => rule.service.trim() !== '')
-    const checklist = [
-        {
-            id: '1',
-            label: 'App name provided',
-            checked: !!formData.name && !errors.name
-        },
-        {
-            id: '2',
-            label: 'Docker Compose configured',
-            checked: !!formData.compose_content && !errors.compose_content
-        },
-        {
-            id: '3',
-            label: 'Cloudflare Tunnel will be configured',
-            checked: true
-        },
-        {
-            id: '4',
-            label: hasValidIngressRules ? 'Ingress rules configured' : 'Ingress rules will use default',
-            checked: true
-        }
+    const baseChecklist = [
+        { id: '1', label: 'App name provided', checked: !!formData.name && !errors.name },
+        { id: '2', label: 'Docker Compose configured', checked: !!formData.compose_content && !errors.compose_content },
     ]
+    const tunnelChecklistItem =
+        formData.tunnel_mode === 'custom'
+            ? { id: '3', label: hasValidIngressRules ? 'Ingress rules configured' : 'Ingress rules will use default', checked: true }
+            : formData.tunnel_mode === 'quick'
+                ? { id: '3', label: `Quick Tunnel: ${formData.quick_tunnel_service || '?'}:${formData.quick_tunnel_port}`, checked: !!formData.quick_tunnel_service && formData.quick_tunnel_port >= 1 }
+                : { id: '3', label: 'No tunnel', checked: true }
+    const checklist = [...baseChecklist, tunnelChecklistItem]
 
     const canProceed = currentStep === 'information'
         ? !!formData.name && !errors.name
@@ -245,11 +252,69 @@ function CreateApp() {
 
                             <div>
                                 <label className="block text-sm font-medium mb-2">
+                                    Tunnel
+                                </label>
+                                <select
+                                    value={formData.tunnel_mode}
+                                    onChange={(e) => handleFieldChange('tunnel_mode', e.target.value as '' | 'custom' | 'quick')}
+                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                >
+                                    <option value="">No tunnel</option>
+                                    <option value="custom">Custom domain (requires Cloudflare credentials)</option>
+                                    <option value="quick">Quick Tunnel (temporary trycloudflare.com URL)</option>
+                                </select>
+                                {formData.tunnel_mode === 'quick' && (
+                                    <div className="mt-4 p-4 rounded-lg border border-muted bg-muted/30 space-y-4">
+                                        <p className="text-sm text-muted-foreground">
+                                            Quick Tunnels are temporary and limited to 200 concurrent requests. No credentials required.
+                                        </p>
+                                        <div>
+                                            <label htmlFor="quick_tunnel_service" className="block text-sm font-medium mb-1">
+                                                Target service name <span className="text-destructive">*</span>
+                                            </label>
+                                            <input
+                                                id="quick_tunnel_service"
+                                                type="text"
+                                                value={formData.quick_tunnel_service}
+                                                onChange={(e) => handleFieldChange('quick_tunnel_service', e.target.value)}
+                                                onBlur={() => setTouched(prev => ({ ...prev, quick_tunnel_service: true }))}
+                                                className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ${errors.quick_tunnel_service ? 'border-destructive' : ''}`}
+                                                placeholder="web"
+                                            />
+                                            {errors.quick_tunnel_service && (
+                                                <p className="text-sm text-red-600 dark:text-red-400 mt-1">{errors.quick_tunnel_service}</p>
+                                            )}
+                                            <p className="text-xs text-muted-foreground mt-1">The service name from your docker-compose to expose.</p>
+                                        </div>
+                                        <div>
+                                            <label htmlFor="quick_tunnel_port" className="block text-sm font-medium mb-1">
+                                                Target port <span className="text-destructive">*</span>
+                                            </label>
+                                            <input
+                                                id="quick_tunnel_port"
+                                                type="number"
+                                                min={1}
+                                                max={65535}
+                                                value={formData.quick_tunnel_port}
+                                                onChange={(e) => handleFieldChange('quick_tunnel_port', parseInt(e.target.value, 10) || 80)}
+                                                className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ${errors.quick_tunnel_port ? 'border-destructive' : ''}`}
+                                            />
+                                            {errors.quick_tunnel_port && (
+                                                <p className="text-sm text-red-600 dark:text-red-400 mt-1">{errors.quick_tunnel_port}</p>
+                                            )}
+                                            <p className="text-xs text-muted-foreground mt-1">The port your service listens on (1–65535).</p>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium mb-2">
                                     Deployment Node
                                 </label>
                                 <NodeSelector
                                     selectedNodeIds={formData.node_id ? [formData.node_id] : []}
-                                    onChange={(nodeIds) => setFormData({ ...formData, node_id: nodeIds[0] || '' })}
+                                    onChange={(nodeIds) => setFormData(prev => ({ ...prev, node_id: nodeIds[0] || '' }))}
                                     multiSelect={false}
                                 />
                                 <p className="text-xs text-muted-foreground mt-1">
@@ -400,7 +465,7 @@ function CreateApp() {
                                         </div>
                                     </div>
 
-                                    {hasValidIngressRules && (
+                                    {showIngressStep && hasValidIngressRules && (
                                         <div>
                                             <h3 className="font-semibold mb-3">Ingress Rules</h3>
                                             <div className="p-4 bg-muted/50 rounded-lg space-y-2">

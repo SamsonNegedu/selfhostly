@@ -1,10 +1,10 @@
 package http
 
 import (
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/selfhostly/internal/db"
@@ -18,13 +18,9 @@ type ErrorResponse struct {
 	Details string `json:"details,omitempty"`
 }
 
-// detailForError returns a short, user-facing detail string (avoids redundant chained messages like "CODE: message: cause").
+// detailForError returns a short, user-facing detail string. Uses only domain message (never Cause) to avoid leaking DB/driver internals.
 func detailForError(err error) string {
-	var de *domain.DomainError
-	if errors.As(err, &de) && de.Message != "" {
-		return de.Message
-	}
-	return err.Error()
+	return domain.PublicMessage(err)
 }
 
 // handleServiceError handles errors from service layer
@@ -75,6 +71,17 @@ func (s *Server) createApp(c *gin.Context) {
 	if nodeID := getNodeIDFromContext(c); nodeID != "" {
 		req.NodeID = nodeID
 	}
+	// Validate Quick Tunnel params when tunnel_mode is "quick"
+	if req.TunnelMode == "quick" {
+		if strings.TrimSpace(req.QuickTunnelService) == "" {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "quick_tunnel_service is required for Quick Tunnel mode"})
+			return
+		}
+		if req.QuickTunnelPort < 1 || req.QuickTunnelPort > 65535 {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "quick_tunnel_port must be between 1 and 65535"})
+			return
+		}
+	}
 
 	app, err := s.appService.CreateApp(c.Request.Context(), req)
 	if err != nil {
@@ -89,7 +96,7 @@ func (s *Server) createApp(c *gin.Context) {
 func (s *Server) getApp(c *gin.Context) {
 	id, err := httputil.ValidateAndGetAppID(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID", Details: domain.PublicMessage(err)})
 		return
 	}
 
@@ -113,7 +120,7 @@ func (s *Server) getApp(c *gin.Context) {
 func (s *Server) updateApp(c *gin.Context) {
 	id, err := httputil.ValidateAndGetAppID(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID", Details: domain.PublicMessage(err)})
 		return
 	}
 
@@ -144,7 +151,7 @@ func (s *Server) updateApp(c *gin.Context) {
 func (s *Server) deleteApp(c *gin.Context) {
 	id, err := httputil.ValidateAndGetAppID(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID", Details: domain.PublicMessage(err)})
 		return
 	}
 
@@ -287,6 +294,69 @@ func (s *Server) getAppStats(c *gin.Context) {
 	c.JSON(http.StatusOK, stats)
 }
 
+// getQuickTunnelURL runs Quick Tunnel URL extraction on the node that hosts the app and returns the URL.
+func (s *Server) getQuickTunnelURL(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
+		return
+	}
+
+	nodeID := getNodeIDFromContext(c)
+	if nodeID == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "node_id is required"})
+		return
+	}
+
+	url, err := s.appService.GetQuickTunnelURL(c.Request.Context(), id, nodeID)
+	if err != nil {
+		s.handleServiceError(c, "get quick tunnel URL", err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"url": url})
+}
+
+// createQuickTunnelRequest is the body for POST /api/apps/:id/quick-tunnel
+type createQuickTunnelRequest struct {
+	Service string `json:"service" binding:"required"`
+	Port    int    `json:"port" binding:"required,min=1,max=65535"`
+}
+
+// createQuickTunnelForApp adds a Quick Tunnel to an app that has no tunnel.
+func (s *Server) createQuickTunnelForApp(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
+		return
+	}
+
+	nodeID := getNodeIDFromContext(c)
+	if nodeID == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "node_id is required"})
+		return
+	}
+
+	var req createQuickTunnelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		slog.WarnContext(c.Request.Context(), "invalid create quick tunnel request", "error", err)
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request", Details: "service (required) and port (1-65535) are required"})
+		return
+	}
+	if strings.TrimSpace(req.Service) == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "service is required"})
+		return
+	}
+
+	app, err := s.appService.CreateQuickTunnelForApp(c.Request.Context(), id, nodeID, strings.TrimSpace(req.Service), req.Port)
+	if err != nil {
+		s.handleServiceError(c, "create quick tunnel", err)
+		return
+	}
+
+	c.JSON(http.StatusOK, app)
+}
+
 // listApps returns all apps
 func (s *Server) listApps(c *gin.Context) {
 	var nodeIDs []string
@@ -338,13 +408,13 @@ func (s *Server) getComposeVersions(c *gin.Context) {
 func (s *Server) getComposeVersion(c *gin.Context) {
 	id, err := httputil.ValidateAndGetAppID(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID", Details: domain.PublicMessage(err)})
 		return
 	}
 
 	version, err := httputil.ValidateAndGetVersion(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid version", Details: domain.PublicMessage(err)})
 		return
 	}
 
@@ -368,13 +438,13 @@ func (s *Server) getComposeVersion(c *gin.Context) {
 func (s *Server) rollbackToVersion(c *gin.Context) {
 	id, err := httputil.ValidateAndGetAppID(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID", Details: domain.PublicMessage(err)})
 		return
 	}
 
 	targetVersion, err := httputil.ValidateAndGetVersion(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid version", Details: domain.PublicMessage(err)})
 		return
 	}
 

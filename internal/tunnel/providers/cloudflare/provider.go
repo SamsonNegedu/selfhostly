@@ -311,7 +311,7 @@ func (p *Provider) SyncStatus(ctx context.Context, appID string) error {
 // ContainerProvider Interface
 // ============================================================================
 
-// GetContainerConfig returns the Docker container configuration for Cloudflare tunnel.
+// GetContainerConfig returns the Docker container configuration for Cloudflare named tunnel.
 func (p *Provider) GetContainerConfig(tunnelToken string, appName string) *tunnel.ContainerConfig {
 	return &tunnel.ContainerConfig{
 		Image:   "cloudflare/cloudflared:latest",
@@ -319,6 +319,28 @@ func (p *Provider) GetContainerConfig(tunnelToken string, appName string) *tunne
 		Environment: map[string]string{
 			"TUNNEL_TOKEN": tunnelToken,
 		},
+	}
+}
+
+// GetQuickTunnelContainerConfig returns the Docker container configuration for a Quick Tunnel
+// (temporary trycloudflare.com URL). No tunnel token; cloudflared runs with --url and exposes metrics.
+// metricsHostPort is the host port for the metrics endpoint (container port is always 2000); use a unique port per app to avoid conflicts.
+func (p *Provider) GetQuickTunnelContainerConfig(targetService string, targetPort int, metricsHostPort int) *tunnel.ContainerConfig {
+	return QuickTunnelContainerConfig(targetService, targetPort, metricsHostPort)
+}
+
+// QuickTunnelContainerConfig returns the Docker container configuration for a Quick Tunnel
+// without needing a Provider instance (no API credentials required). Use when tunnel_mode is "quick".
+// metricsHostPort is the host port for the metrics endpoint (container port is always 2000); use a unique port per app to avoid conflicts.
+func QuickTunnelContainerConfig(targetService string, targetPort int, metricsHostPort int) *tunnel.ContainerConfig {
+	targetURL := fmt.Sprintf("http://%s:%d", targetService, targetPort)
+	if metricsHostPort < 1 || metricsHostPort > 65535 {
+		metricsHostPort = 2000
+	}
+	return &tunnel.ContainerConfig{
+		Image:   "cloudflare/cloudflared:latest",
+		Command: []string{"tunnel", "--url", targetURL, "--metrics", "0.0.0.0:2000"},
+		Ports:   []string{fmt.Sprintf("%d:2000", metricsHostPort)},
 	}
 }
 

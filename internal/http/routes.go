@@ -85,6 +85,8 @@ func (s *Server) setupAppRoutes(api *gin.RouterGroup) {
 			appSpecific.POST("/update", s.updateAppContainers)
 			appSpecific.GET("/logs", s.getAppLogs)
 			appSpecific.GET("/stats", s.getAppStats)
+			appSpecific.GET("/quick-tunnel-url", s.getQuickTunnelURL)
+			appSpecific.POST("/quick-tunnel", s.createQuickTunnelForApp)
 
 			// Compose version routes
 			appSpecific.GET("/compose/versions", s.getComposeVersions)
@@ -108,6 +110,8 @@ func (s *Server) setupTunnelRoutes(api *gin.RouterGroup) {
 		tunnelOps := tunnels.Group("/apps/:appId", s.resolveNodeMiddleware())
 		{
 			tunnelOps.GET("", s.GetTunnelByAppIDGeneric)
+			tunnelOps.POST("", s.CreateTunnelForAppGeneric)
+			tunnelOps.POST("/switch-to-custom", s.SwitchAppToCustomTunnelGeneric)
 			tunnelOps.POST("/sync", s.SyncTunnelStatusGeneric)
 			tunnelOps.PUT("/ingress", s.UpdateTunnelIngressGeneric)
 			tunnelOps.POST("/dns", s.CreateDNSRecordGeneric)

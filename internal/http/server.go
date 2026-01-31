@@ -72,7 +72,7 @@ func NewServer(cfg *config.Config, database *db.DB) *Server {
 
 	// Initialize services (Phase 2 integration)
 	appService := service.NewAppService(database, dockerManager, cfg, logger)
-	tunnelService := service.NewTunnelService(database, cfg, logger)
+	tunnelService := service.NewTunnelService(database, dockerManager, cfg, logger)
 	systemService := service.NewSystemService(database, dockerManager, cfg, logger)
 
 	// Initialize routing dependencies for compose service

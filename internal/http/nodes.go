@@ -50,7 +50,7 @@ func (s *Server) listNodes(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "Failed to list nodes",
-			Details: err.Error(),
+			Details: domain.PublicMessage(err),
 		})
 		return
 	}
@@ -65,7 +65,7 @@ func (s *Server) registerNode(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error:   "Invalid request body",
-			Details: err.Error(),
+			Details: domain.PublicMessage(err),
 		})
 		return
 	}
@@ -74,7 +74,7 @@ func (s *Server) registerNode(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "Failed to register node",
-			Details: err.Error(),
+			Details: domain.PublicMessage(err),
 		})
 		return
 	}
@@ -91,7 +91,7 @@ func (s *Server) getNode(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusNotFound, ErrorResponse{
 			Error:   "Node not found",
-			Details: err.Error(),
+			Details: domain.PublicMessage(err),
 		})
 		return
 	}
@@ -108,7 +108,7 @@ func (s *Server) updateNode(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error:   "Invalid request body",
-			Details: err.Error(),
+			Details: domain.PublicMessage(err),
 		})
 		return
 	}
@@ -117,7 +117,7 @@ func (s *Server) updateNode(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "Failed to update node",
-			Details: err.Error(),
+			Details: domain.PublicMessage(err),
 		})
 		return
 	}
@@ -134,7 +134,7 @@ func (s *Server) deleteNode(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "Failed to delete node",
-			Details: err.Error(),
+			Details: domain.PublicMessage(err),
 		})
 		return
 	}
@@ -153,7 +153,7 @@ func (s *Server) checkNodeHealth(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, ErrorResponse{
 			Error:   "Node health check failed",
-			Details: err.Error(),
+			Details: domain.PublicMessage(err),
 		})
 		return
 	}
@@ -170,7 +170,7 @@ func (s *Server) getCurrentNodeInfo(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "Failed to get current node info",
-			Details: err.Error(),
+			Details: domain.PublicMessage(err),
 		})
 		return
 	}
@@ -189,7 +189,7 @@ func (s *Server) getSettingsForNode(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "Failed to get settings",
-			Details: err.Error(),
+			Details: domain.PublicMessage(err),
 		})
 		return
 	}

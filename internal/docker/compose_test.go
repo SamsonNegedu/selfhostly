@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/selfhostly/internal/tunnel"
@@ -118,6 +119,19 @@ func cloudflaredLikeContainerConfig(tunnelToken string) *tunnel.ContainerConfig 
 	}
 }
 
+// quickTunnelContainerConfig returns a tunnel.ContainerConfig for Quick Tunnel (--url and metrics port).
+// metricsHostPort is the host port for metrics (e.g. 2000); container port is always 2000.
+func quickTunnelContainerConfig(metricsHostPort int) *tunnel.ContainerConfig {
+	if metricsHostPort < 1 {
+		metricsHostPort = 2000
+	}
+	return &tunnel.ContainerConfig{
+		Image:   "cloudflare/cloudflared:latest",
+		Command: []string{"tunnel", "--url", "http://web:80", "--metrics", "0.0.0.0:2000"},
+		Ports:   []string{fmt.Sprintf("%d:2000", metricsHostPort)},
+	}
+}
+
 func TestInjectTunnelContainer(t *testing.T) {
 	// Test with existing network
 	compose := &ComposeFile{
@@ -218,6 +232,37 @@ func TestInjectTunnelContainerNoNetwork(t *testing.T) {
 	}
 }
 
+func TestInjectTunnelContainerQuickTunnel(t *testing.T) {
+	compose := &ComposeFile{
+		Services: map[string]Service{
+			"web": {
+				Image:    "nginx:latest",
+				Networks: []string{"webnet"},
+			},
+		},
+		Networks: map[string]Network{
+			"webnet": {Driver: "bridge"},
+		},
+	}
+	injected, err := InjectTunnelContainer(compose, "myapp", quickTunnelContainerConfig(2000), "webnet")
+	if err != nil {
+		t.Fatalf("Failed to inject Quick Tunnel container: %v", err)
+	}
+	if !injected {
+		t.Fatal("Expected container to be injected")
+	}
+	tunnelService, exists := compose.Services["tunnel"]
+	if !exists {
+		t.Fatal("Expected tunnel service to be added")
+	}
+	if tunnelService.Command != "tunnel --url http://web:80 --metrics 0.0.0.0:2000" {
+		t.Errorf("Expected Quick Tunnel command, got %s", tunnelService.Command)
+	}
+	if len(tunnelService.Ports) != 1 || tunnelService.Ports[0] != "2000:2000" {
+		t.Errorf("Expected ports [2000:2000], got %v", tunnelService.Ports)
+	}
+}
+
 func TestExtractNetworks(t *testing.T) {
 	// Test with services using networks
 	compose := &ComposeFile{
@@ -259,6 +304,107 @@ func TestExtractNetworks(t *testing.T) {
 		if !networkMap[expectedNetwork] {
 			t.Errorf("Expected network %s not found in extracted networks", expectedNetwork)
 		}
+	}
+}
+
+func TestExtractQuickTunnelTargetFromCompose(t *testing.T) {
+	composeWithQuickTunnel := `
+version: "3.8"
+services:
+  web:
+    image: nginx:latest
+    networks: [default]
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --url http://web:80 --metrics 0.0.0.0:2000
+    ports: ["2000:2000"]
+    networks: [default]
+networks:
+  default: { driver: bridge }
+`
+	service, port, ok := ExtractQuickTunnelTargetFromCompose(composeWithQuickTunnel)
+	if !ok {
+		t.Fatal("ExtractQuickTunnelTargetFromCompose() ok = false, want true")
+	}
+	if service != "web" || port != 80 {
+		t.Errorf("ExtractQuickTunnelTargetFromCompose() = %q, %d; want web, 80", service, port)
+	}
+
+	// No cloudflared service
+	noTunnel := `version: "3.8"
+services:
+  web:
+    image: nginx:latest
+`
+	_, _, ok = ExtractQuickTunnelTargetFromCompose(noTunnel)
+	if ok {
+		t.Error("ExtractQuickTunnelTargetFromCompose(no tunnel) ok = true, want false")
+	}
+}
+
+func TestExtractQuickTunnelMetricsHostPort(t *testing.T) {
+	composeWithPort := `
+services:
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    ports: ["2001:2000"]
+  web:
+    image: nginx:latest
+`
+	port, ok := ExtractQuickTunnelMetricsHostPort(composeWithPort)
+	if !ok {
+		t.Fatal("ExtractQuickTunnelMetricsHostPort() ok = false, want true")
+	}
+	if port != 2001 {
+		t.Errorf("ExtractQuickTunnelMetricsHostPort() = %d, want 2001", port)
+	}
+
+	noTunnel := `services: { web: { image: nginx } }`
+	_, ok = ExtractQuickTunnelMetricsHostPort(noTunnel)
+	if ok {
+		t.Error("ExtractQuickTunnelMetricsHostPort(no tunnel) ok = true, want false")
+	}
+}
+
+func TestRemoveTunnelService(t *testing.T) {
+	composeWithTunnel := `
+version: "3.8"
+services:
+  web:
+    image: nginx:latest
+    networks: [default]
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    command: tunnel run
+    networks: [default]
+networks:
+  default: { driver: bridge }
+`
+	compose, err := ParseCompose([]byte(composeWithTunnel))
+	if err != nil {
+		t.Fatalf("ParseCompose: %v", err)
+	}
+	if _, ok := compose.Services["tunnel"]; !ok {
+		t.Fatal("compose should have tunnel service before RemoveTunnelService")
+	}
+	removed := RemoveTunnelService(compose)
+	if !removed {
+		t.Error("RemoveTunnelService() = false, want true")
+	}
+	if _, ok := compose.Services["tunnel"]; ok {
+		t.Error("tunnel service should be removed from compose")
+	}
+	if _, ok := compose.Services["web"]; !ok {
+		t.Error("web service should still be present")
+	}
+
+	// No tunnel service: RemoveTunnelService returns false
+	composeNoTunnel := &ComposeFile{
+		Services: map[string]Service{"web": {Image: "nginx"}},
+	}
+	removed = RemoveTunnelService(composeNoTunnel)
+	if removed {
+		t.Error("RemoveTunnelService(no tunnel) = true, want false")
 	}
 }
 

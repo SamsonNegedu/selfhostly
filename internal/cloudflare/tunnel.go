@@ -155,19 +155,14 @@ func (m *Manager) CreateTunnel(appName string) (tunnelID, token string, err erro
 		// Check if error is due to duplicate tunnel name (error code 1013)
 		for _, apiErr := range respData.Errors {
 			if apiErr.Code == 1013 {
-				slog.Warn("Tunnel with this name already exists, deleting and recreating", "name", appName)
-				// Find and delete the existing tunnel
+				slog.Warn("Tunnel with this name already exists, attempting to delete and recreate", "name", appName)
 				existingTunnelID, err := m.findTunnelIDByName(appName)
 				if err != nil {
 					return "", "", fmt.Errorf("tunnel exists but failed to find it: %w", err)
 				}
-				
-				// Delete the existing tunnel
 				if err := m.DeleteTunnel(existingTunnelID); err != nil {
-					slog.Warn("Failed to delete existing tunnel, continuing anyway", "tunnelID", existingTunnelID, "error", err)
+					return "", "", fmt.Errorf("tunnel named %q already exists and could not be deleted (delete it in Cloudflare Zero Trust dashboard or use a different app name): %w", appName, err)
 				}
-				
-				// Retry creation
 				slog.Info("Retrying tunnel creation after cleanup", "name", appName)
 				return m.CreateTunnel(appName)
 			}

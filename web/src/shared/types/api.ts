@@ -23,6 +23,7 @@ export interface App {
   error_message: string;
   node_id: string;
   node_name?: string; // For display purposes (added by backend)
+  tunnel_mode?: '' | 'custom' | 'quick'; // '' = none, custom = named tunnel, quick = trycloudflare.com
   created_at: string;
   updated_at: string;
 }
@@ -33,6 +34,9 @@ export interface CreateAppRequest {
   compose_content: string;
   ingress_rules?: IngressRule[];
   node_id?: string; // Target node for app deployment
+  tunnel_mode?: '' | 'custom' | 'quick';
+  quick_tunnel_service?: string; // Required when tunnel_mode='quick'
+  quick_tunnel_port?: number; // Required when tunnel_mode='quick'
 }
 
 export interface RegisterNodeRequest {
@@ -94,6 +98,15 @@ export interface CloudflareTunnel {
   updated_at: string;
   last_synced_at?: string;
   error_details?: string;
+}
+
+/** GET /api/tunnels/apps/:appId - single envelope for primary and secondary; tunnel is null when no named tunnel (e.g. Quick Tunnel or none) */
+export interface TunnelByAppResponse {
+  tunnel: CloudflareTunnel | null;
+  app_id: string;
+  tunnel_mode: string;
+  node_id: string;
+  public_url?: string;
 }
 
 export interface CloudflareTunnelResponse {

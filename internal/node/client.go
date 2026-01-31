@@ -23,7 +23,7 @@ type Client struct {
 func NewClient() *Client {
 	return &Client{
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: 90 * time.Second,
 		},
 		circuitBreaker: NewCircuitBreaker(),
 	}
@@ -267,6 +267,136 @@ func (c *Client) UpdateAppContainers(node *db.Node, appID string) (*db.App, erro
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
+	return &app, nil
+}
+
+// GetQuickTunnelURL fetches the Quick Tunnel URL for an app from a remote node.
+// The node runs extraction locally and returns the trycloudflare.com URL.
+func (c *Client) GetQuickTunnelURL(node *db.Node, appID string) (string, error) {
+	req, err := http.NewRequest("GET", node.APIEndpoint+apipaths.AppQuickTunnelURL(appID), nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.setNodeAuthHeaders(req, node)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to get quick tunnel URL from node %s: %w", node.Name, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("node returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var out struct {
+		URL string `json:"url"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+	return out.URL, nil
+}
+
+// CreateQuickTunnelForApp adds a Quick Tunnel to an app that has no tunnel on a remote node.
+func (c *Client) CreateQuickTunnelForApp(node *db.Node, appID string, service string, port int) (*db.App, error) {
+	body := map[string]interface{}{"service": service, "port": port}
+	jsonData, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", node.APIEndpoint+apipaths.AppQuickTunnel(appID), bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.setNodeAuthHeaders(req, node)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create quick tunnel on node %s: %w", node.Name, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("node returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var app db.App
+	if err := json.NewDecoder(resp.Body).Decode(&app); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	app.NodeID = node.ID
+	return &app, nil
+}
+
+// SwitchAppToCustomTunnel forwards switch-to-custom to a remote node so that node processes the request (its DB, its Cloudflare config).
+func (c *Client) SwitchAppToCustomTunnel(node *db.Node, appID string, body interface{}) (*db.App, error) {
+	jsonData, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+	req, err := http.NewRequest("POST", node.APIEndpoint+apipaths.TunnelSwitchToCustom(appID), bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	c.setNodeAuthHeaders(req, node)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to switch to custom tunnel on node %s: %w", node.Name, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("node returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var app db.App
+	if err := json.NewDecoder(resp.Body).Decode(&app); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	app.NodeID = node.ID
+	return &app, nil
+}
+
+// CreateTunnelForApp forwards create-tunnel (custom domain) to a remote node so that node processes the request (its DB, its Cloudflare config).
+func (c *Client) CreateTunnelForApp(node *db.Node, appID string, body interface{}) (*db.App, error) {
+	jsonData, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+	url := node.APIEndpoint + apipaths.TunnelByApp(appID) + "?node_id=" + node.ID
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	c.setNodeAuthHeaders(req, node)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create tunnel for app on node %s: %w", node.Name, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("node returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var app db.App
+	if err := json.NewDecoder(resp.Body).Decode(&app); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	app.NodeID = node.ID
 	return &app, nil
 }
 
@@ -645,12 +775,22 @@ func (c *Client) GetTunnelByAppID(node *db.Node, appID string) (*db.CloudflareTu
 		return nil, fmt.Errorf("node returned status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var tunnel *db.CloudflareTunnel
-	if err := json.NewDecoder(resp.Body).Decode(&tunnel); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
-	return tunnel, nil
+	// Remote returns the same envelope as primary: { tunnel, app_id, tunnel_mode, node_id, public_url }.
+	var envelope struct {
+		Tunnel *db.CloudflareTunnel `json:"tunnel"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	if envelope.Tunnel == nil {
+		return nil, domain.ErrTunnelNotFound
+	}
+	return envelope.Tunnel, nil
 }
 
 // SyncTunnelStatus syncs tunnel status on a remote node

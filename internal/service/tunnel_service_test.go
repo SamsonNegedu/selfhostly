@@ -461,18 +461,10 @@ func TestTunnelService_DeleteTunnel(t *testing.T) {
 		t.Fatalf("Expected no error, got %v", err)
 	}
 
-	// Verify tunnel was marked as inactive
-	tunnelRecord, err := database.GetCloudflareTunnelByAppID(app.ID)
-	if err != nil {
-		t.Fatalf("Failed to get tunnel: %v", err)
-	}
-
-	if tunnelRecord.IsActive {
-		t.Error("Expected tunnel to be marked as inactive")
-	}
-
-	if tunnelRecord.Status != "deleted" {
-		t.Errorf("Expected status 'deleted', got '%s'", tunnelRecord.Status)
+	// Verify tunnel record was removed from database
+	_, err = database.GetCloudflareTunnelByAppID(app.ID)
+	if err == nil {
+		t.Error("Expected tunnel record to be deleted (GetCloudflareTunnelByAppID should return error)")
 	}
 }
 

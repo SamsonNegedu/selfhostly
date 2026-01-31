@@ -86,4 +86,7 @@ type ContainerConfig struct {
 
 	// Volumes are optional volume mounts for the container
 	Volumes []string
+
+	// Ports are optional port mappings (e.g., ["2000:2000"] for Quick Tunnel metrics)
+	Ports []string
 }

@@ -68,7 +68,7 @@ export function AppActions({
                             size="sm"
                             onClick={onStart}
                             disabled={isAnyActionPending}
-                            className="h-9 px-2 sm:px-3 bg-green-600 hover:bg-green-700 text-white gap-1 sm:gap-1.5 text-xs sm:text-sm"
+                            className="h-9 px-2 sm:px-3 bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-400 text-white gap-1 sm:gap-1.5 text-xs sm:text-sm"
                         >
                             {isStartPending ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />

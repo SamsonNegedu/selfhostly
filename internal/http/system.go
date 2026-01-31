@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/selfhostly/internal/domain"
 	"github.com/selfhostly/internal/httputil"
 	"github.com/selfhostly/internal/validation"
 )
@@ -35,7 +36,7 @@ func (s *Server) getSystemStats(c *gin.Context) {
 func (s *Server) restartContainer(c *gin.Context) {
 	containerID, err := httputil.ValidateAndGetContainerID(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid container ID", Details: domain.PublicMessage(err)})
 		return
 	}
 
@@ -57,7 +58,7 @@ func (s *Server) restartContainer(c *gin.Context) {
 func (s *Server) stopContainer(c *gin.Context) {
 	containerID, err := httputil.ValidateAndGetContainerID(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid container ID", Details: domain.PublicMessage(err)})
 		return
 	}
 
@@ -88,7 +89,7 @@ func (s *Server) getDebugDockerStats(c *gin.Context) {
 	if err := validation.ValidateContainerID(containerID); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error:   "Invalid container ID format",
-			Details: err.Error(),
+			Details: domain.PublicMessage(err),
 		})
 		return
 	}
@@ -103,7 +104,7 @@ func (s *Server) getDebugDockerStats(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "Failed to get docker stats",
-			Details: err.Error(),
+			Details: domain.PublicMessage(err),
 		})
 		return
 	}
@@ -124,7 +125,7 @@ func (s *Server) getDebugDockerStats(c *gin.Context) {
 func (s *Server) deleteContainer(c *gin.Context) {
 	containerID, err := httputil.ValidateAndGetContainerID(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid container ID", Details: domain.PublicMessage(err)})
 		return
 	}
 

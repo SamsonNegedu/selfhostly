@@ -158,3 +158,14 @@ func IsValidationError(err error) bool {
 	}
 	return false
 }
+
+// PublicMessage returns a safe, user-facing message for API responses.
+// For DomainError it returns only the Message (never Cause, to avoid leaking DB/driver internals).
+// For other errors it returns a generic message.
+func PublicMessage(err error) string {
+	var de *DomainError
+	if errors.As(err, &de) && de.Message != "" {
+		return de.Message
+	}
+	return "An error occurred"
+}

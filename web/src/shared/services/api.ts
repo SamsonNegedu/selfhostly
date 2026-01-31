@@ -11,8 +11,8 @@ import type {
   UpdateAppRequest,
   Settings,
   UpdateSettingsRequest,
-  CloudflareTunnel,
   CloudflareTunnelResponse,
+  TunnelByAppResponse,
   ComposeVersion,
   RollbackRequest,
   SystemStats,
@@ -413,14 +413,61 @@ export function useTunnels(nodeIds?: string[]) {
   });
 }
 
-// Get tunnel for specific app (provider-agnostic)
+// Get tunnel for specific app (provider-agnostic). When no tunnel, returns 200 with tunnel: null and app_id, tunnel_mode, node_id.
 export function useTunnel(appId: string, nodeId: string) {
   return useQuery({
     queryKey: ['tunnels', 'app', appId, nodeId],
     queryFn: () => {
-      return apiClient.get<CloudflareTunnel>(`/api/tunnels/apps/${appId}?node_id=${nodeId}`);
+      return apiClient.get<TunnelByAppResponse>(`/api/tunnels/apps/${appId}?node_id=${nodeId}`);
     },
     enabled: !!appId && !!nodeId,
+  });
+}
+
+// Create named (custom domain) tunnel for an app that has none
+export function useCreateTunnelForApp() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ appId, nodeId, ingressRules }: { appId: string; nodeId: string; ingressRules?: IngressRule[] }) => {
+      const body = ingressRules && ingressRules.length > 0 ? { ingress_rules: ingressRules } : {};
+      return apiClient.post<App>(`/api/tunnels/apps/${appId}?node_id=${nodeId}`, body);
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['tunnels', 'app', variables.appId] });
+      queryClient.invalidateQueries({ queryKey: ['tunnels', 'list'] });
+      queryClient.invalidateQueries({ queryKey: ['app', variables.appId] });
+    },
+  });
+}
+
+// Create Quick Tunnel (temporary trycloudflare.com URL) for an app that has no tunnel
+export function useCreateQuickTunnelForApp() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ appId, nodeId, service, port }: { appId: string; nodeId: string; service: string; port: number }) => {
+      return apiClient.post<App>(`/api/apps/${appId}/quick-tunnel?node_id=${nodeId}`, { service, port });
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['tunnels', 'app', variables.appId] });
+      queryClient.invalidateQueries({ queryKey: ['tunnels', 'list'] });
+      queryClient.invalidateQueries({ queryKey: ['app', variables.appId] });
+    },
+  });
+}
+
+// Switch app from Quick Tunnel to custom (named) tunnel. Pass optional ingressRules to set custom domain immediately.
+export function useSwitchAppToCustomTunnel() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ appId, nodeId, ingressRules }: { appId: string; nodeId: string; ingressRules?: IngressRule[] }) => {
+      const body = ingressRules && ingressRules.length > 0 ? { ingress_rules: ingressRules } : {};
+      return apiClient.post<App>(`/api/tunnels/apps/${appId}/switch-to-custom?node_id=${nodeId}`, body);
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['tunnels', 'app', variables.appId] });
+      queryClient.invalidateQueries({ queryKey: ['tunnels', 'list'] });
+      queryClient.invalidateQueries({ queryKey: ['app', variables.appId] });
+    },
   });
 }
 

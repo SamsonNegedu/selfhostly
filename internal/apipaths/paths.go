@@ -22,7 +22,10 @@ func AppComposeVersion(appID string, v int) string { return fmt.Sprintf("/api/ap
 func AppComposeRollback(appID string, v int) string { return fmt.Sprintf("/api/apps/%s/compose/rollback/%d", appID, v) }
 func AppLogs(appID string) string              { return "/api/apps/" + appID + "/logs" }
 func AppStats(appID string) string             { return "/api/apps/" + appID + "/stats" }
+func AppQuickTunnelURL(appID string) string    { return "/api/apps/" + appID + "/quick-tunnel-url" }
+func AppQuickTunnel(appID string) string       { return "/api/apps/" + appID + "/quick-tunnel" }
 func TunnelByApp(appID string) string          { return "/api/tunnels/apps/" + appID }
+func TunnelSwitchToCustom(appID string) string { return "/api/tunnels/apps/" + appID + "/switch-to-custom" }
 func TunnelSync(appID string) string           { return "/api/tunnels/apps/" + appID + "/sync" }
 func TunnelIngress(appID string) string        { return "/api/tunnels/apps/" + appID + "/ingress" }
 func TunnelDNS(appID string) string            { return "/api/tunnels/apps/" + appID + "/dns" }

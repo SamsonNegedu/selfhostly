@@ -2,6 +2,8 @@ package docker
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/selfhostly/internal/tunnel"
@@ -235,8 +237,81 @@ func InjectTunnelContainer(compose *ComposeFile, appName string, containerConfig
 		tunnelService.Volumes = containerConfig.Volumes
 	}
 
+	// Add ports if specified (e.g., metrics port for Quick Tunnel)
+	if len(containerConfig.Ports) > 0 {
+		tunnelService.Ports = containerConfig.Ports
+	}
+
 	compose.Services["tunnel"] = tunnelService
 	return true, nil
+}
+
+// RemoveTunnelService removes the tunnel service from the compose file (e.g. after tunnel deletion).
+// The injected tunnel service is always named "tunnel". Returns true if the service was present and removed.
+func RemoveTunnelService(compose *ComposeFile) bool {
+	if compose.Services == nil {
+		return false
+	}
+	if _, ok := compose.Services["tunnel"]; !ok {
+		return false
+	}
+	delete(compose.Services, "tunnel")
+	return true
+}
+
+// ExtractQuickTunnelTargetFromCompose parses compose content and extracts the Quick Tunnel target
+// (service name and port) from the tunnel service's command (e.g. --url http://web:80).
+// Returns ("", 0, false) if not found. Used when updating an app to re-inject the Quick Tunnel container.
+func ExtractQuickTunnelTargetFromCompose(composeContent string) (service string, port int, ok bool) {
+	compose, err := ParseCompose([]byte(composeContent))
+	if err != nil || compose.Services == nil {
+		return "", 0, false
+	}
+	// Look for the tunnel service (injected by us) or any cloudflared service with --url
+	for _, svc := range compose.Services {
+		if !strings.Contains(svc.Image, "cloudflared") {
+			continue
+		}
+		cmd := svc.Command
+		// Command may be "tunnel --url http://serviceName:port --metrics ..."
+		re := regexp.MustCompile(`--url\s+http://([^:\s]+):(\d+)`)
+		matches := re.FindStringSubmatch(cmd)
+		if len(matches) >= 3 {
+			p, err := strconv.Atoi(matches[2])
+			if err != nil || p < 1 || p > 65535 {
+				continue
+			}
+			return strings.TrimSpace(matches[1]), p, true
+		}
+	}
+	return "", 0, false
+}
+
+// ExtractQuickTunnelMetricsHostPort parses compose content and returns the host port used for Quick Tunnel metrics
+// (the host side of the "HOST:2000" mapping on the tunnel service). Returns (0, false) if not found.
+func ExtractQuickTunnelMetricsHostPort(composeContent string) (hostPort int, ok bool) {
+	compose, err := ParseCompose([]byte(composeContent))
+	if err != nil || compose.Services == nil {
+		return 0, false
+	}
+	for _, svc := range compose.Services {
+		if !strings.Contains(svc.Image, "cloudflared") || len(svc.Ports) == 0 {
+			continue
+		}
+		// Port format is "hostPort:2000" (container port 2000 is fixed for cloudflared metrics)
+		for _, p := range svc.Ports {
+			parts := strings.Split(p, ":")
+			if len(parts) != 2 || strings.TrimSpace(parts[1]) != "2000" {
+				continue
+			}
+			hp, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+			if err != nil || hp < 1 || hp > 65535 {
+				continue
+			}
+			return hp, true
+		}
+	}
+	return 0, false
 }
 
 // ExtractNetworks extracts network names from services

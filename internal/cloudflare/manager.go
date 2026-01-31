@@ -90,30 +90,35 @@ func (tm *TunnelManager) UpdateTunnelStatus(tunnelID string, status string, erro
 	return nil
 }
 
-// DeleteTunnelByAppID deletes a tunnel by app ID
+// DeleteTunnelByAppID deletes a tunnel by app ID: removes it from the Cloudflare API, deletes the tunnel record, and clears the app's tunnel-related fields so public_url etc. are not stale.
 func (tm *TunnelManager) DeleteTunnelByAppID(appID string) error {
-	// Get the tunnel record
 	tunnel, err := tm.database.GetCloudflareTunnelByAppID(appID)
 	if err != nil {
 		return fmt.Errorf("failed to get tunnel: %w", err)
 	}
 
-	// Delete from API
 	if err := tm.ApiManager.DeleteTunnel(tunnel.TunnelID); err != nil {
 		slog.Warn("failed to delete tunnel from API", "tunnel_id", tunnel.TunnelID, "error", err)
 	}
 
-	// Mark as inactive in database
-	tunnel.IsActive = false
-	tunnel.Status = "deleted"
-	var emptyError *string
-	tunnel.ErrorDetails = emptyError
-	tunnel.UpdatedAt = time.Now()
-
-	if err := tm.database.UpdateCloudflareTunnel(tunnel); err != nil {
-		return fmt.Errorf("failed to update tunnel status: %w", err)
+	if err := tm.database.DeleteCloudflareTunnel(appID); err != nil {
+		return fmt.Errorf("failed to delete tunnel record: %w", err)
 	}
 
+	app, err := tm.database.GetApp(appID)
+	if err != nil {
+		slog.Warn("failed to get app when clearing tunnel fields after delete", "app_id", appID, "error", err)
+		return nil
+	}
+	app.TunnelID = ""
+	app.TunnelToken = ""
+	app.PublicURL = ""
+	app.TunnelDomain = ""
+	app.TunnelMode = ""
+	app.UpdatedAt = time.Now()
+	if err := tm.database.UpdateApp(app); err != nil {
+		slog.Warn("failed to clear app tunnel fields after tunnel delete", "app_id", appID, "error", err)
+	}
 	return nil
 }
 

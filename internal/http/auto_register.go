@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/selfhostly/internal/db"
+	"github.com/selfhostly/internal/domain"
 )
 
 // AutoRegisterRequest represents a node auto-registration request
@@ -24,7 +25,7 @@ func (s *Server) autoRegisterNode(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
 			Error:   "Invalid request body",
-			Details: err.Error(),
+			Details: domain.PublicMessage(err),
 		})
 		return
 	}
@@ -58,7 +59,7 @@ func (s *Server) autoRegisterNode(c *gin.Context) {
 		if err := s.database.UpdateNode(existingNodeByID); err != nil {
 			c.JSON(http.StatusInternalServerError, ErrorResponse{
 				Error:   "Failed to update existing node",
-				Details: err.Error(),
+				Details: domain.PublicMessage(err),
 			})
 			return
 		}
@@ -96,7 +97,7 @@ func (s *Server) autoRegisterNode(c *gin.Context) {
 	if err := s.database.CreateNode(newNode); err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "Failed to register node",
-			Details: err.Error(),
+			Details: domain.PublicMessage(err),
 		})
 		return
 	}

@@ -2,11 +2,14 @@ import { useState } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/card'
 import { Button } from '@/shared/components/ui/button'
 import { Badge } from '@/shared/components/ui/badge'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/shared/components/ui/dialog'
+import { Input } from '@/shared/components/ui/input'
 import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog'
-import { RefreshCw, AlertCircle, CheckCircle2, Copy, Globe, Shield, ArrowRight, Clock, Trash2, Server } from 'lucide-react'
-import { useTunnel, useSyncTunnel, useDeleteTunnel } from '@/shared/services/api'
+import { RefreshCw, AlertCircle, CheckCircle2, Copy, Globe, Shield, ArrowRight, Clock, Trash2, Server, PlusCircle } from 'lucide-react'
+import { useTunnel, useSyncTunnel, useDeleteTunnel, useCreateTunnelForApp, useCreateQuickTunnelForApp, useSwitchAppToCustomTunnel } from '@/shared/services/api'
 import { useToast } from '@/shared/components/ui/Toast'
 import { IngressConfiguration } from '@/features/cloudflare/IngressConfiguration'
+import type { IngressRule, TunnelByAppResponse } from '@/shared/types/api'
 
 interface CloudflareTabProps {
     appId: string;
@@ -15,14 +18,31 @@ interface CloudflareTabProps {
 
 type TunnelTab = 'overview' | 'ingress'
 
+function isNoTunnelResponse(r: unknown): r is TunnelByAppResponse & { tunnel: null } {
+    return !!r && typeof r === 'object' && 'tunnel' in r && (r as { tunnel: unknown }).tunnel === null
+}
+
 function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
     const { data: tunnel, isLoading, error, refetch } = useTunnel(appId, nodeId)
     const syncTunnel = useSyncTunnel()
     const deleteTunnel = useDeleteTunnel()
+    const createTunnel = useCreateTunnelForApp()
+    const createQuickTunnel = useCreateQuickTunnelForApp()
+    const switchToCustom = useSwitchAppToCustomTunnel()
     const { toast } = useToast()
 
     const [activeTab, setActiveTab] = useState<TunnelTab>('overview')
     const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+    const [showSwitchDialog, setShowSwitchDialog] = useState(false)
+    const [switchIngressRules, setSwitchIngressRules] = useState<IngressRule[]>([{ service: '', hostname: null, path: null }])
+    const [switchFormError, setSwitchFormError] = useState<string | null>(null)
+    const [showCreateDialog, setShowCreateDialog] = useState(false)
+    const [createIngressRules, setCreateIngressRules] = useState<IngressRule[]>([{ service: '', hostname: null, path: null }])
+    const [createFormError, setCreateFormError] = useState<string | null>(null)
+    const [showQuickTunnelDialog, setShowQuickTunnelDialog] = useState(false)
+    const [quickTunnelService, setQuickTunnelService] = useState('')
+    const [quickTunnelPort, setQuickTunnelPort] = useState<number>(80)
+    const [quickTunnelFormError, setQuickTunnelFormError] = useState<string | null>(null)
 
     const handleSync = () => {
         syncTunnel.mutate({ appId, nodeId }, {
@@ -153,6 +173,354 @@ function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
         )
     }
 
+    if (isNoTunnelResponse(tunnel)) {
+        const isQuick = tunnel.tunnel_mode === 'quick'
+        return (
+            <div className="space-y-6 fade-in">
+                <Card>
+                    <CardContent className="flex flex-col items-center justify-center py-12">
+                        <Globe className="h-12 w-12 text-muted-foreground mb-4" />
+                        <h2 className="text-xl font-semibold mb-2">
+                            {isQuick ? 'Quick Tunnel' : 'No Tunnel Configured'}
+                        </h2>
+                        {isQuick && tunnel.public_url ? (
+                            <>
+                                <p className="text-muted-foreground mb-2 max-w-md mx-auto">
+                                    This app uses a temporary Quick Tunnel URL.
+                                </p>
+                                <a
+                                    href={tunnel.public_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-primary font-medium mb-4 inline-flex items-center gap-1"
+                                >
+                                    {tunnel.public_url}
+                                    <ArrowRight className="h-4 w-4" />
+                                </a>
+                                <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto">
+                                    Enter your custom domain and service URL (e.g. http://vert:90) to switch. Ingress rules will be applied so the public URL is your domain, not a placeholder.
+                                </p>
+                                <Button
+                                    onClick={() => {
+                                        setSwitchIngressRules([{ service: '', hostname: null, path: null }])
+                                        setSwitchFormError(null)
+                                        setShowSwitchDialog(true)
+                                    }}
+                                    className="button-press"
+                                >
+                                    Switch to custom domain
+                                </Button>
+                                <Dialog open={showSwitchDialog} onOpenChange={(open) => { setShowSwitchDialog(open); if (!open) setSwitchFormError(null) }}>
+                                    <DialogContent className="max-w-md">
+                                        <DialogHeader>
+                                            <DialogTitle>Switch to custom domain</DialogTitle>
+                                            <DialogDescription>
+                                                Add at least one ingress rule with your custom hostname (e.g. app.example.com) and the service URL (e.g. http://vert:90 or http://web:80). This will replace the temporary Quick Tunnel URL.
+                                            </DialogDescription>
+                                        </DialogHeader>
+                                        <div className="space-y-4 py-2">
+                                            {switchFormError && (
+                                                <p className="text-sm text-destructive">{switchFormError}</p>
+                                            )}
+                                            {switchIngressRules.map((rule, index) => (
+                                                <div key={index} className="space-y-2 p-3 border rounded-lg">
+                                                    <div className="grid grid-cols-1 gap-2">
+                                                        <div>
+                                                            <label className="text-xs font-medium text-muted-foreground">Hostname (e.g. app.example.com)</label>
+                                                            <Input
+                                                                value={rule.hostname ?? ''}
+                                                                onChange={(e) => {
+                                                                    const next = [...switchIngressRules]
+                                                                    next[index] = { ...next[index], hostname: e.target.value.trim() || null }
+                                                                    setSwitchIngressRules(next)
+                                                                }}
+                                                                placeholder="app.example.com"
+                                                                className="mt-1"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-xs font-medium text-muted-foreground">Service URL</label>
+                                                            <Input
+                                                                value={rule.service}
+                                                                onChange={(e) => {
+                                                                    const next = [...switchIngressRules]
+                                                                    next[index] = { ...next[index], service: e.target.value.trim() }
+                                                                    setSwitchIngressRules(next)
+                                                                }}
+                                                                placeholder="http://vert:90"
+                                                                className="mt-1"
+                                                            />
+                                                            <p className="text-xs text-muted-foreground mt-1">Full URL to your service, e.g. http://vert:90 or http://web:80</p>
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-xs font-medium text-muted-foreground">Path (optional)</label>
+                                                            <Input
+                                                                value={rule.path ?? ''}
+                                                                onChange={(e) => {
+                                                                    const next = [...switchIngressRules]
+                                                                    next[index] = { ...next[index], path: e.target.value.trim() || null }
+                                                                    setSwitchIngressRules(next)
+                                                                }}
+                                                                placeholder="/"
+                                                                className="mt-1"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    {switchIngressRules.length > 1 && (
+                                                        <Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={() => setSwitchIngressRules(switchIngressRules.filter((_, i) => i !== index))}>
+                                                            Remove rule
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                            ))}
+                                            <Button type="button" variant="outline" size="sm" onClick={() => setSwitchIngressRules([...switchIngressRules, { service: '', hostname: null, path: null }])}>
+                                                <PlusCircle className="h-3 w-3 mr-1" />
+                                                Add rule
+                                            </Button>
+                                        </div>
+                                        <DialogFooter>
+                                            <Button variant="outline" onClick={() => setShowSwitchDialog(false)}>Cancel</Button>
+                                            <Button
+                                                disabled={switchToCustom.isPending}
+                                                onClick={() => {
+                                                    const valid = switchIngressRules.filter(r => r.service.trim() !== '')
+                                                    if (valid.length === 0) {
+                                                        setSwitchFormError('At least one rule with a service URL is required.')
+                                                        return
+                                                    }
+                                                    const withHostname = valid.filter(r => r.hostname && r.hostname.trim() !== '')
+                                                    if (withHostname.length === 0) {
+                                                        setSwitchFormError('At least one rule needs a hostname (your custom domain) so the public URL is not a placeholder.')
+                                                        return
+                                                    }
+                                                    setSwitchFormError(null)
+                                                    switchToCustom.mutate(
+                                                        { appId, nodeId, ingressRules: valid.map(r => ({ hostname: r.hostname || undefined, service: r.service.trim(), path: r.path || undefined })) },
+                                                        {
+                                                            onSuccess: () => {
+                                                                setShowSwitchDialog(false)
+                                                                toast.success('Switched to custom domain', 'Ingress rules applied. Your app is available at your custom hostname.')
+                                                                refetch()
+                                                            },
+                                                            onError: (e) => setSwitchFormError(e.message),
+                                                        }
+                                                    )
+                                                }}
+                                            >
+                                                {switchToCustom.isPending ? 'Switching...' : 'Switch to custom domain'}
+                                            </Button>
+                                        </DialogFooter>
+                                    </DialogContent>
+                                </Dialog>
+                            </>
+                        ) : (
+                            <>
+                                <p className="text-muted-foreground mb-4 max-w-md mx-auto text-center">
+                                    This app doesn't have a Cloudflare tunnel yet. Create a temporary Quick Tunnel URL or a named tunnel with your custom domain.
+                                </p>
+                                <div className="flex flex-wrap gap-3 justify-center">
+                                    <Button
+                                        onClick={() => {
+                                            setQuickTunnelService('')
+                                            setQuickTunnelPort(80)
+                                            setQuickTunnelFormError(null)
+                                            setShowQuickTunnelDialog(true)
+                                        }}
+                                        variant="outline"
+                                        className="button-press"
+                                    >
+                                        <Globe className="h-4 w-4 mr-2" />
+                                        Create Quick Tunnel
+                                    </Button>
+                                    <Button
+                                        onClick={() => {
+                                            setCreateIngressRules([{ service: '', hostname: null, path: null }])
+                                            setCreateFormError(null)
+                                            setShowCreateDialog(true)
+                                        }}
+                                        className="button-press"
+                                    >
+                                        <PlusCircle className="h-4 w-4 mr-2" />
+                                        Create custom domain tunnel
+                                    </Button>
+                                </div>
+                                <Dialog open={showQuickTunnelDialog} onOpenChange={(open) => { setShowQuickTunnelDialog(open); if (!open) setQuickTunnelFormError(null) }}>
+                                    <DialogContent className="max-w-md">
+                                        <DialogHeader>
+                                            <DialogTitle>Create Quick Tunnel</DialogTitle>
+                                            <DialogDescription>
+                                                Expose this app with a temporary trycloudflare.com URL. Enter the compose service name and port that serves the app (e.g. web and 80).
+                                            </DialogDescription>
+                                        </DialogHeader>
+                                        <div className="space-y-4 py-2">
+                                            {quickTunnelFormError && (
+                                                <p className="text-sm text-destructive">{quickTunnelFormError}</p>
+                                            )}
+                                            <div>
+                                                <label className="text-xs font-medium text-muted-foreground">Service name (compose service)</label>
+                                                <Input
+                                                    value={quickTunnelService}
+                                                    onChange={(e) => setQuickTunnelService(e.target.value.trim())}
+                                                    placeholder="web"
+                                                    className="mt-1"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="text-xs font-medium text-muted-foreground">Port</label>
+                                                <Input
+                                                    type="number"
+                                                    min={1}
+                                                    max={65535}
+                                                    value={quickTunnelPort}
+                                                    onChange={(e) => setQuickTunnelPort(parseInt(e.target.value, 10) || 80)}
+                                                    className="mt-1"
+                                                />
+                                            </div>
+                                        </div>
+                                        <DialogFooter>
+                                            <Button variant="outline" onClick={() => setShowQuickTunnelDialog(false)}>Cancel</Button>
+                                            <Button
+                                                disabled={createQuickTunnel.isPending}
+                                                onClick={() => {
+                                                    if (!quickTunnelService.trim()) {
+                                                        setQuickTunnelFormError('Service name is required.')
+                                                        return
+                                                    }
+                                                    const port = Number(quickTunnelPort)
+                                                    if (port < 1 || port > 65535) {
+                                                        setQuickTunnelFormError('Port must be between 1 and 65535.')
+                                                        return
+                                                    }
+                                                    setQuickTunnelFormError(null)
+                                                    createQuickTunnel.mutate(
+                                                        { appId: appId, nodeId: nodeId, service: quickTunnelService.trim(), port },
+                                                        {
+                                                            onSuccess: () => {
+                                                                setShowQuickTunnelDialog(false)
+                                                                toast.success('Quick Tunnel created', 'Your app is available at the temporary URL.')
+                                                                refetch()
+                                                            },
+                                                            onError: (e: Error) => setQuickTunnelFormError(e.message),
+                                                        }
+                                                    )
+                                                }}
+                                            >
+                                                {createQuickTunnel.isPending ? 'Creating...' : 'Create Quick Tunnel'}
+                                            </Button>
+                                        </DialogFooter>
+                                    </DialogContent>
+                                </Dialog>
+                                <Dialog open={showCreateDialog} onOpenChange={(open) => { setShowCreateDialog(open); if (!open) setCreateFormError(null) }}>
+                                    <DialogContent className="max-w-md">
+                                        <DialogHeader>
+                                            <DialogTitle>Create custom domain tunnel</DialogTitle>
+                                            <DialogDescription>
+                                                Add at least one ingress rule with your custom hostname (e.g. app.example.com) and the service URL (e.g. http://vert:90 or http://web:80). The tunnel will be created with these rules so the public URL is your domain, not a placeholder.
+                                            </DialogDescription>
+                                        </DialogHeader>
+                                        <div className="space-y-4 py-2">
+                                            {createFormError && (
+                                                <p className="text-sm text-destructive">{createFormError}</p>
+                                            )}
+                                            {createIngressRules.map((rule, index) => (
+                                                <div key={index} className="space-y-2 p-3 border rounded-lg">
+                                                    <div className="grid grid-cols-1 gap-2">
+                                                        <div>
+                                                            <label className="text-xs font-medium text-muted-foreground">Hostname (e.g. app.example.com)</label>
+                                                            <Input
+                                                                value={rule.hostname ?? ''}
+                                                                onChange={(e) => {
+                                                                    const next = [...createIngressRules]
+                                                                    next[index] = { ...next[index], hostname: e.target.value.trim() || null }
+                                                                    setCreateIngressRules(next)
+                                                                }}
+                                                                placeholder="app.example.com"
+                                                                className="mt-1"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-xs font-medium text-muted-foreground">Service URL</label>
+                                                            <Input
+                                                                value={rule.service}
+                                                                onChange={(e) => {
+                                                                    const next = [...createIngressRules]
+                                                                    next[index] = { ...next[index], service: e.target.value.trim() }
+                                                                    setCreateIngressRules(next)
+                                                                }}
+                                                                placeholder="http://vert:90"
+                                                                className="mt-1"
+                                                            />
+                                                            <p className="text-xs text-muted-foreground mt-1">Full URL to your service, e.g. http://vert:90 or http://web:80</p>
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-xs font-medium text-muted-foreground">Path (optional)</label>
+                                                            <Input
+                                                                value={rule.path ?? ''}
+                                                                onChange={(e) => {
+                                                                    const next = [...createIngressRules]
+                                                                    next[index] = { ...next[index], path: e.target.value.trim() || null }
+                                                                    setCreateIngressRules(next)
+                                                                }}
+                                                                placeholder="/"
+                                                                className="mt-1"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    {createIngressRules.length > 1 && (
+                                                        <Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={() => setCreateIngressRules(createIngressRules.filter((_, i) => i !== index))}>
+                                                            Remove rule
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                            ))}
+                                            <Button type="button" variant="outline" size="sm" onClick={() => setCreateIngressRules([...createIngressRules, { service: '', hostname: null, path: null }])}>
+                                                <PlusCircle className="h-3 w-3 mr-1" />
+                                                Add rule
+                                            </Button>
+                                        </div>
+                                        <DialogFooter>
+                                            <Button variant="outline" onClick={() => setShowCreateDialog(false)}>Cancel</Button>
+                                            <Button
+                                                disabled={createTunnel.isPending}
+                                                onClick={() => {
+                                                    const valid = createIngressRules.filter(r => r.service.trim() !== '')
+                                                    if (valid.length === 0) {
+                                                        setCreateFormError('At least one rule with a service URL is required.')
+                                                        return
+                                                    }
+                                                    const withHostname = valid.filter(r => r.hostname && r.hostname.trim() !== '')
+                                                    if (withHostname.length === 0) {
+                                                        setCreateFormError('At least one rule needs a hostname (your custom domain) so the public URL is not a placeholder.')
+                                                        return
+                                                    }
+                                                    setCreateFormError(null)
+                                                    createTunnel.mutate(
+                                                        { appId, nodeId, ingressRules: valid.map(r => ({ hostname: r.hostname || undefined, service: r.service.trim(), path: r.path || undefined })) },
+                                                        {
+                                                            onSuccess: () => {
+                                                                setShowCreateDialog(false)
+                                                                toast.success('Tunnel created', 'Ingress rules applied. Your app is available at your custom hostname.')
+                                                                refetch()
+                                                            },
+                                                            onError: (e) => setCreateFormError(e.message),
+                                                        }
+                                                    )
+                                                }}
+                                            >
+                                                {createTunnel.isPending ? 'Creating...' : 'Create custom domain tunnel'}
+                                            </Button>
+                                        </DialogFooter>
+                                    </DialogContent>
+                                </Dialog>
+                            </>
+                        )}
+                    </CardContent>
+                </Card>
+            </div>
+        )
+    }
+
+    const tunnelData = tunnel.tunnel!
     const tabs = [
         { id: 'overview' as TunnelTab, label: 'Overview', icon: Globe },
         { id: 'ingress' as TunnelTab, label: 'Ingress Rules', icon: Shield },
@@ -190,7 +558,7 @@ function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
                                 <Globe className="h-5 w-5 text-primary" />
                                 <div className="flex items-center gap-2">
                                     Tunnel Status
-                                    {getHealthBadge(tunnel.status)}
+                                    {getHealthBadge(tunnelData.status)}
                                 </div>
                             </CardTitle>
                         </CardHeader>
@@ -198,20 +566,20 @@ function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
                             {/* Public URL with inline copy */}
                             <div>
                                 <h4 className="text-sm font-medium text-muted-foreground mb-3">Public URL</h4>
-                                {tunnel.public_url ? (
+                                {tunnelData.public_url ? (
                                     <div className="inline-flex items-center gap-2">
                                         <a
-                                            href={tunnel.public_url}
+                                            href={tunnelData.public_url}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="text-primary hover:underline font-medium text-sm"
                                         >
-                                            {tunnel.public_url}
+                                            {tunnelData.public_url}
                                         </a>
                                         <Button
                                             variant="ghost"
                                             size="sm"
-                                            onClick={() => copyToClipboard(tunnel.public_url, 'URL')}
+                                            onClick={() => copyToClipboard(tunnelData.public_url, 'URL')}
                                             className="h-6 w-6 p-0 hover:bg-muted transition-colors flex items-center justify-center"
                                             title="Copy URL"
                                         >
@@ -228,21 +596,21 @@ function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                                     <div>
                                         <p className="text-muted-foreground">Tunnel Name</p>
-                                        <p className="font-medium mt-1 truncate">{tunnel.tunnel_name}</p>
+                                        <p className="font-medium mt-1 truncate">{tunnelData.tunnel_name}</p>
                                     </div>
                                     <div>
                                         <p className="text-muted-foreground">Tunnel ID</p>
-                                        <p className="font-mono font-medium mt-1 truncate text-xs">{tunnel.tunnel_id}</p>
+                                        <p className="font-mono font-medium mt-1 truncate text-xs">{tunnelData.tunnel_id}</p>
                                     </div>
                                     <div>
                                         <p className="text-muted-foreground">Created</p>
-                                        <p className="font-medium mt-1">{new Date(tunnel.created_at).toLocaleDateString()}</p>
+                                        <p className="font-medium mt-1">{new Date(tunnelData.created_at).toLocaleDateString()}</p>
                                     </div>
                                     <div>
                                         <p className="text-muted-foreground">Last Synced</p>
                                         <p className="font-medium mt-1">
-                                            {tunnel.last_synced_at
-                                                ? new Date(tunnel.last_synced_at).toLocaleDateString()
+                                            {tunnelData.last_synced_at
+                                                ? new Date(tunnelData.last_synced_at).toLocaleDateString()
                                                 : 'Never'
                                             }
                                         </p>
@@ -329,9 +697,9 @@ function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
                 <IngressConfiguration
                     appId={appId}
                     nodeId={nodeId}
-                    existingIngress={tunnel.ingress_rules || []}
-                    existingHostname={tunnel.public_url?.replace(/^https?:\/\//, '').split('/')[0] || ''}
-                    tunnelID={tunnel.tunnel_id}
+                    existingIngress={tunnelData.ingress_rules || []}
+                    existingHostname={tunnelData.public_url?.replace(/^https?:\/\//, '').split('/')[0] || ''}
+                    tunnelID={tunnelData.tunnel_id}
                     onSave={() => {
                         refetch()
                         toast.success('Ingress Updated', 'Ingress configuration saved successfully')

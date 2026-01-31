@@ -154,8 +154,8 @@ func (tx *Tx) UpdateApp(app *App) error {
 	}
 
 	_, err := tx.Exec(
-		"UPDATE apps SET name = ?, description = ?, compose_content = ?, tunnel_token = ?, tunnel_id = ?, tunnel_domain = ?, public_url = ?, status = ?, error_message = ?, updated_at = ? WHERE id = ?",
-		app.Name, app.Description, app.ComposeContent, app.TunnelToken, app.TunnelID, app.TunnelDomain, app.PublicURL, app.Status, errorMessage, time.Now(), app.ID,
+		"UPDATE apps SET name = ?, description = ?, compose_content = ?, tunnel_token = ?, tunnel_id = ?, tunnel_domain = ?, public_url = ?, status = ?, error_message = ?, tunnel_mode = ?, updated_at = ? WHERE id = ?",
+		app.Name, app.Description, app.ComposeContent, app.TunnelToken, app.TunnelID, app.TunnelDomain, app.PublicURL, app.Status, errorMessage, app.TunnelMode, time.Now(), app.ID,
 	)
 	return err
 }
@@ -253,6 +253,8 @@ func (db *DB) migrate() error {
 		`ALTER TABLE settings ADD COLUMN tunnel_provider_config TEXT`,
 		// Tunnel is source of truth for public_url (avoids app lookup when listing tunnels)
 		`ALTER TABLE cloudflare_tunnels ADD COLUMN public_url TEXT`,
+		// Quick Tunnel support: app tunnel type (custom = named tunnel, quick = trycloudflare.com, empty = none)
+		`ALTER TABLE apps ADD COLUMN tunnel_mode TEXT DEFAULT ''`,
 	}
 
 	for _, migration := range migrations {
@@ -417,8 +419,8 @@ func (db *DB) CreateApp(app *App) error {
 	}
 
 	_, err := db.Exec(
-		"INSERT INTO apps (id, name, description, compose_content, tunnel_token, tunnel_id, tunnel_domain, public_url, status, error_message, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		app.ID, app.Name, app.Description, app.ComposeContent, app.TunnelToken, app.TunnelID, app.TunnelDomain, app.PublicURL, app.Status, errorMessage, app.CreatedAt, time.Now(),
+		"INSERT INTO apps (id, name, description, compose_content, tunnel_token, tunnel_id, tunnel_domain, public_url, status, error_message, node_id, tunnel_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		app.ID, app.Name, app.Description, app.ComposeContent, app.TunnelToken, app.TunnelID, app.TunnelDomain, app.PublicURL, app.Status, errorMessage, app.NodeID, app.TunnelMode, app.CreatedAt, time.Now(),
 	)
 	if err != nil {
 		return err
@@ -431,7 +433,7 @@ func (db *DB) CreateApp(app *App) error {
 // SECURITY: Returns ALL apps without user filtering (single-user design)
 // For multi-user support, implement GetUserApps(userID string) instead
 func (db *DB) GetAllApps() ([]*App, error) {
-	rows, err := db.Query("SELECT id, name, description, compose_content, tunnel_token, tunnel_id, tunnel_domain, public_url, status, error_message, node_id, created_at, updated_at FROM apps ORDER BY created_at DESC")
+	rows, err := db.Query("SELECT id, name, description, compose_content, tunnel_token, tunnel_id, tunnel_domain, public_url, status, error_message, node_id, tunnel_mode, created_at, updated_at FROM apps ORDER BY created_at DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -442,7 +444,7 @@ func (db *DB) GetAllApps() ([]*App, error) {
 		app := &App{}
 		var errorMessage sql.NullString
 		var nodeID sql.NullString
-		err := rows.Scan(&app.ID, &app.Name, &app.Description, &app.ComposeContent, &app.TunnelToken, &app.TunnelID, &app.TunnelDomain, &app.PublicURL, &app.Status, &errorMessage, &nodeID, &app.CreatedAt, &app.UpdatedAt)
+		err := rows.Scan(&app.ID, &app.Name, &app.Description, &app.ComposeContent, &app.TunnelToken, &app.TunnelID, &app.TunnelDomain, &app.PublicURL, &app.Status, &errorMessage, &nodeID, &app.TunnelMode, &app.CreatedAt, &app.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -468,9 +470,9 @@ func (db *DB) GetApp(id string) (*App, error) {
 	var errorMessage sql.NullString
 	var nodeID sql.NullString
 	err := db.QueryRow(
-		"SELECT id, name, description, compose_content, tunnel_token, tunnel_id, tunnel_domain, public_url, status, error_message, node_id, created_at, updated_at FROM apps WHERE id = ?",
+		"SELECT id, name, description, compose_content, tunnel_token, tunnel_id, tunnel_domain, public_url, status, error_message, node_id, tunnel_mode, created_at, updated_at FROM apps WHERE id = ?",
 		id,
-	).Scan(&app.ID, &app.Name, &app.Description, &app.ComposeContent, &app.TunnelToken, &app.TunnelID, &app.TunnelDomain, &app.PublicURL, &app.Status, &errorMessage, &nodeID, &app.CreatedAt, &app.UpdatedAt)
+	).Scan(&app.ID, &app.Name, &app.Description, &app.ComposeContent, &app.TunnelToken, &app.TunnelID, &app.TunnelDomain, &app.PublicURL, &app.Status, &errorMessage, &nodeID, &app.TunnelMode, &app.CreatedAt, &app.UpdatedAt)
 
 	if err == nil {
 		if errorMessage.Valid {
@@ -497,8 +499,8 @@ func (db *DB) UpdateApp(app *App) error {
 	}
 
 	_, err := db.Exec(
-		"UPDATE apps SET name = ?, description = ?, compose_content = ?, tunnel_token = ?, tunnel_id = ?, tunnel_domain = ?, public_url = ?, status = ?, error_message = ?, updated_at = ? WHERE id = ?",
-		app.Name, app.Description, app.ComposeContent, app.TunnelToken, app.TunnelID, app.TunnelDomain, app.PublicURL, app.Status, errorMessage, time.Now(), app.ID,
+		"UPDATE apps SET name = ?, description = ?, compose_content = ?, tunnel_token = ?, tunnel_id = ?, tunnel_domain = ?, public_url = ?, status = ?, error_message = ?, tunnel_mode = ?, updated_at = ? WHERE id = ?",
+		app.Name, app.Description, app.ComposeContent, app.TunnelToken, app.TunnelID, app.TunnelDomain, app.PublicURL, app.Status, errorMessage, app.TunnelMode, time.Now(), app.ID,
 	)
 	return err
 }

@@ -264,6 +264,11 @@ function AppList({ filteredApps }: AppListProps) {
                                             {getStatusIcon(app.status)}
                                             {app.status}
                                         </div>
+                                        {app.tunnel_mode === 'quick' && (
+                                            <span className="px-2.5 py-1 rounded-md text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+                                                Quick Tunnel
+                                            </span>
+                                        )}
                                         {app.public_url && (
                                             <a
                                                 href={app.public_url}

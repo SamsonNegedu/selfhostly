@@ -259,6 +259,11 @@ function AppDetails() {
                             {app.description}
                         </p>
                     )}
+                    {app.tunnel_mode === 'quick' && (
+                        <div className="mb-4 p-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 text-sm text-amber-800 dark:text-amber-200">
+                            <span className="font-medium">Quick Tunnel:</span> This app uses a temporary trycloudflare.com URL. The URL may change if the container restarts. Limits: 200 concurrent requests, no Server-Sent Events. Switch to a custom domain from the Cloudflare tab for a stable URL.
+                        </div>
+                    )}
                     {app.public_url && (
                         <div className="mb-4">
                             <a

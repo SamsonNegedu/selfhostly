@@ -5,10 +5,12 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/selfhostly/internal/cloudflare"
 	"github.com/selfhostly/internal/config"
 	"github.com/selfhostly/internal/db"
+	"github.com/selfhostly/internal/docker"
 	"github.com/selfhostly/internal/domain"
 	"github.com/selfhostly/internal/node"
 	"github.com/selfhostly/internal/routing"
@@ -19,6 +21,7 @@ import (
 // tunnelService implements the TunnelService interface
 type tunnelService struct {
 	database         *db.DB
+	dockerManager    *docker.Manager
 	nodeClient       *node.Client
 	config           *config.Config
 	logger           *slog.Logger
@@ -29,7 +32,7 @@ type tunnelService struct {
 }
 
 // NewTunnelService creates a new tunnel service with provider registry
-func NewTunnelService(database *db.DB, cfg *config.Config, logger *slog.Logger) domain.TunnelService {
+func NewTunnelService(database *db.DB, dockerManager *docker.Manager, cfg *config.Config, logger *slog.Logger) domain.TunnelService {
 	nodeClient := node.NewClient()
 	router := routing.NewNodeRouter(database, nodeClient, cfg.Node.ID, logger)
 	tunnelsAgg := routing.NewTunnelsAggregator(router, logger)
@@ -51,6 +54,7 @@ func NewTunnelService(database *db.DB, cfg *config.Config, logger *slog.Logger) 
 
 	return &tunnelService{
 		database:         database,
+		dockerManager:    dockerManager,
 		nodeClient:       nodeClient,
 		config:           cfg,
 		logger:           logger,
@@ -69,6 +73,7 @@ func NewTunnelServiceWithManager(database *db.DB, cfg *config.Config, logger *sl
 
 	return &tunnelService{
 		database:      database,
+		dockerManager: nil, // tests don't need compose file updates
 		nodeClient:    nodeClient,
 		config:        cfg,
 		logger:        logger,
@@ -488,6 +493,44 @@ func (s *tunnelService) DeleteTunnel(ctx context.Context, appID string, nodeID s
 
 			if err := provider.DeleteTunnel(ctx, appID); err != nil {
 				return nil, fmt.Errorf("failed to delete tunnel: %w", err)
+			}
+
+			// Remove tunnel service from app's compose file and persist
+			if s.dockerManager != nil {
+				app, getErr := s.database.GetApp(appID)
+				if getErr != nil {
+					s.logger.WarnContext(ctx, "failed to get app when removing tunnel from compose", "app_id", appID, "error", getErr)
+				} else {
+					compose, parseErr := docker.ParseCompose([]byte(app.ComposeContent))
+					if parseErr != nil {
+						s.logger.WarnContext(ctx, "failed to parse compose when removing tunnel", "app_id", appID, "error", parseErr)
+					} else if docker.RemoveTunnelService(compose) {
+						composeBytes, marshalErr := docker.MarshalComposeFile(compose)
+						if marshalErr != nil {
+							s.logger.WarnContext(ctx, "failed to marshal compose after removing tunnel", "app_id", appID, "error", marshalErr)
+						} else {
+							newContent := string(composeBytes)
+							app.ComposeContent = newContent
+							app.UpdatedAt = time.Now()
+							if updateErr := s.database.UpdateApp(app); updateErr != nil {
+								s.logger.WarnContext(ctx, "failed to update app compose after tunnel removal", "app_id", appID, "error", updateErr)
+							} else {
+								latestVersion, _ := s.database.GetLatestVersionNumber(appID)
+								_ = s.database.MarkAllVersionsAsNotCurrent(appID)
+								reason := "Tunnel removed"
+								newVersion := db.NewComposeVersion(appID, latestVersion+1, newContent, &reason, nil)
+								_ = s.database.CreateComposeVersion(newVersion)
+								if writeErr := s.dockerManager.WriteComposeFile(app.Name, newContent); writeErr != nil {
+									s.logger.WarnContext(ctx, "failed to write compose file after tunnel removal", "app", app.Name, "error", writeErr)
+								} else if reconErr := s.dockerManager.ReconcileApp(app.Name); reconErr != nil {
+									s.logger.WarnContext(ctx, "failed to reconcile app after tunnel removal (compose file updated)", "app", app.Name, "error", reconErr)
+								} else {
+									s.logger.InfoContext(ctx, "tunnel service removed from compose and stack reconciled", "appID", appID)
+								}
+							}
+						}
+					}
+				}
 			}
 
 			s.logger.InfoContext(ctx, "tunnel deleted successfully", "appID", appID)

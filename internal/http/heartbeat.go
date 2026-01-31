@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/selfhostly/internal/apipaths"
+	"github.com/selfhostly/internal/domain"
 )
 
 // sendNodeHeartbeat allows a node to announce it's online to the primary
@@ -22,7 +23,7 @@ func (s *Server) sendNodeHeartbeat(c *gin.Context) {
 	if err := s.nodeService.NodeHeartbeat(c.Request.Context(), nodeID); err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "Failed to process heartbeat",
-			Details: err.Error(),
+			Details: domain.PublicMessage(err),
 		})
 		return
 	}
@@ -51,7 +52,7 @@ func (s *Server) manualCheckNode(c *gin.Context) {
 	if getErr != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "Failed to get node status after health check",
-			Details: getErr.Error(),
+			Details: domain.PublicMessage(getErr),
 		})
 		return
 	}
@@ -60,7 +61,7 @@ func (s *Server) manualCheckNode(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "Health check completed with errors",
 			"node":    toNodeResponse(node),
-			"error":   err.Error(),
+			"error":   domain.PublicMessage(err),
 		})
 		return
 	}

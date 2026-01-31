@@ -76,16 +76,35 @@ func (m *Manager) WriteComposeFile(name, content string) error {
 // StartApp starts the app using docker compose
 func (m *Manager) StartApp(name string) error {
 	appPath := filepath.Join(m.appsDir, name)
-	
+
 	slog.Info("starting app", "app", name, "appPath", appPath, "command", "docker compose up -d")
-	
+
 	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, "docker", "compose", "-f", "docker-compose.yml", "up", "-d")
 	if err != nil {
 		slog.Error("failed to start app", "app", name, "error", err, "output", string(output))
 		return fmt.Errorf("failed to start app: %w\nOutput: %s", err, string(output))
 	}
-	
+
 	slog.Info("app started successfully", "app", name, "output", string(output))
+	return nil
+}
+
+// ReconcileApp brings the stack in line with the current compose file and removes orphan containers
+// (e.g. after removing the tunnel service from compose). Use this when the compose file was changed
+// to remove a service so that the old container is stopped and removed.
+func (m *Manager) ReconcileApp(name string) error {
+	appPath := filepath.Join(m.appsDir, name)
+	composeFile := "docker-compose.yml"
+
+	slog.Info("reconciling app", "app", name, "appPath", appPath, "command", "docker compose up -d --remove-orphans")
+
+	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, "docker", "compose", "-f", composeFile, "up", "-d", "--remove-orphans")
+	if err != nil {
+		slog.Error("failed to reconcile app", "app", name, "error", err, "output", string(output))
+		return fmt.Errorf("failed to reconcile app: %w\nOutput: %s", err, string(output))
+	}
+
+	slog.Info("app reconciled successfully", "app", name, "output", string(output))
 	return nil
 }
 
@@ -147,6 +166,24 @@ func (m *Manager) UpdateApp(name string) error {
 	}
 
 	slog.Info("app updated successfully", "app", name, "output", string(upOutput))
+	return nil
+}
+
+// ForceRecreateTunnel forces the tunnel service to be recreated so it picks up new config (e.g. new TUNNEL_TOKEN after switch to custom domain).
+// The injected tunnel service is named "tunnel". If the app has no tunnel service, the command may fail; callers should log and ignore.
+func (m *Manager) ForceRecreateTunnel(name string) error {
+	appPath := filepath.Join(m.appsDir, name)
+	composeFile := "docker-compose.yml"
+
+	slog.Info("force-recreating tunnel service", "app", name, "appPath", appPath, "command", "docker compose up -d --force-recreate tunnel")
+
+	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, "docker", "compose", "-f", composeFile, "up", "-d", "--force-recreate", "tunnel")
+	if err != nil {
+		slog.Warn("force-recreate tunnel failed (app may have no tunnel service)", "app", name, "error", err, "output", string(output))
+		return fmt.Errorf("force-recreate tunnel: %w\nOutput: %s", err, string(output))
+	}
+
+	slog.Info("tunnel service recreated successfully", "app", name, "output", string(output))
 	return nil
 }
 
