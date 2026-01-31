@@ -56,10 +56,11 @@ func (a *StatsAggregator) AggregateStats(
 				mu.Unlock()
 			} else {
 				// Fetch from remote node
+				a.logger.InfoContext(ctx, "fetching system stats from remote node", "nodeID", n.ID, "nodeName", n.Name)
 				remoteStatsMap, err := remoteFetcher(n)
 				if err != nil {
 					a.logger.WarnContext(ctx, "failed to fetch system stats from remote node", "nodeID", n.ID, "nodeName", n.Name, "error", err)
-					
+
 					// Create an error stat object so the UI knows the node is offline
 					errorStats := &system.SystemStats{
 						NodeID:     n.ID,
@@ -69,7 +70,7 @@ func (a *StatsAggregator) AggregateStats(
 						Timestamp:  time.Now(),
 						Containers: []system.ContainerInfo{}, // Empty slice, not nil
 					}
-					
+
 					mu.Lock()
 					allStats = append(allStats, errorStats)
 					mu.Unlock()
@@ -80,7 +81,7 @@ func (a *StatsAggregator) AggregateStats(
 				remoteStats, err := mapConverter(remoteStatsMap, n.ID, n.Name)
 				if err != nil {
 					a.logger.WarnContext(ctx, "failed to convert remote stats", "nodeID", n.ID, "error", err)
-					
+
 					// Create an error stat object
 					errorStats := &system.SystemStats{
 						NodeID:     n.ID,
@@ -90,7 +91,7 @@ func (a *StatsAggregator) AggregateStats(
 						Timestamp:  time.Now(),
 						Containers: []system.ContainerInfo{},
 					}
-					
+
 					mu.Lock()
 					allStats = append(allStats, errorStats)
 					mu.Unlock()

@@ -58,7 +58,9 @@ function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
     }
 
     const getHealthBadge = (status: string) => {
-        if (status === 'active') {
+        // Cloudflare API returns healthy/degraded/inactive/down; we normalize to active/inactive/error
+        const isActive = status === 'active' || status === 'healthy' || status === 'degraded'
+        if (isActive) {
             return (
                 <Badge variant="default" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
                     <CheckCircle2 className="h-3 w-3 mr-1" />
@@ -66,7 +68,7 @@ function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
                 </Badge>
             )
         }
-        if (status === 'inactive') {
+        if (status === 'inactive' || status === 'down') {
             return (
                 <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
                     <Clock className="h-3 w-3 mr-1" />

@@ -49,6 +49,7 @@ func (tm *TunnelManager) CreateTunnelWithMetadata(appName string, appID string) 
 		AccountID:    tm.ApiManager.config.AccountID,
 		IsActive:     true,
 		Status:       "active",
+		PublicURL:    "", // Set when ingress is configured
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
 		LastSyncedAt: &[]time.Time{time.Now()}[0],
@@ -99,8 +100,7 @@ func (tm *TunnelManager) DeleteTunnelByAppID(appID string) error {
 
 	// Delete from API
 	if err := tm.ApiManager.DeleteTunnel(tunnel.TunnelID); err != nil {
-		// Log the error but don't fail the deletion
-		fmt.Printf("Warning: failed to delete tunnel from API: %v\n", err)
+		slog.Warn("failed to delete tunnel from API", "tunnel_id", tunnel.TunnelID, "error", err)
 	}
 
 	// Mark as inactive in database
@@ -122,38 +122,55 @@ func (tm *TunnelManager) GetAllActiveTunnels() ([]*db.CloudflareTunnel, error) {
 	return tm.database.ListActiveCloudflareTunnels()
 }
 
-// SyncTunnelStatus synchronizes tunnel status with Cloudflare API
-func (tm *TunnelManager) SyncTunnelStatus(tunnelID string) error {
-	// For now, we'll just update the last synced time in the database
-	// A full implementation would also check tunnel status with Cloudflare API
-	now := time.Now()
-
-	// Update the last synced time for the tunnel
-	// Note: This is a simplified implementation - in a real system, you'd want
-	// to properly identify which tunnel record to update
-	fmt.Printf("Tunnel %s synced at %s\n", tunnelID, now.Format(time.RFC3339))
-
-	return nil
-}
-
-// ValidateTunnel checks if a tunnel is valid and active
-func (tm *TunnelManager) ValidateTunnel(tunnelID string) (bool, error) {
-	// In a real implementation, this would check the tunnel status with Cloudflare API
-	// For now, we'll just return true
-	return true, nil
-}
-
-// GetTunnelConfig returns the configuration for a tunnel
-func (tm *TunnelManager) GetTunnelConfig(tunnelID string) (map[string]interface{}, error) {
-	// In a real implementation, this would fetch the tunnel configuration from Cloudflare API
-	// For now, we'll return a placeholder configuration
-	_ = tunnelID // Avoid unused parameter warning in real implementation
-	config := map[string]interface{}{
-		"tunnel_id": tunnelID,
-		"status":    "active",
-		"created":   time.Now().Format(time.RFC3339),
+// mapCloudflareStatusToInternal maps Cloudflare API tunnel status to our internal status.
+// Cloudflare returns: healthy, degraded, inactive, down (see Cloudflare API docs).
+// We store: active, inactive, error so the UI can show Healthy / Inactive / Error.
+func mapCloudflareStatusToInternal(apiStatus string) string {
+	switch apiStatus {
+	case "healthy", "degraded":
+		return "active"
+	case "inactive", "down":
+		return "inactive"
+	default:
+		return apiStatus
 	}
-	return config, nil
+}
+
+// SyncTunnelStatus synchronizes tunnel status with Cloudflare API and persists it in the database.
+func (tm *TunnelManager) SyncTunnelStatus(tunnelID string) error {
+	apiStatus, err := tm.ApiManager.GetTunnelStatus(tunnelID)
+	if err != nil {
+		// Tunnel may have been deleted on Cloudflare; update DB to reflect failure/unknown state
+		tunnel, dbErr := tm.database.GetCloudflareTunnelByTunnelID(tunnelID)
+		if dbErr == nil {
+			tunnel.Status = "error"
+			errMsg := err.Error()
+			tunnel.ErrorDetails = &errMsg
+			now := time.Now()
+			tunnel.LastSyncedAt = &now
+			tunnel.UpdatedAt = now
+			_ = tm.database.UpdateCloudflareTunnel(tunnel)
+		}
+		return fmt.Errorf("failed to get tunnel status from Cloudflare: %w", err)
+	}
+
+	tunnel, err := tm.database.GetCloudflareTunnelByTunnelID(tunnelID)
+	if err != nil {
+		return fmt.Errorf("failed to get tunnel from database: %w", err)
+	}
+
+	now := time.Now()
+	tunnel.Status = mapCloudflareStatusToInternal(apiStatus)
+	tunnel.LastSyncedAt = &now
+	tunnel.UpdatedAt = now
+	tunnel.ErrorDetails = nil // Clear error on successful sync
+
+	if err := tm.database.UpdateCloudflareTunnel(tunnel); err != nil {
+		return fmt.Errorf("failed to update tunnel status: %w", err)
+	}
+
+	slog.Info("tunnel status synced", "tunnel_id", tunnelID, "api_status", apiStatus, "status", tunnel.Status, "synced_at", now.Format(time.RFC3339))
+	return nil
 }
 
 // UpdateTunnelIngress updates the ingress configuration for a tunnel

@@ -251,6 +251,8 @@ func (db *DB) migrate() error {
 		// Add multi-provider tunnel support to settings table
 		`ALTER TABLE settings ADD COLUMN active_tunnel_provider TEXT DEFAULT 'cloudflare'`,
 		`ALTER TABLE settings ADD COLUMN tunnel_provider_config TEXT`,
+		// Tunnel is source of truth for public_url (avoids app lookup when listing tunnels)
+		`ALTER TABLE cloudflare_tunnels ADD COLUMN public_url TEXT`,
 	}
 
 	for _, migration := range migrations {
@@ -608,10 +610,14 @@ func (db *DB) GetCloudflareTunnelByAppID(appID string) (*CloudflareTunnel, error
 	tunnel := &CloudflareTunnel{}
 	var errorDetails sql.NullString
 	var lastSyncedAt, ingressRules interface{} // Use interface{} to handle NULL values
+	var publicURL sql.NullString
 	err := db.QueryRow(
-		"SELECT id, app_id, tunnel_id, tunnel_name, tunnel_token, account_id, is_active, status, ingress_rules, created_at, updated_at, last_synced_at, error_details FROM cloudflare_tunnels WHERE app_id = ?",
+		"SELECT id, app_id, tunnel_id, tunnel_name, tunnel_token, account_id, is_active, status, ingress_rules, public_url, created_at, updated_at, last_synced_at, error_details FROM cloudflare_tunnels WHERE app_id = ?",
 		appID,
-	).Scan(&tunnel.ID, &tunnel.AppID, &tunnel.TunnelID, &tunnel.TunnelName, &tunnel.TunnelToken, &tunnel.AccountID, &tunnel.IsActive, &tunnel.Status, &ingressRules, &tunnel.CreatedAt, &tunnel.UpdatedAt, &lastSyncedAt, &errorDetails)
+	).Scan(&tunnel.ID, &tunnel.AppID, &tunnel.TunnelID, &tunnel.TunnelName, &tunnel.TunnelToken, &tunnel.AccountID, &tunnel.IsActive, &tunnel.Status, &ingressRules, &publicURL, &tunnel.CreatedAt, &tunnel.UpdatedAt, &lastSyncedAt, &errorDetails)
+	if err == nil && publicURL.Valid {
+		tunnel.PublicURL = publicURL.String
+	}
 
 	// Handle NULL last_synced_at
 	if err == nil {
@@ -675,8 +681,8 @@ func (db *DB) UpdateCloudflareTunnel(tunnel *CloudflareTunnel) error {
 	}
 
 	_, err := db.Exec(
-		"UPDATE cloudflare_tunnels SET tunnel_name = ?, is_active = ?, status = ?, ingress_rules = ?, updated_at = ?, last_synced_at = ?, error_details = ? WHERE id = ?",
-		tunnel.TunnelName, tunnel.IsActive, tunnel.Status, ingressRules, time.Now(), tunnel.LastSyncedAt, errorDetails, tunnel.ID,
+		"UPDATE cloudflare_tunnels SET tunnel_name = ?, is_active = ?, status = ?, ingress_rules = ?, public_url = ?, updated_at = ?, last_synced_at = ?, error_details = ? WHERE id = ?",
+		tunnel.TunnelName, tunnel.IsActive, tunnel.Status, ingressRules, tunnel.PublicURL, time.Now(), tunnel.LastSyncedAt, errorDetails, tunnel.ID,
 	)
 	return err
 }
@@ -690,12 +696,15 @@ func (db *DB) DeleteCloudflareTunnel(appID string) error {
 // GetCloudflareTunnelByTunnelID retrieves a Cloudflare tunnel by tunnel ID
 func (db *DB) GetCloudflareTunnelByTunnelID(tunnelID string) (*CloudflareTunnel, error) {
 	tunnel := &CloudflareTunnel{}
-	var errorDetails sql.NullString
-	var lastSyncedAt, ingressRules interface{} // Use interface{} to handle NULL values
+	var errorDetails, publicURL sql.NullString
+	var lastSyncedAt, ingressRules interface{}
 	err := db.QueryRow(
-		"SELECT id, app_id, tunnel_id, tunnel_name, tunnel_token, account_id, is_active, status, ingress_rules, created_at, updated_at, last_synced_at, error_details FROM cloudflare_tunnels WHERE tunnel_id = ?",
+		"SELECT id, app_id, tunnel_id, tunnel_name, tunnel_token, account_id, is_active, status, ingress_rules, public_url, created_at, updated_at, last_synced_at, error_details FROM cloudflare_tunnels WHERE tunnel_id = ?",
 		tunnelID,
-	).Scan(&tunnel.ID, &tunnel.AppID, &tunnel.TunnelID, &tunnel.TunnelName, &tunnel.TunnelToken, &tunnel.AccountID, &tunnel.IsActive, &tunnel.Status, &ingressRules, &tunnel.CreatedAt, &tunnel.UpdatedAt, &lastSyncedAt, &errorDetails)
+	).Scan(&tunnel.ID, &tunnel.AppID, &tunnel.TunnelID, &tunnel.TunnelName, &tunnel.TunnelToken, &tunnel.AccountID, &tunnel.IsActive, &tunnel.Status, &ingressRules, &publicURL, &tunnel.CreatedAt, &tunnel.UpdatedAt, &lastSyncedAt, &errorDetails)
+	if err == nil && publicURL.Valid {
+		tunnel.PublicURL = publicURL.String
+	}
 
 	// Handle NULL last_synced_at
 	if err == nil {
@@ -740,7 +749,7 @@ func (db *DB) GetCloudflareTunnelByTunnelID(tunnelID string) (*CloudflareTunnel,
 
 // ListActiveCloudflareTunnels retrieves all active Cloudflare tunnels
 func (db *DB) ListActiveCloudflareTunnels() ([]*CloudflareTunnel, error) {
-	rows, err := db.Query("SELECT id, app_id, tunnel_id, tunnel_name, tunnel_token, account_id, is_active, status, ingress_rules, created_at, updated_at, last_synced_at, error_details FROM cloudflare_tunnels WHERE is_active = 1 ORDER BY created_at DESC")
+	rows, err := db.Query("SELECT id, app_id, tunnel_id, tunnel_name, tunnel_token, account_id, is_active, status, ingress_rules, public_url, created_at, updated_at, last_synced_at, error_details FROM cloudflare_tunnels WHERE is_active = 1 ORDER BY created_at DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -750,10 +759,13 @@ func (db *DB) ListActiveCloudflareTunnels() ([]*CloudflareTunnel, error) {
 	for rows.Next() {
 		tunnel := &CloudflareTunnel{}
 		var lastSyncedAt, ingressRules interface{}
-		var errorDetails sql.NullString
-		err := rows.Scan(&tunnel.ID, &tunnel.AppID, &tunnel.TunnelID, &tunnel.TunnelName, &tunnel.TunnelToken, &tunnel.AccountID, &tunnel.IsActive, &tunnel.Status, &ingressRules, &tunnel.CreatedAt, &tunnel.UpdatedAt, &lastSyncedAt, &errorDetails)
+		var errorDetails, publicURL sql.NullString
+		err := rows.Scan(&tunnel.ID, &tunnel.AppID, &tunnel.TunnelID, &tunnel.TunnelName, &tunnel.TunnelToken, &tunnel.AccountID, &tunnel.IsActive, &tunnel.Status, &ingressRules, &publicURL, &tunnel.CreatedAt, &tunnel.UpdatedAt, &lastSyncedAt, &errorDetails)
 		if err != nil {
 			return nil, err
+		}
+		if publicURL.Valid {
+			tunnel.PublicURL = publicURL.String
 		}
 
 		// Handle NULL last_synced_at

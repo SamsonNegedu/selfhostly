@@ -1,7 +1,6 @@
 package http
 
 import (
-	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -11,8 +10,12 @@ import (
 
 // getSystemStats returns comprehensive system and container statistics from specified nodes
 func (s *Server) getSystemStats(c *gin.Context) {
-	// Extract node_ids from query parameter
-	nodeIDs := httputil.ParseNodeIDs(c)
+	var nodeIDs []string
+	if scope, ok := c.Get("request_scope"); ok && scope == "local" {
+		nodeIDs = []string{s.config.Node.ID}
+	} else {
+		nodeIDs = httputil.ParseNodeIDs(c)
+	}
 
 	stats, err := s.systemService.GetSystemStats(c.Request.Context(), nodeIDs)
 	if err != nil {
@@ -20,40 +23,12 @@ func (s *Server) getSystemStats(c *gin.Context) {
 		return
 	}
 
-	// Return array of stats (one per node)
-	c.JSON(http.StatusOK, stats)
-}
-
-// getLocalSystemStats returns system stats from the local node only (for inter-node calls)
-func (s *Server) getLocalSystemStats(c *gin.Context) {
-	// Log internal endpoint calls for debugging
-	slog.DebugContext(c.Request.Context(), "getLocalSystemStats internal request",
-		"local_node_id", s.config.Node.ID,
-		"remote_addr", c.RemoteIP(),
-		"user_agent", c.GetHeader("User-Agent"))
-
-	// Validate that the configured node ID exists in the database
-	_, err := s.database.GetNode(s.config.Node.ID)
-	if err != nil {
-		slog.WarnContext(c.Request.Context(), "configured node ID not found in database",
-			"config_node_id", s.config.Node.ID,
-			"error", err)
-		// Continue anyway - GetSystemStats will handle the error
-	}
-
-	// Get stats for local node only (empty nodeIDs means all nodes, but we want local only)
-	stats, err := s.systemService.GetSystemStats(c.Request.Context(), []string{s.config.Node.ID})
-	if err != nil {
-		s.handleServiceError(c, "get local system stats", err)
+	// When request_scope is local (node-to-node), node client expects a single object; return stats[0]
+	if scope, ok := c.Get("request_scope"); ok && scope == "local" && len(stats) == 1 {
+		c.JSON(http.StatusOK, stats[0])
 		return
 	}
-
-	// Return single stats object (should only be one since we requested local node only)
-	if len(stats) > 0 {
-		c.JSON(http.StatusOK, stats[0])
-	} else {
-		c.JSON(http.StatusOK, gin.H{"error": "No stats available"})
-	}
+	c.JSON(http.StatusOK, stats)
 }
 
 // restartContainer restarts a specific container by ID
@@ -86,9 +61,10 @@ func (s *Server) stopContainer(c *gin.Context) {
 		return
 	}
 
-	// Get node_id from query parameter (default to local node if not specified)
-	nodeID := httputil.GetNodeIDOrDefault(c, s.config.Node.ID)
-
+	nodeID := s.config.Node.ID
+	if scope, ok := c.Get("request_scope"); !ok || scope != "local" {
+		nodeID = httputil.GetNodeIDOrDefault(c, s.config.Node.ID)
+	}
 	if err := s.systemService.StopContainer(c.Request.Context(), containerID, nodeID); err != nil {
 		s.handleServiceError(c, "stop container", err)
 		return
@@ -152,9 +128,10 @@ func (s *Server) deleteContainer(c *gin.Context) {
 		return
 	}
 
-	// Get node_id from query parameter (default to local node if not specified)
-	nodeID := httputil.GetNodeIDOrDefault(c, s.config.Node.ID)
-
+	nodeID := s.config.Node.ID
+	if scope, ok := c.Get("request_scope"); !ok || scope != "local" {
+		nodeID = httputil.GetNodeIDOrDefault(c, s.config.Node.ID)
+	}
 	if err := s.systemService.DeleteContainer(c.Request.Context(), containerID, nodeID); err != nil {
 		s.handleServiceError(c, "delete container", err)
 		return

@@ -1,8 +1,6 @@
 package http
 
 import (
-	"database/sql"
-	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -10,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/domain"
+	"github.com/selfhostly/internal/httputil"
 	"github.com/selfhostly/internal/tunnel"
 )
 
@@ -112,17 +111,38 @@ func (s *Server) GetTunnelByAppIDGeneric(c *gin.Context) {
 // GET /api/tunnels
 func (s *Server) ListTunnelsGeneric(c *gin.Context) {
 	ctx := c.Request.Context()
-	nodeIDsParam := c.QueryArray("node_ids[]")
+	var nodeIDs []string
+	if scope, ok := c.Get("request_scope"); ok && scope == "local" {
+		nodeIDs = []string{s.config.Node.ID}
+	} else {
+		nodeIDs = httputil.ParseNodeIDs(c)
+	}
 
-	slog.InfoContext(ctx, "listing tunnels", "nodeIDs", nodeIDsParam)
+	slog.InfoContext(ctx, "listing tunnels", "nodeIDs", nodeIDs)
 
-	tunnels, err := s.tunnelService.ListActiveTunnels(ctx, nodeIDsParam)
+	tunnels, err := s.tunnelService.ListActiveTunnels(ctx, nodeIDs)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to list tunnels", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
+	// Tunnel is source of truth for public_url. Only set node_id from app (and fallback public_url for legacy rows).
+	for _, t := range tunnels {
+		app, err := s.database.GetApp(t.AppID)
+		if err == nil {
+			t.NodeID = app.NodeID
+			if t.PublicURL == "" {
+				t.PublicURL = app.PublicURL
+			}
+		}
+	}
+
+	// When request_scope is local (node-to-node), node client expects raw array
+	if scope, ok := c.Get("request_scope"); ok && scope == "local" {
+		c.JSON(http.StatusOK, tunnels)
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"tunnels": tunnels,
 		"count":   len(tunnels),
@@ -283,97 +303,4 @@ func (s *Server) DeleteTunnelGeneric(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "tunnel deleted successfully", "app_id": appID})
-}
-
-// ===== Local Tunnel Handlers (for inter-node communication) =====
-
-// getLocalTunnelByAppID returns tunnel for a local app
-func (s *Server) getLocalTunnelByAppID(c *gin.Context) {
-	appID := c.Param("appId")
-
-	// Directly access database, bypassing routing logic
-	tunnel, err := s.database.GetCloudflareTunnelByAppID(appID)
-	if err != nil {
-		// Check for not found error
-		if errors.Is(err, sql.ErrNoRows) {
-			c.JSON(http.StatusNotFound, ErrorResponse{Error: "Resource not found", Details: "tunnel not found"})
-			return
-		}
-		s.handleServiceError(c, "get local tunnel", err)
-		return
-	}
-
-	c.JSON(http.StatusOK, tunnel)
-}
-
-// syncLocalTunnelStatus syncs tunnel status for a local app
-func (s *Server) syncLocalTunnelStatus(c *gin.Context) {
-	ctx := c.Request.Context()
-	appID := c.Param("appId")
-
-	nodeID := s.config.Node.ID
-
-	if err := s.tunnelService.SyncTunnelStatus(ctx, appID, nodeID); err != nil {
-		s.handleServiceError(c, "sync local tunnel status", err)
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "tunnel status synced successfully"})
-}
-
-// updateLocalTunnelIngress updates tunnel ingress rules for a local app
-func (s *Server) updateLocalTunnelIngress(c *gin.Context) {
-	ctx := c.Request.Context()
-	appID := c.Param("appId")
-
-	var req domain.UpdateIngressRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
-		return
-	}
-
-	nodeID := s.config.Node.ID
-
-	if err := s.tunnelService.UpdateTunnelIngress(ctx, appID, nodeID, req); err != nil {
-		s.handleServiceError(c, "update local tunnel ingress", err)
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "ingress rules updated successfully"})
-}
-
-// createLocalTunnelDNSRecord creates a DNS record for a local tunnel
-func (s *Server) createLocalTunnelDNSRecord(c *gin.Context) {
-	ctx := c.Request.Context()
-	appID := c.Param("appId")
-
-	var req domain.CreateDNSRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
-		return
-	}
-
-	nodeID := s.config.Node.ID
-
-	if err := s.tunnelService.CreateDNSRecord(ctx, appID, nodeID, req); err != nil {
-		s.handleServiceError(c, "create local tunnel DNS record", err)
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "DNS record created successfully"})
-}
-
-// deleteLocalTunnel deletes a local tunnel
-func (s *Server) deleteLocalTunnel(c *gin.Context) {
-	ctx := c.Request.Context()
-	appID := c.Param("appId")
-
-	nodeID := s.config.Node.ID
-
-	if err := s.tunnelService.DeleteTunnel(ctx, appID, nodeID); err != nil {
-		s.handleServiceError(c, "delete local tunnel", err)
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "tunnel deleted successfully"})
 }

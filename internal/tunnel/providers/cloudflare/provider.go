@@ -24,9 +24,9 @@ type Provider struct {
 
 // Config contains the configuration required for Cloudflare provider.
 type Config struct {
-	APIToken  string  `json:"api_token"`
-	AccountID string  `json:"account_id"`
-	Database  *db.DB  `json:"-"` // Not serialized
+	APIToken  string       `json:"api_token"`
+	AccountID string       `json:"account_id"`
+	Database  *db.DB       `json:"-"` // Not serialized
 	Logger    *slog.Logger `json:"-"` // Not serialized
 }
 
@@ -103,12 +103,10 @@ func (p *Provider) CreateTunnel(ctx context.Context, opts tunnel.CreateOptions) 
 		return nil, fmt.Errorf("failed to create cloudflare tunnel: %w", err)
 	}
 
-	// Generate a placeholder public URL
-	// This will be replaced with the actual custom domain when ingress rules are applied
+	// Tunnel is source of truth for public URL (placeholder until custom domain is set via ingress)
 	publicURL := fmt.Sprintf("https://%s.cfargotunnel.com", tunnelID)
 
-	// Store in cloudflare_tunnels table
-	cfTunnel := db.NewCloudflareTunnel(opts.AppID, tunnelID, opts.Name, tunnelToken, p.accountID)
+	cfTunnel := db.NewCloudflareTunnel(opts.AppID, tunnelID, opts.Name, tunnelToken, p.accountID, publicURL)
 	if err := p.database.CreateCloudflareTunnel(cfTunnel); err != nil {
 		p.logger.ErrorContext(ctx, "failed to save tunnel to database", "tunnel_id", tunnelID, "error", err)
 		// Cleanup: try to delete the tunnel from Cloudflare API
@@ -116,14 +114,6 @@ func (p *Provider) CreateTunnel(ctx context.Context, opts tunnel.CreateOptions) 
 			p.logger.ErrorContext(ctx, "failed to cleanup tunnel after database error", "tunnel_id", tunnelID, "error", delErr)
 		}
 		return nil, fmt.Errorf("failed to save tunnel to database: %w", err)
-	}
-
-	// Update with public URL if we got one
-	if publicURL != "" {
-		cfTunnel.Status = "active"
-		if err := p.database.UpdateCloudflareTunnel(cfTunnel); err != nil {
-			p.logger.WarnContext(ctx, "failed to update tunnel with public URL", "tunnel_id", tunnelID, "error", err)
-		}
 	}
 
 	p.logger.InfoContext(ctx, "cloudflare tunnel created successfully", "tunnel_id", tunnelID, "public_url", publicURL)
@@ -237,11 +227,20 @@ func (p *Provider) UpdateIngress(ctx context.Context, appID string, rules interf
 		return err // Don't wrap - already has context from manager
 	}
 
-	// Update database record
+	// Update tunnel record: ingress rules and public_url from first hostname (tunnel is source of truth)
 	cfTunnel.IngressRules = &ingressRules
+	if len(ingressRules) > 0 && ingressRules[0].Hostname != nil && *ingressRules[0].Hostname != "" {
+		cfTunnel.PublicURL = fmt.Sprintf("https://%s", *ingressRules[0].Hostname)
+	}
 	if err := p.database.UpdateCloudflareTunnel(cfTunnel); err != nil {
 		p.logger.WarnContext(ctx, "failed to update tunnel in database", "tunnel_id", cfTunnel.TunnelID, "error", err)
 		// Don't fail the request - API update succeeded
+	}
+	if cfTunnel.PublicURL != "" {
+		if app, err := p.database.GetApp(cfTunnel.AppID); err == nil {
+			app.PublicURL = cfTunnel.PublicURL
+			_ = p.database.UpdateApp(app)
+		}
 	}
 
 	p.logger.InfoContext(ctx, "tunnel ingress updated successfully", "tunnel_id", cfTunnel.TunnelID)

@@ -29,14 +29,14 @@ func (s *Server) setupRoutes() {
 		})
 	})
 
-	// API routes - all protected by authentication
+	// Single API: user auth OR node auth (composite auth)
 	api := s.engine.Group("/api")
-	api.Use(s.getAuthMiddleware())
+	api.Use(s.userOrNodeAuthMiddleware())
 	{
-		// App routes
+		// App routes (resolveNodeMiddleware sets node_id_param for resource-by-id when user auth)
 		s.setupAppRoutes(api)
 
-		// Settings routes
+		// Settings: GET dispatches by auth (user=getSettings, node=getSettingsForNode)
 		s.setupSettingsRoutes(api)
 
 		// Tunnel routes (provider-agnostic)
@@ -48,52 +48,12 @@ func (s *Server) setupRoutes() {
 		// Node management routes
 		s.setupNodeRoutes(api)
 
-		// User info endpoint
+		// Node-only routes (require node auth)
+		api.POST("/nodes/:id/heartbeat", s.requireNodeAuthMiddleware(), s.sendNodeHeartbeat)
+		api.POST("/nodes/register", s.requireNodeAuthMiddleware(), s.autoRegisterNode)
+
+		// User info endpoint (user auth only in practice)
 		api.GET("/me", s.getCurrentUser)
-	}
-
-	// Internal API routes for inter-node communication (requires node auth)
-	internal := s.engine.Group("/api/internal")
-	internal.Use(s.nodeAuthMiddleware())
-	{
-		internal.GET("/settings", s.getSettingsForNode)
-
-		// Node heartbeat - allows nodes to announce they're online
-		internal.POST("/nodes/:id/heartbeat", s.sendNodeHeartbeat)
-
-		// Node auto-registration - allows secondary nodes to register themselves
-		internal.POST("/nodes/register", s.autoRegisterNode)
-
-		// App management for inter-node communication (local only, no aggregation)
-		internal.GET("/apps", s.listLocalApps)
-		internal.GET("/apps/:id", s.getLocalApp)
-		internal.POST("/apps", s.createLocalApp)
-		internal.PUT("/apps/:id", s.updateLocalApp)
-		internal.POST("/apps/:id/start", s.startLocalApp)
-		internal.POST("/apps/:id/stop", s.stopLocalApp)
-		internal.DELETE("/apps/:id", s.deleteLocalApp)
-
-		// Compose operations for inter-node communication (local only, no aggregation)
-		internal.GET("/apps/:id/compose/versions", s.getLocalComposeVersions)
-		internal.GET("/apps/:id/compose/versions/:version", s.getLocalComposeVersion)
-		internal.POST("/apps/:id/compose/rollback/:version", s.rollbackLocalComposeVersion)
-
-		// App logs and stats for inter-node communication (local only, no aggregation)
-		internal.GET("/apps/:id/logs", s.getLocalAppLogs)
-		internal.GET("/apps/:id/stats", s.getLocalAppStats)
-
-		// Tunnel operations for inter-node communication (local only, no aggregation)
-		internal.GET("/tunnels/apps/:appId", s.getLocalTunnelByAppID)
-		internal.POST("/tunnels/apps/:appId/sync", s.syncLocalTunnelStatus)
-		internal.PUT("/tunnels/apps/:appId/ingress", s.updateLocalTunnelIngress)
-		internal.POST("/tunnels/apps/:appId/dns", s.createLocalTunnelDNSRecord)
-		internal.DELETE("/tunnels/apps/:appId", s.deleteLocalTunnel)
-
-		// System stats for inter-node communication (local only, no aggregation)
-		internal.GET("/system/stats", s.getLocalSystemStats)
-
-		// Cloudflare tunnels for inter-node communication (local only, no aggregation)
-		internal.GET("/cloudflare/tunnels", s.listLocalTunnels)
 	}
 
 	// Serve frontend static files
@@ -114,8 +74,8 @@ func (s *Server) setupAppRoutes(api *gin.RouterGroup) {
 		apps.GET("", s.listApps)
 		apps.POST("", s.createApp)
 
-		// App-specific operations require node_id
-		appSpecific := apps.Group("/:id", s.requireNodeIDMiddleware())
+		// App-specific operations require node_id (from query when user auth, from context when node auth)
+		appSpecific := apps.Group("/:id", s.resolveNodeMiddleware())
 		{
 			appSpecific.GET("", s.getApp)
 			appSpecific.PUT("", s.updateApp)
@@ -145,7 +105,7 @@ func (s *Server) setupTunnelRoutes(api *gin.RouterGroup) {
 		tunnels.GET("", s.ListTunnelsGeneric)
 
 		// App-specific tunnel operations require node_id
-		tunnelOps := tunnels.Group("/apps/:appId", s.requireNodeIDMiddleware())
+		tunnelOps := tunnels.Group("/apps/:appId", s.resolveNodeMiddleware())
 		{
 			tunnelOps.GET("", s.GetTunnelByAppIDGeneric)
 			tunnelOps.POST("/sync", s.SyncTunnelStatusGeneric)
@@ -159,7 +119,7 @@ func (s *Server) setupTunnelRoutes(api *gin.RouterGroup) {
 func (s *Server) setupSettingsRoutes(api *gin.RouterGroup) {
 	settings := api.Group("/settings")
 	{
-		settings.GET("", s.getSettings)
+		settings.GET("", s.getSettingsDispatch)
 		settings.PUT("", s.updateSettings)
 	}
 }

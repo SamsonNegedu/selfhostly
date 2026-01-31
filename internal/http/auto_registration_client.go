@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/selfhostly/internal/apipaths"
 )
 
 // attemptAutoRegistration tries to auto-register this secondary node with the primary
@@ -56,7 +58,7 @@ func (s *Server) attemptAutoRegistration() {
 // registerWithPrimary sends the auto-registration request to the primary node
 func (s *Server) registerWithPrimary() error {
 	primaryURL := s.config.Node.PrimaryNodeURL
-	registerURL := fmt.Sprintf("%s/api/internal/nodes/register", primaryURL)
+	registerURL := primaryURL + apipaths.NodeRegister
 
 	// Prepare registration request
 	registrationReq := AutoRegisterRequest{

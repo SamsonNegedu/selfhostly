@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/selfhostly/internal/apipaths"
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/domain"
 )
@@ -42,7 +43,7 @@ func (c *Client) GetApps(node *db.Node) ([]*db.App, error) {
 		return nil, &CircuitOpenError{NodeID: node.ID, Stats: stats}
 	}
 
-	req, err := http.NewRequest("GET", node.APIEndpoint+"/api/internal/apps", nil)
+	req, err := http.NewRequest("GET", node.APIEndpoint+apipaths.Apps, nil)
 	if err != nil {
 		c.circuitBreaker.RecordFailure(node.ID)
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -82,7 +83,7 @@ func (c *Client) GetApps(node *db.Node) ([]*db.App, error) {
 
 // GetApp fetches a specific app from a remote node
 func (c *Client) GetApp(node *db.Node, appID string) (*db.App, error) {
-	req, err := http.NewRequest("GET", node.APIEndpoint+"/api/internal/apps/"+appID, nil)
+	req, err := http.NewRequest("GET", node.APIEndpoint+apipaths.AppByID(appID), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -115,7 +116,7 @@ func (c *Client) CreateApp(node *db.Node, reqData interface{}) (*db.App, error) 
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", node.APIEndpoint+"/api/internal/apps", bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("POST", node.APIEndpoint+apipaths.Apps, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -159,7 +160,7 @@ func (c *Client) UpdateApp(node *db.Node, appID string, reqData interface{}) (*d
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("PUT", node.APIEndpoint+"/api/internal/apps/"+appID, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("PUT", node.APIEndpoint+apipaths.AppByID(appID), bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -188,7 +189,7 @@ func (c *Client) UpdateApp(node *db.Node, appID string, reqData interface{}) (*d
 
 // DeleteApp deletes an app from a remote node
 func (c *Client) DeleteApp(node *db.Node, appID string) error {
-	req, err := http.NewRequest("DELETE", node.APIEndpoint+"/api/internal/apps/"+appID, nil)
+	req, err := http.NewRequest("DELETE", node.APIEndpoint+apipaths.AppByID(appID), nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -211,7 +212,16 @@ func (c *Client) DeleteApp(node *db.Node, appID string) error {
 
 // appAction performs a start/stop action on an app
 func (c *Client) appAction(node *db.Node, appID, action string) error {
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/internal/apps/%s/%s", node.APIEndpoint, appID, action), nil)
+	var path string
+	switch action {
+	case "start":
+		path = node.APIEndpoint + apipaths.AppStart(appID)
+	case "stop":
+		path = node.APIEndpoint + apipaths.AppStop(appID)
+	default:
+		path = fmt.Sprintf("%s/api/apps/%s/%s", node.APIEndpoint, appID, action)
+	}
+	req, err := http.NewRequest("POST", path, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -234,7 +244,7 @@ func (c *Client) appAction(node *db.Node, appID, action string) error {
 
 // UpdateAppContainers triggers a container update on a remote node
 func (c *Client) UpdateAppContainers(node *db.Node, appID string) (*db.App, error) {
-	req, err := http.NewRequest("POST", node.APIEndpoint+"/api/internal/apps/"+appID+"/update", nil)
+	req, err := http.NewRequest("POST", node.APIEndpoint+apipaths.AppUpdateContainers(appID), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -268,7 +278,7 @@ func (c *Client) GetSystemStats(node *db.Node) (map[string]interface{}, error) {
 		return nil, &CircuitOpenError{NodeID: node.ID, Stats: stats}
 	}
 
-	req, err := http.NewRequest("GET", node.APIEndpoint+"/api/internal/system/stats", nil)
+	req, err := http.NewRequest("GET", node.APIEndpoint+apipaths.SystemStats, nil)
 	if err != nil {
 		c.circuitBreaker.RecordFailure(node.ID)
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -308,7 +318,7 @@ func (c *Client) HealthCheck(node *db.Node) error {
 		return &CircuitOpenError{NodeID: node.ID, Stats: stats}
 	}
 
-	req, err := http.NewRequest("GET", node.APIEndpoint+"/api/health", nil)
+	req, err := http.NewRequest("GET", node.APIEndpoint+apipaths.Health, nil)
 	if err != nil {
 		c.circuitBreaker.RecordFailure(node.ID)
 		return fmt.Errorf("failed to create request: %w", err)
@@ -335,7 +345,7 @@ func (c *Client) HealthCheck(node *db.Node) error {
 
 // GetSettings fetches settings from the primary node (for secondary nodes)
 func (c *Client) GetSettings(node *db.Node) (*db.Settings, error) {
-	req, err := http.NewRequest("GET", node.APIEndpoint+"/api/internal/settings", nil)
+	req, err := http.NewRequest("GET", node.APIEndpoint+apipaths.Settings, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -363,7 +373,7 @@ func (c *Client) GetSettings(node *db.Node) (*db.Settings, error) {
 
 // GetTunnels fetches all tunnels from a remote node
 func (c *Client) GetTunnels(node *db.Node) ([]*db.CloudflareTunnel, error) {
-	req, err := http.NewRequest("GET", node.APIEndpoint+"/api/internal/cloudflare/tunnels", nil)
+	req, err := http.NewRequest("GET", node.APIEndpoint+apipaths.TunnelsList, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -391,7 +401,7 @@ func (c *Client) GetTunnels(node *db.Node) ([]*db.CloudflareTunnel, error) {
 
 // RestartContainer restarts a container on a remote node
 func (c *Client) RestartContainer(node *db.Node, containerID string) error {
-	req, err := http.NewRequest("POST", node.APIEndpoint+"/api/system/containers/"+containerID+"/restart", nil)
+	req, err := http.NewRequest("POST", node.APIEndpoint+apipaths.ContainerRestart(containerID), nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -437,7 +447,7 @@ func (c *Client) StopContainer(node *db.Node, containerID string) error {
 
 // DeleteContainer deletes a container on a remote node
 func (c *Client) DeleteContainer(node *db.Node, containerID string) error {
-	req, err := http.NewRequest("DELETE", node.APIEndpoint+"/api/system/containers/"+containerID, nil)
+	req, err := http.NewRequest("DELETE", node.APIEndpoint+apipaths.Container(containerID), nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -460,7 +470,7 @@ func (c *Client) DeleteContainer(node *db.Node, containerID string) error {
 
 // GetComposeVersions fetches all compose versions for an app from a remote node
 func (c *Client) GetComposeVersions(node *db.Node, appID string) ([]*db.ComposeVersion, error) {
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/internal/apps/%s/compose/versions", node.APIEndpoint, appID), nil)
+	req, err := http.NewRequest("GET", node.APIEndpoint+apipaths.AppComposeVersions(appID), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -488,7 +498,7 @@ func (c *Client) GetComposeVersions(node *db.Node, appID string) ([]*db.ComposeV
 
 // GetComposeVersion fetches a specific compose version for an app from a remote node
 func (c *Client) GetComposeVersion(node *db.Node, appID string, version int) (*db.ComposeVersion, error) {
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/internal/apps/%s/compose/versions/%d", node.APIEndpoint, appID, version), nil)
+	req, err := http.NewRequest("GET", node.APIEndpoint+apipaths.AppComposeVersion(appID, version), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -530,7 +540,7 @@ func (c *Client) RollbackComposeVersion(node *db.Node, appID string, version int
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/internal/apps/%s/compose/rollback/%d", node.APIEndpoint, appID, version), bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("POST", node.APIEndpoint+apipaths.AppComposeRollback(appID, version), bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -561,7 +571,7 @@ func (c *Client) RollbackComposeVersion(node *db.Node, appID string, version int
 
 // GetAppLogs fetches logs for an app from a remote node
 func (c *Client) GetAppLogs(node *db.Node, appID string) ([]byte, error) {
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/internal/apps/%s/logs", node.APIEndpoint, appID), nil)
+	req, err := http.NewRequest("GET", node.APIEndpoint+apipaths.AppLogs(appID), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -589,7 +599,7 @@ func (c *Client) GetAppLogs(node *db.Node, appID string) ([]byte, error) {
 
 // GetAppStats fetches stats for an app from a remote node
 func (c *Client) GetAppStats(node *db.Node, appID string) (*domain.AppStats, error) {
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/internal/apps/%s/stats", node.APIEndpoint, appID), nil)
+	req, err := http.NewRequest("GET", node.APIEndpoint+apipaths.AppStats(appID), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -617,7 +627,7 @@ func (c *Client) GetAppStats(node *db.Node, appID string) (*domain.AppStats, err
 
 // GetTunnelByAppID fetches tunnel for an app from a remote node
 func (c *Client) GetTunnelByAppID(node *db.Node, appID string) (*db.CloudflareTunnel, error) {
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/internal/tunnels/apps/%s", node.APIEndpoint, appID), nil)
+	req, err := http.NewRequest("GET", node.APIEndpoint+apipaths.TunnelByApp(appID), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -645,7 +655,7 @@ func (c *Client) GetTunnelByAppID(node *db.Node, appID string) (*db.CloudflareTu
 
 // SyncTunnelStatus syncs tunnel status on a remote node
 func (c *Client) SyncTunnelStatus(node *db.Node, appID string) error {
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/internal/tunnels/apps/%s/sync", node.APIEndpoint, appID), nil)
+	req, err := http.NewRequest("POST", node.APIEndpoint+apipaths.TunnelSync(appID), nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -673,7 +683,7 @@ func (c *Client) UpdateTunnelIngress(node *db.Node, appID string, req domain.Upd
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequest("PUT", fmt.Sprintf("%s/api/internal/tunnels/apps/%s/ingress", node.APIEndpoint, appID), bytes.NewBuffer(jsonData))
+	httpReq, err := http.NewRequest("PUT", node.APIEndpoint+apipaths.TunnelIngress(appID), bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -702,7 +712,7 @@ func (c *Client) CreateTunnelDNSRecord(node *db.Node, appID string, req domain.C
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequest("POST", fmt.Sprintf("%s/api/internal/tunnels/apps/%s/dns", node.APIEndpoint, appID), bytes.NewBuffer(jsonData))
+	httpReq, err := http.NewRequest("POST", node.APIEndpoint+apipaths.TunnelDNS(appID), bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -726,7 +736,7 @@ func (c *Client) CreateTunnelDNSRecord(node *db.Node, appID string, req domain.C
 
 // DeleteTunnel deletes a tunnel on a remote node
 func (c *Client) DeleteTunnel(node *db.Node, appID string) error {
-	req, err := http.NewRequest("DELETE", fmt.Sprintf("%s/api/internal/tunnels/apps/%s", node.APIEndpoint, appID), nil)
+	req, err := http.NewRequest("DELETE", node.APIEndpoint+apipaths.TunnelByApp(appID), nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}

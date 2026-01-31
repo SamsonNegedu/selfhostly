@@ -107,7 +107,7 @@ func createTestAppWithTunnel(t *testing.T, database *db.DB) (*db.App, *db.Cloudf
 	}
 
 	// Create tunnel record
-	tunnel := db.NewCloudflareTunnel(app.ID, app.TunnelID, app.Name, app.TunnelToken, "test-account-id")
+	tunnel := db.NewCloudflareTunnel(app.ID, app.TunnelID, app.Name, app.TunnelToken, "test-account-id", "")
 	tunnel.IsActive = true
 	tunnel.Status = "active"
 	tunnel.CreatedAt = time.Now()
@@ -182,7 +182,7 @@ func TestTunnelService_ListActiveTunnels(t *testing.T) {
 		t.Fatalf("Failed to create app: %v", err)
 	}
 
-	tunnel2 := db.NewCloudflareTunnel(app2.ID, app2.TunnelID, app2.Name, app2.TunnelToken, "test-account-id")
+	tunnel2 := db.NewCloudflareTunnel(app2.ID, app2.TunnelID, app2.Name, app2.TunnelToken, "test-account-id", "")
 	tunnel2.IsActive = true
 	tunnel2.Status = "active"
 	if err := database.CreateCloudflareTunnel(tunnel2); err != nil {
@@ -477,7 +477,7 @@ func TestTunnelService_DeleteTunnel(t *testing.T) {
 }
 
 func TestTunnelService_SyncTunnelStatus(t *testing.T) {
-	service, database, _, cleanup := setupTestTunnelService(t)
+	service, database, mockClient, cleanup := setupTestTunnelService(t)
 	defer cleanup()
 
 	ctx := context.Background()
@@ -485,10 +485,39 @@ func TestTunnelService_SyncTunnelStatus(t *testing.T) {
 	// Create test app and tunnel
 	app, _ := createTestAppWithTunnel(t, database)
 
+	// Mock Cloudflare API GET tunnel response (used by SyncTunnelStatus -> GetTunnelStatus)
+	getTunnelURL := "https://api.cloudflare.com/client/v4/accounts/test-account-id/cfd_tunnel/tunnel-123"
+	mockBody := map[string]interface{}{
+		"success":  true,
+		"errors":   []interface{}{},
+		"messages": []interface{}{},
+		"result": map[string]interface{}{
+			"id":     "tunnel-123",
+			"name":   "test-app",
+			"token":  "tunnel-token-456",
+			"status": "active",
+		},
+	}
+	if err := mockClient.SetJSONMockResponse(getTunnelURL, http.StatusOK, mockBody); err != nil {
+		t.Fatalf("Failed to set mock response: %v", err)
+	}
+
 	// Sync tunnel status
 	err := service.SyncTunnelStatus(ctx, app.ID, "test-node-id")
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	// Verify DB was updated with synced status and last_synced_at
+	tunnelRecord, err := database.GetCloudflareTunnelByAppID(app.ID)
+	if err != nil {
+		t.Fatalf("Failed to get tunnel: %v", err)
+	}
+	if tunnelRecord.Status != "active" {
+		t.Errorf("Expected status 'active', got '%s'", tunnelRecord.Status)
+	}
+	if tunnelRecord.LastSyncedAt == nil {
+		t.Error("Expected LastSyncedAt to be set after sync")
 	}
 }
 

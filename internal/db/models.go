@@ -58,6 +58,10 @@ type CloudflareTunnel struct {
 	UpdatedAt    time.Time      `json:"updated_at" db:"updated_at"`
 	LastSyncedAt *time.Time     `json:"last_synced_at" db:"last_synced_at"` // Make nullable to handle NULL values
 	ErrorDetails *string        `json:"error_details" db:"error_details"`   // Make nullable to handle NULL values
+	// PublicURL is the source of truth for the tunnel's public-facing URL (ingress hostname or *.cfargotunnel.com)
+	PublicURL string `json:"public_url,omitempty" db:"public_url"`
+	// NodeID is response-only (derived from app when listing): which node the tunnel's app is on
+	NodeID string `json:"node_id,omitempty" db:"-"`
 }
 
 // IngressRule represents a single ingress rule for a Cloudflare tunnel
@@ -143,8 +147,9 @@ func NewApp(name, description, composeContent string) *App {
 	}
 }
 
-// NewCloudflareTunnel creates a new CloudflareTunnel with a generated UUID
-func NewCloudflareTunnel(appID, tunnelID, tunnelName, tunnelToken, accountID string) *CloudflareTunnel {
+// NewCloudflareTunnel creates a new CloudflareTunnel with a generated UUID.
+// publicURL is the tunnel's public-facing URL (source of truth on the tunnel).
+func NewCloudflareTunnel(appID, tunnelID, tunnelName, tunnelToken, accountID, publicURL string) *CloudflareTunnel {
 	return &CloudflareTunnel{
 		ID:          uuid.New().String(),
 		AppID:       appID,
@@ -154,6 +159,7 @@ func NewCloudflareTunnel(appID, tunnelID, tunnelName, tunnelToken, accountID str
 		AccountID:   accountID,
 		IsActive:    true,
 		Status:      "active",
+		PublicURL:   publicURL,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}

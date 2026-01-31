@@ -58,6 +58,7 @@ func (a *AppsAggregator) AggregateApps(
 				mu.Unlock()
 			} else {
 				// Fetch from remote node
+				a.logger.InfoContext(ctx, "fetching apps from remote node", "nodeID", n.ID, "nodeName", n.Name)
 				remoteApps, err := remoteFetcher(n)
 				if err != nil {
 					a.logger.WarnContext(ctx, "failed to fetch apps from remote node", "nodeID", n.ID, "nodeName", n.Name, "error", err)
@@ -122,6 +123,7 @@ func (a *TunnelsAggregator) AggregateTunnels(
 				mu.Unlock()
 			} else {
 				// Fetch from remote node
+				a.logger.InfoContext(ctx, "fetching tunnels from remote node", "nodeID", n.ID, "nodeName", n.Name)
 				remoteTunnels, err := remoteFetcher(n)
 				if err != nil {
 					a.logger.WarnContext(ctx, "failed to fetch tunnels from remote node", "nodeID", n.ID, "nodeName", n.Name, "error", err)

@@ -150,7 +150,7 @@ func (a *cloudflareManagerAdapter) CreateTunnel(ctx context.Context, opts tunnel
 		accountID = *settings.CloudflareAccountID
 	}
 
-	cfTunnel := db.NewCloudflareTunnel(opts.AppID, tunnelID, opts.Name, token, accountID)
+	cfTunnel := db.NewCloudflareTunnel(opts.AppID, tunnelID, opts.Name, token, accountID, "")
 	if err := a.database.CreateCloudflareTunnel(cfTunnel); err != nil {
 		return nil, err
 	}
@@ -256,6 +256,7 @@ func (a *cloudflareManagerAdapter) toGenericTunnel(cfTunnel *db.CloudflareTunnel
 		TunnelID:     cfTunnel.TunnelID,
 		TunnelName:   cfTunnel.TunnelName,
 		TunnelToken:  cfTunnel.TunnelToken,
+		PublicURL:    cfTunnel.PublicURL,
 		Status:       cfTunnel.Status,
 		IsActive:     cfTunnel.IsActive,
 		IngressRules: cfTunnel.IngressRules,
@@ -319,41 +320,17 @@ func (s *tunnelService) GetTunnelByAppID(ctx context.Context, appID string, node
 	return result.(*db.CloudflareTunnel), nil
 }
 
-// ListActiveTunnels retrieves all active tunnels from specified nodes
+// ListActiveTunnels retrieves all active tunnels from specified nodes.
+// Always uses the aggregator so that node_ids are respected (local DB + remote node client);
+// the provider's ListTunnels only queries the local DB and would ignore remote nodes.
 func (s *tunnelService) ListActiveTunnels(ctx context.Context, nodeIDs []string) ([]*db.CloudflareTunnel, error) {
 	s.logger.DebugContext(ctx, "listing active tunnels", "nodeIDs", nodeIDs)
 
-	// Determine which nodes to fetch from
 	targetNodes, err := s.router.DetermineTargetNodes(ctx, nodeIDs)
 	if err != nil {
 		return nil, err
 	}
 
-	// Try to use provider if available
-	provider, err := s.getActiveProvider()
-	if err == nil {
-		// Check if provider supports listing
-		if listProvider, ok := provider.(tunnel.ListProvider); ok {
-			genericTunnels, err := listProvider.ListTunnels(ctx, nodeIDs)
-			if err != nil {
-				s.logger.WarnContext(ctx, "provider list failed, falling back to database query", "error", err)
-			} else {
-				// Convert generic tunnels back to CloudflareTunnel for backward compatibility
-				// This is temporary until all consumers use generic Tunnel type
-				cfTunnels := make([]*db.CloudflareTunnel, 0, len(genericTunnels))
-				for _, gt := range genericTunnels {
-					// Get from database to get full CloudflareTunnel structure
-					cfTunnel, err := s.database.GetCloudflareTunnelByAppID(gt.AppID)
-					if err == nil {
-						cfTunnels = append(cfTunnels, cfTunnel)
-					}
-				}
-				return cfTunnels, nil
-			}
-		}
-	}
-
-	// Fallback to direct database aggregation (backward compatibility)
 	allTunnels, err := s.tunnelsAgg.AggregateTunnels(
 		ctx,
 		targetNodes,

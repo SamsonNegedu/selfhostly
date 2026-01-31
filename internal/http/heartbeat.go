@@ -1,12 +1,12 @@
 package http
 
 import (
-	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/selfhostly/internal/apipaths"
 )
 
 // sendNodeHeartbeat allows a node to announce it's online to the primary
@@ -79,7 +79,7 @@ func (s *Server) sendStartupHeartbeat() {
 	
 	primaryURL := s.config.Node.PrimaryNodeURL
 	// Use internal API endpoint which requires node authentication
-	heartbeatURL := fmt.Sprintf("%s/api/internal/nodes/%s/heartbeat", primaryURL, s.config.Node.ID)
+	heartbeatURL := primaryURL + apipaths.NodeHeartbeat(s.config.Node.ID)
 	
 	slog.Info("sending startup heartbeat to primary", "url", heartbeatURL)
 	

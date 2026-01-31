@@ -100,7 +100,7 @@ func TestCleanupManager_CleanupApp(t *testing.T) {
 	}
 
 	// Create tunnel record
-	tunnel := db.NewCloudflareTunnel(app.ID, app.TunnelID, app.Name, app.TunnelToken, "test-account-id")
+	tunnel := db.NewCloudflareTunnel(app.ID, app.TunnelID, app.Name, app.TunnelToken, "test-account-id", "")
 	tunnel.IsActive = true
 	tunnel.Status = "active"
 	if err := database.CreateCloudflareTunnel(tunnel); err != nil {

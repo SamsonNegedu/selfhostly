@@ -187,33 +187,31 @@ function Dashboard() {
             {/* Search and Filters - only show if apps exist */}
             {stats.total > 0 && (
                 <div className="flex flex-col gap-3 sm:gap-4">
-                    {/* Search Bar */}
-                    <div className="relative w-full">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <input
-                            type="text"
-                            placeholder="Search apps..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pl-10 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                        />
-                        {searchQuery && (
-                            <button
-                                onClick={() => setSearchQuery('')}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                            >
-                                <X className="h-4 w-4" />
-                            </button>
-                        )}
-                    </div>
-
-                    {/* Node Selector and Filters */}
+                    {/* Search bar and Filters side by side */}
                     <div className="flex items-center gap-2 flex-wrap">
+                        <div className="relative flex-1 min-w-0">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <input
+                                type="text"
+                                placeholder="Search apps..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pl-10 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                            />
+                            {searchQuery && (
+                                <button
+                                    onClick={() => setSearchQuery('')}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                                >
+                                    <X className="h-4 w-4" />
+                                </button>
+                            )}
+                        </div>
                         <Button
                             variant="outline"
                             size="sm"
                             onClick={() => setShowFilters(!showFilters)}
-                            className="button-press flex-shrink-0"
+                            className="button-press flex-shrink-0 h-10"
                         >
                             <Filter className="h-4 w-4 mr-2" />
                             Filters
@@ -223,13 +221,12 @@ function Dashboard() {
                                 </span>
                             )}
                         </Button>
-
                         {(searchQuery || statusFilter !== 'all' || sortBy !== 'date') && (
                             <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={clearFilters}
-                                className="button-press flex-shrink-0"
+                                className="button-press flex-shrink-0 h-10"
                             >
                                 Clear all
                             </Button>

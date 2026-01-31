@@ -614,6 +614,44 @@ func (m *Manager) GetTunnelToken(tunnelID string) (string, error) {
 	return respData.Result.Token, nil
 }
 
+// GetTunnelStatus fetches the current tunnel status from the Cloudflare API.
+// Returns the status string (e.g. "active", "inactive") or an error if the tunnel is not found or the API fails.
+func (m *Manager) GetTunnelStatus(tunnelID string) (status string, err error) {
+	url := fmt.Sprintf("%s/accounts/%s/cfd_tunnel/%s", apiBaseURL, m.config.AccountID, tunnelID)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+m.config.APIToken)
+
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to get tunnel: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	var respData CreateTunnelResponse
+	if err := json.Unmarshal(body, &respData); err != nil {
+		return "", fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	if !respData.Success {
+		if resp.StatusCode == http.StatusNotFound {
+			return "", fmt.Errorf("tunnel not found: %s", tunnelID)
+		}
+		return "", fmt.Errorf("cloudflare API error: %v", respData.Errors)
+	}
+
+	return respData.Result.Status, nil
+}
+
 // ListTunnelsResponse represents the response from listing tunnels
 type ListTunnelsResponse struct {
 	Success bool `json:"success"`

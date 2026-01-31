@@ -23,7 +23,7 @@ import (
 // Server wraps the HTTP server
 type Server struct {
 	config         *config.Config
-	database       *db.DB // Kept temporarily for settings access
+	database       *db.DB          // Kept temporarily for settings access
 	dockerManager  *docker.Manager // Kept temporarily for backward compatibility
 	appService     domain.AppService
 	tunnelService  domain.TunnelService
@@ -74,12 +74,12 @@ func NewServer(cfg *config.Config, database *db.DB) *Server {
 	appService := service.NewAppService(database, dockerManager, cfg, logger)
 	tunnelService := service.NewTunnelService(database, cfg, logger)
 	systemService := service.NewSystemService(database, dockerManager, cfg, logger)
-	
+
 	// Initialize routing dependencies for compose service
 	composeNodeClient := node.NewClient()
 	composeRouter := routing.NewNodeRouter(database, composeNodeClient, cfg.Node.ID, logger)
 	composeService := service.NewComposeService(database, dockerManager, composeRouter, composeNodeClient, logger)
-	
+
 	nodeService := service.NewNodeService(database, cfg, logger)
 
 	// Create shutdown context
@@ -232,14 +232,14 @@ func (s *Server) Shutdown(ctx context.Context) error {
 func (s *Server) startBackgroundTasks() {
 	// Start periodic health checks for all nodes
 	go s.runPeriodicHealthChecks()
-	
+
 	// If this is a secondary node with a configured primary, attempt auto-registration
 	if !s.config.Node.IsPrimary && s.config.Node.PrimaryNodeURL != "" {
 		go s.attemptAutoRegistration()
 		// After registration, start continuous heartbeats
 		go s.sendPeriodicHeartbeats()
 	}
-	
+
 	slog.Info("background tasks started", "health_check_interval", "30s")
 }
 
@@ -437,90 +437,85 @@ func getUserFromContext(c *gin.Context) (token.User, bool) {
 	return token.User{}, false
 }
 
-// nodeAuthMiddleware checks for valid node API key for inter-node requests
-func (s *Server) nodeAuthMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
+// userOrNodeAuthMiddleware accepts either user auth (JWT/session) or node auth (X-Node-ID + X-Node-API-Key).
+// When node auth is valid, sets node_id_param = local node ID and request_scope = "local" so handlers treat the request as local-only.
+// When user auth is valid, does not set target/scope; resolveNodeMiddleware or handlers will use node_id from query/body.
+func (s *Server) userOrNodeAuthMiddleware() gin.HandlerFunc {
+	tryNodeAuth := func(c *gin.Context) bool {
 		nodeID := c.GetHeader("X-Node-ID")
-		if nodeID == "" {
-			c.JSON(http.StatusUnauthorized, ErrorResponse{
-				Error:   "missing node ID",
-				Details: "X-Node-ID header is required",
-			})
-			c.Abort()
-			return
-		}
-
 		apiKey := c.GetHeader("X-Node-API-Key")
-		if apiKey == "" {
-			c.JSON(http.StatusUnauthorized, ErrorResponse{
-				Error:   "missing node API key",
-				Details: "X-Node-API-Key header is required",
-			})
-			c.Abort()
-			return
+		if nodeID == "" || apiKey == "" {
+			return false
 		}
-
-		// For SECONDARY nodes: Just verify the API key matches this node's own API key
-		// This allows any node with the correct API key to communicate
 		if !s.config.Node.IsPrimary {
 			if apiKey != s.config.Node.APIKey {
-				c.JSON(http.StatusUnauthorized, ErrorResponse{
-					Error:   "invalid API key",
-					Details: "provided API key does not match this node",
-				})
+				c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "invalid API key", Details: "provided API key does not match this node"})
 				c.Abort()
-				return
+				return true // handled
 			}
-			// Store node ID in context for handlers
 			c.Set("node_id", nodeID)
-			c.Next()
-			return
+		} else {
+			node, err := s.database.GetNode(nodeID)
+			if err != nil || node.APIKey != apiKey {
+				c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "unknown or invalid node", Details: "node ID or API key invalid"})
+				c.Abort()
+				return true
+			}
+			c.Set("node_id", node.ID)
 		}
-
-		// For PRIMARY nodes: Validate the requesting node is registered in the cluster
-		node, err := s.database.GetNode(nodeID)
-		if err != nil {
-			c.JSON(http.StatusUnauthorized, ErrorResponse{
-				Error:   "unknown node",
-				Details: "node ID does not match any registered node",
-			})
-			c.Abort()
-			return
-		}
-
-		// Verify the API key matches this specific node
-		if node.APIKey != apiKey {
-			c.JSON(http.StatusUnauthorized, ErrorResponse{
-				Error:   "invalid node API key",
-				Details: "provided API key does not match the identified node",
-			})
-			c.Abort()
-			return
-		}
-
-		// Store node ID in context for handlers
-		c.Set("node_id", node.ID)
+		// Node auth valid: set target = local, scope = local for list
+		c.Set("node_id_param", s.config.Node.ID)
+		c.Set("request_scope", "local")
 		c.Next()
+		return true
+	}
+
+	return func(c *gin.Context) {
+		if tryNodeAuth(c) {
+			return
+		}
+		// No node auth or not valid; require user auth
+		s.getAuthMiddleware()(c)
 	}
 }
 
-// requireNodeIDMiddleware validates that node_id query parameter is present
-// Used for app-specific operations to ensure efficient routing
-func (s *Server) requireNodeIDMiddleware() gin.HandlerFunc {
+// resolveNodeMiddleware sets node_id_param from query for user-authenticated requests.
+// When request_scope is already set (node auth), does nothing. Otherwise requires node_id query and sets node_id_param.
+// Used on resource-by-id routes so handlers get target node from context.
+func (s *Server) resolveNodeMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if _, hasScope := c.Get("request_scope"); hasScope {
+			// Node auth already set node_id_param and request_scope
+			c.Next()
+			return
+		}
 		nodeID := c.Query("node_id")
 		if nodeID == "" {
 			c.JSON(http.StatusBadRequest, ErrorResponse{
 				Error:   "node_id is required",
-				Details: "node_id query parameter must be provided for app-specific operations",
+				Details: "node_id query parameter must be provided for this operation",
 			})
 			c.Abort()
 			return
 		}
-		
-		// Store in context for handlers to use
 		c.Set("node_id_param", nodeID)
 		c.Next()
+	}
+}
+
+// requireNodeAuthMiddleware ensures the request was authenticated as a node (request_scope set by userOrNodeAuthMiddleware).
+// Used for node-only routes (heartbeat, register) that must not be called with user auth.
+func (s *Server) requireNodeAuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if scope, ok := c.Get("request_scope"); ok && scope == "local" {
+			c.Next()
+			return
+		}
+		c.JSON(http.StatusUnauthorized, ErrorResponse{
+			Error:   "node authentication required",
+			Details: "this endpoint accepts only node credentials (X-Node-ID, X-Node-API-Key)",
+		})
+		c.Abort()
 	}
 }
 

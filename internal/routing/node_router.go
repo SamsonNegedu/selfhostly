@@ -128,9 +128,10 @@ func (r *NodeRouter) RouteToNode(
 		return nil, domain.WrapDatabaseOperation("get node", err)
 	}
 
+	r.logger.InfoContext(ctx, "forwarding request to remote node", "nodeID", nodeID, "nodeName", node.Name)
 	result, err := remoteOp(node)
 	if err != nil {
-		r.logger.ErrorContext(ctx, "operation failed on remote node", "nodeID", nodeID)
+		r.logger.ErrorContext(ctx, "operation failed on remote node", "nodeID", nodeID, "nodeName", node.Name)
 		return nil, err
 	}
 

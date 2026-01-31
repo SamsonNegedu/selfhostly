@@ -404,11 +404,11 @@ export function useTunnels(nodeIds?: string[]) {
   return useQuery({
     queryKey: ['tunnels', 'list', nodeIds],
     queryFn: () => {
-      const params = new URLSearchParams();
-      nodeIds?.forEach(id => params.append('node_ids[]', id));
-      const queryString = params.toString();
-      const url = queryString ? `/api/tunnels?${queryString}` : '/api/tunnels';
-      return apiClient.get<CloudflareTunnelResponse>(url);
+      if (nodeIds && nodeIds.length > 0) {
+        const nodeIdsParam = nodeIds.join(',');
+        return apiClient.get<CloudflareTunnelResponse>('/api/tunnels', { node_ids: nodeIdsParam });
+      }
+      return apiClient.get<CloudflareTunnelResponse>('/api/tunnels', { node_ids: 'all' });
     },
   });
 }

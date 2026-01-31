@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/selfhostly/internal/apipaths"
 )
 
 // HeartbeatClient manages continuous heartbeat with exponential backoff
@@ -184,9 +186,7 @@ func (h *HeartbeatClient) runHeartbeatLoop(ctx context.Context) {
 
 // sendHeartbeat sends a heartbeat to the primary node
 func (h *HeartbeatClient) sendHeartbeat() error {
-	heartbeatURL := fmt.Sprintf("%s/api/internal/nodes/%s/heartbeat",
-		h.config.PrimaryURL,
-		h.config.NodeID)
+	heartbeatURL := h.config.PrimaryURL + apipaths.NodeHeartbeat(h.config.NodeID)
 
 	req, err := http.NewRequest("POST", heartbeatURL, nil)
 	if err != nil {

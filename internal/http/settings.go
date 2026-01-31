@@ -14,6 +14,15 @@ type UpdateSettingsRequest struct {
 	AutoStartApps       bool   `json:"auto_start_apps"`
 }
 
+// getSettingsDispatch returns settings: when node auth (request_scope=local) calls getSettingsForNode, else getSettings
+func (s *Server) getSettingsDispatch(c *gin.Context) {
+	if scope, ok := c.Get("request_scope"); ok && scope == "local" {
+		s.getSettingsForNode(c)
+		return
+	}
+	s.getSettings(c)
+}
+
 // getSettings returns current settings
 func (s *Server) getSettings(c *gin.Context) {
 	settings, err := s.database.GetSettings()

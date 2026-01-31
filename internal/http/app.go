@@ -71,31 +71,14 @@ func (s *Server) createApp(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request format"})
 		return
 	}
+	// When node auth was used, composite auth set node_id_param; override req.NodeID so target is local
+	if nodeID := getNodeIDFromContext(c); nodeID != "" {
+		req.NodeID = nodeID
+	}
 
 	app, err := s.appService.CreateApp(c.Request.Context(), req)
 	if err != nil {
 		s.handleServiceError(c, "create app", err)
-		return
-	}
-
-	c.JSON(http.StatusCreated, app)
-}
-
-// createLocalApp creates a new app on the local node (for inter-node calls)
-func (s *Server) createLocalApp(c *gin.Context) {
-	var req domain.CreateAppRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		slog.WarnContext(c.Request.Context(), "invalid create app request", "error", err)
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request format"})
-		return
-	}
-
-	// Force NodeID to be the local node for internal endpoints
-	req.NodeID = s.config.Node.ID
-
-	app, err := s.appService.CreateApp(c.Request.Context(), req)
-	if err != nil {
-		s.handleServiceError(c, "create local app", err)
 		return
 	}
 
@@ -306,8 +289,12 @@ func (s *Server) getAppStats(c *gin.Context) {
 
 // listApps returns all apps
 func (s *Server) listApps(c *gin.Context) {
-	// Extract node_ids from query parameter
-	nodeIDs := httputil.ParseNodeIDs(c)
+	var nodeIDs []string
+	if scope, ok := c.Get("request_scope"); ok && scope == "local" {
+		nodeIDs = []string{s.config.Node.ID}
+	} else {
+		nodeIDs = httputil.ParseNodeIDs(c)
+	}
 
 	apps, err := s.appService.ListApps(c.Request.Context(), nodeIDs)
 	if err != nil {
@@ -316,116 +303,6 @@ func (s *Server) listApps(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, apps)
-}
-
-// listLocalApps returns only apps from the local node (for inter-node calls)
-func (s *Server) listLocalApps(c *gin.Context) {
-	apps, err := s.database.GetAllApps()
-	if err != nil {
-		s.handleServiceError(c, "list local apps", err)
-		return
-	}
-
-	c.JSON(http.StatusOK, apps)
-}
-
-// getLocalApp returns a single app from the local node (for inter-node calls)
-func (s *Server) getLocalApp(c *gin.Context) {
-	id := c.Param("id")
-	if id == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
-		return
-	}
-
-	// Fetch directly from local database (internal endpoints are local-only)
-	app, err := s.database.GetApp(id)
-	if err != nil {
-		s.handleServiceError(c, "get local app", err)
-		return
-	}
-
-	c.JSON(http.StatusOK, app)
-}
-
-// updateLocalApp updates an app on the local node (for inter-node calls)
-func (s *Server) updateLocalApp(c *gin.Context) {
-	id := c.Param("id")
-	if id == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
-		return
-	}
-
-	var req domain.UpdateAppRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		slog.WarnContext(c.Request.Context(), "invalid update app request", "appID", id, "error", err)
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request format"})
-		return
-	}
-
-	// Use local node ID for internal endpoints
-	app, err := s.appService.UpdateApp(c.Request.Context(), id, s.config.Node.ID, req)
-	if err != nil {
-		s.handleServiceError(c, "update local app", err)
-		return
-	}
-
-	c.JSON(http.StatusOK, app)
-}
-
-// deleteLocalApp deletes an app on the local node (for inter-node calls)
-func (s *Server) deleteLocalApp(c *gin.Context) {
-	id := c.Param("id")
-	if id == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
-		return
-	}
-
-	// Use local node ID for internal endpoints
-	if err := s.appService.DeleteApp(c.Request.Context(), id, s.config.Node.ID); err != nil {
-		s.handleServiceError(c, "delete local app", err)
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "App deleted successfully",
-		"appID":   id,
-	})
-}
-
-// startLocalApp starts an app on the local node (for inter-node calls)
-func (s *Server) startLocalApp(c *gin.Context) {
-	id := c.Param("id")
-	if id == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
-		return
-	}
-
-	// Use local node ID for internal endpoints
-	app, err := s.appService.StartApp(c.Request.Context(), id, s.config.Node.ID)
-	if err != nil {
-		s.handleServiceError(c, "start local app", err)
-		return
-	}
-
-	c.JSON(http.StatusOK, app)
-}
-
-// stopLocalApp stops an app on the local node (for inter-node calls)
-func (s *Server) stopLocalApp(c *gin.Context) {
-	id := c.Param("id")
-	if id == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
-		return
-	}
-
-	// Use local node ID for internal endpoints
-	app, err := s.appService.StopApp(c.Request.Context(), id, s.config.Node.ID)
-	if err != nil {
-		s.handleServiceError(c, "stop local app", err)
-		return
-	}
-
-	c.JSON(http.StatusOK, app)
 }
 
 // RollbackRequest represents a rollback request with optional metadata
@@ -542,125 +419,3 @@ func (s *Server) rollbackToVersion(c *gin.Context) {
 	})
 }
 
-// ===== Local Compose Handlers (for inter-node communication) =====
-
-// getLocalComposeVersions returns all compose versions for a local app
-func (s *Server) getLocalComposeVersions(c *gin.Context) {
-	id := c.Param("id")
-	if id == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
-		return
-	}
-
-	versions, err := s.database.GetComposeVersionsByAppID(id)
-	if err != nil {
-		s.handleServiceError(c, "get local compose versions", err)
-		return
-	}
-
-	// Return empty array instead of null if no versions
-	if versions == nil {
-		versions = []*db.ComposeVersion{}
-	}
-
-	c.JSON(http.StatusOK, versions)
-}
-
-// getLocalComposeVersion returns a specific compose version for a local app
-func (s *Server) getLocalComposeVersion(c *gin.Context) {
-	id := c.Param("id")
-	if id == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
-		return
-	}
-
-	version, err := httputil.ValidateAndGetVersion(c)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
-		return
-	}
-
-	composeVersion, err := s.database.GetComposeVersion(id, version)
-	if err != nil {
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Compose version not found"})
-		return
-	}
-
-	c.JSON(http.StatusOK, composeVersion)
-}
-
-// rollbackLocalComposeVersion rolls back a local app to a specific compose version
-func (s *Server) rollbackLocalComposeVersion(c *gin.Context) {
-	id := c.Param("id")
-	if id == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
-		return
-	}
-
-	targetVersion, err := httputil.ValidateAndGetVersion(c)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
-		return
-	}
-
-	// Get optional rollback request body
-	var req RollbackRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		// Body is optional, so just use empty request if binding fails
-		req = RollbackRequest{}
-	}
-
-	// For inter-node calls, use the node ID from the local config
-	nodeID := s.config.Node.ID
-
-	newVersion, err := s.composeService.RollbackToVersion(c.Request.Context(), id, targetVersion, nodeID, req.ChangeReason, nil)
-	if err != nil {
-		s.handleServiceError(c, "rollback local compose version", err)
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"new_version": newVersion,
-	})
-}
-
-// getLocalAppLogs returns logs for a local app
-func (s *Server) getLocalAppLogs(c *gin.Context) {
-	id := c.Param("id")
-	if id == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
-		return
-	}
-
-	// For inter-node calls, use the node ID from the local config
-	nodeID := s.config.Node.ID
-
-	logs, err := s.systemService.GetAppLogs(c.Request.Context(), id, nodeID)
-	if err != nil {
-		s.handleServiceError(c, "get local app logs", err)
-		return
-	}
-
-	c.Header("Content-Type", "text/plain")
-	c.Data(http.StatusOK, "text/plain", logs)
-}
-
-// getLocalAppStats returns stats for a local app
-func (s *Server) getLocalAppStats(c *gin.Context) {
-	id := c.Param("id")
-	if id == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
-		return
-	}
-
-	// For inter-node calls, use the node ID from the local config
-	nodeID := s.config.Node.ID
-
-	stats, err := s.systemService.GetAppStats(c.Request.Context(), id, nodeID)
-	if err != nil {
-		s.handleServiceError(c, "get local app stats", err)
-		return
-	}
-
-	c.JSON(http.StatusOK, stats)
-}
