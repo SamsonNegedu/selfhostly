@@ -196,24 +196,3 @@ func ValidateDescription(description string) error {
 	
 	return nil
 }
-
-// ValidateHostname validates a hostname for DNS records
-func ValidateHostname(hostname string) error {
-	if hostname == "" {
-		return errors.New("hostname cannot be empty")
-	}
-	
-	// Basic hostname validation
-	// RFC 1123: alphanumeric + hyphens, max 253 chars total, labels max 63 chars
-	if len(hostname) > 253 {
-		return errors.New("hostname too long (max 253 characters)")
-	}
-	
-	// Check for valid hostname characters
-	hostnameRegex := regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$`)
-	if !hostnameRegex.MatchString(hostname) {
-		return errors.New("invalid hostname format")
-	}
-	
-	return nil
-}

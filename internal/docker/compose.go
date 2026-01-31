@@ -2,7 +2,9 @@ package docker
 
 import (
 	"fmt"
+	"strings"
 
+	"github.com/selfhostly/internal/tunnel"
 	"gopkg.in/yaml.v3"
 )
 
@@ -155,8 +157,15 @@ func ParseCompose(content []byte) (*ComposeFile, error) {
 	return &compose, nil
 }
 
-// InjectCloudflared injects the cloudflared service into the compose file
-func InjectCloudflared(compose *ComposeFile, appName, tunnelToken string, network string) error {
+// InjectTunnelContainer injects a tunnel provider's container into the compose file.
+// This is a generic function that works with any tunnel provider that needs a sidecar container.
+// Returns true if a container was injected, false if containerConfig was nil.
+func InjectTunnelContainer(compose *ComposeFile, appName string, containerConfig *tunnel.ContainerConfig, network string) (bool, error) {
+	// Some providers don't need a container (e.g., certain hosted tunnel services)
+	if containerConfig == nil {
+		return false, nil
+	}
+
 	if compose.Services == nil {
 		compose.Services = make(map[string]Service)
 	}
@@ -191,28 +200,43 @@ func InjectCloudflared(compose *ComposeFile, appName, tunnelToken string, networ
 	}
 
 	// Add all services without an explicit network to the same network
-	// This ensures cloudflared can communicate with all services
+	// This ensures the tunnel container can communicate with all services
 	for serviceName, service := range compose.Services {
 		if len(service.Networks) == 0 {
-			// Service has no network defined, add it to the same network as cloudflared
+			// Service has no network defined, add it to the same network as tunnel
 			service.Networks = []string{network}
 			compose.Services[serviceName] = service
 		}
 	}
 
-	cloudflaredService := Service{
-		Image:         "cloudflare/cloudflared:latest",
-		ContainerName: fmt.Sprintf("%s-cloudflared", appName),
-		Restart:       "always",
-		Networks:      []string{network},
-		Environment: map[string]string{
-			"TUNNEL_TOKEN": tunnelToken,
-		},
-		Command: "tunnel run",
+	// Use containerConfig.Networks if provided, otherwise use the detected network
+	networks := containerConfig.Networks
+	if len(networks) == 0 {
+		networks = []string{network}
 	}
 
-	compose.Services["cloudflared"] = cloudflaredService
-	return nil
+	// Build command string from array
+	commandStr := ""
+	if len(containerConfig.Command) > 0 {
+		commandStr = strings.Join(containerConfig.Command, " ")
+	}
+
+	tunnelService := Service{
+		Image:         containerConfig.Image,
+		ContainerName: fmt.Sprintf("%s-tunnel", appName),
+		Restart:       "always",
+		Networks:      networks,
+		Environment:   containerConfig.Environment,
+		Command:       commandStr,
+	}
+
+	// Add volumes if specified
+	if len(containerConfig.Volumes) > 0 {
+		tunnelService.Volumes = containerConfig.Volumes
+	}
+
+	compose.Services["tunnel"] = tunnelService
+	return true, nil
 }
 
 // ExtractNetworks extracts network names from services
@@ -242,35 +266,6 @@ func MarshalComposeFile(compose *ComposeFile) ([]byte, error) {
 		return nil, err
 	}
 	return data, nil
-}
-
-// MergeServices merges the cloudflared service with existing services
-// Deprecated: Use InjectCloudflared followed by MarshalComposeFile instead
-func MergeServices(original, cloudflared *ComposeFile) []byte {
-	if original.Services == nil {
-		original.Services = make(map[string]Service)
-	}
-
-	// Merge cloudflared services
-	for name, service := range cloudflared.Services {
-		original.Services[name] = service
-	}
-
-	// Merge networks if needed
-	if cloudflared.Networks != nil {
-		if original.Networks == nil {
-			original.Networks = make(map[string]Network)
-		}
-		for name, network := range cloudflared.Networks {
-			original.Networks[name] = network
-		}
-	}
-
-	data, err := yaml.Marshal(original)
-	if err != nil {
-		return nil
-	}
-	return data
 }
 
 func uniqueStrings(slice []string) []string {

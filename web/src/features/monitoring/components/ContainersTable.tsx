@@ -226,10 +226,10 @@ function ContainersTable({ containers }: ContainersTableProps) {
                       <div className="mt-2 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
                         <div
                           className={`h-1.5 rounded-full transition-all ${container.cpu_percent > 80
-                              ? 'bg-red-500'
-                              : container.cpu_percent > 50
-                                ? 'bg-yellow-500'
-                                : 'bg-blue-500'
+                            ? 'bg-red-500'
+                            : container.cpu_percent > 50
+                              ? 'bg-yellow-500'
+                              : 'bg-blue-500'
                             }`}
                           style={{ width: `${Math.min(container.cpu_percent, 100)}%` }}
                         />
@@ -252,10 +252,10 @@ function ContainersTable({ containers }: ContainersTableProps) {
                       <div className="mt-2 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
                         <div
                           className={`h-1.5 rounded-full transition-all ${memPercent > 80
-                              ? 'bg-red-500'
-                              : memPercent > 50
-                                ? 'bg-yellow-500'
-                                : 'bg-green-500'
+                            ? 'bg-red-500'
+                            : memPercent > 50
+                              ? 'bg-yellow-500'
+                              : 'bg-green-500'
                             }`}
                           style={{ width: `${Math.min(memPercent, 100)}%` }}
                         />

@@ -20,7 +20,7 @@ import {
     Eye,
     ArrowUpDown
 } from 'lucide-react'
-import { useCloudflareTunnels, useSyncCloudflareTunnel, useDeleteCloudflareTunnel } from '@/shared/services/api'
+import { useTunnels, useSyncTunnel, useDeleteTunnel } from '@/shared/services/api'
 import { useNodeContext } from '@/shared/contexts/NodeContext'
 import { useAppStore } from '@/shared/stores/app-store'
 import { useToast } from '@/shared/components/ui/Toast'
@@ -160,123 +160,123 @@ function TunnelTable({ tunnels, apps, onSync, onDelete, onCopy, isSyncing, isDel
             <Card className="border-2 hidden lg:block">
                 <div className="overflow-x-auto">
                     <table className="w-full">
-                    <thead className="border-b-2 bg-muted/50">
-                        <tr>
-                            <th className="text-left p-4 text-sm font-semibold">Status</th>
-                            <th className="text-left p-4 text-sm font-semibold">Tunnel Name</th>
-                            <th className="text-left p-4 text-sm font-semibold">Public URL</th>
-                            <th className="text-left p-4 text-sm font-semibold">Tunnel ID</th>
-                            <th className="text-left p-4 text-sm font-semibold">Created</th>
-                            <th className="text-right p-4 text-sm font-semibold">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {tunnels.map((tunnel) => (
-                            <tr key={tunnel.id} className="border-b hover:bg-muted/30 transition-colors group">
-                                <td className="p-4">
-                                    <div className="flex items-center gap-2">
-                                        {tunnel.is_active ? (
-                                            <Badge variant="default" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 border-green-200">
-                                                <CheckCircle2 className="h-3 w-3 mr-1" />
-                                                Active
-                                            </Badge>
-                                        ) : (
-                                            <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 border-yellow-200">
-                                                <Clock className="h-3 w-3 mr-1" />
-                                                Inactive
-                                            </Badge>
-                                        )}
-                                    </div>
-                                </td>
-                                <td className="p-4">
-                                    <div className="font-medium">{tunnel.tunnel_name}</div>
-                                    {tunnel.error_details && (
-                                        <div className="text-xs text-red-600 dark:text-red-400 mt-1 flex items-center gap-1">
-                                            <AlertCircle className="h-3 w-3" />
-                                            {tunnel.error_details}
-                                        </div>
-                                    )}
-                                </td>
-                                <td className="p-4">
-                                    {tunnel.public_url ? (
+                        <thead className="border-b-2 bg-muted/50">
+                            <tr>
+                                <th className="text-left p-4 text-sm font-semibold">Status</th>
+                                <th className="text-left p-4 text-sm font-semibold">Tunnel Name</th>
+                                <th className="text-left p-4 text-sm font-semibold">Public URL</th>
+                                <th className="text-left p-4 text-sm font-semibold">Tunnel ID</th>
+                                <th className="text-left p-4 text-sm font-semibold">Created</th>
+                                <th className="text-right p-4 text-sm font-semibold">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {tunnels.map((tunnel) => (
+                                <tr key={tunnel.id} className="border-b hover:bg-muted/30 transition-colors group">
+                                    <td className="p-4">
                                         <div className="flex items-center gap-2">
-                                            <a
-                                                href={tunnel.public_url}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 text-sm"
-                                            >
-                                                <ExternalLink className="h-3.5 w-3.5" />
-                                                {new URL(tunnel.public_url).hostname}
-                                            </a>
+                                            {tunnel.is_active ? (
+                                                <Badge variant="default" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 border-green-200">
+                                                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                                                    Active
+                                                </Badge>
+                                            ) : (
+                                                <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 border-yellow-200">
+                                                    <Clock className="h-3 w-3 mr-1" />
+                                                    Inactive
+                                                </Badge>
+                                            )}
+                                        </div>
+                                    </td>
+                                    <td className="p-4">
+                                        <div className="font-medium">{tunnel.tunnel_name}</div>
+                                        {tunnel.error_details && (
+                                            <div className="text-xs text-red-600 dark:text-red-400 mt-1 flex items-center gap-1">
+                                                <AlertCircle className="h-3 w-3" />
+                                                {tunnel.error_details}
+                                            </div>
+                                        )}
+                                    </td>
+                                    <td className="p-4">
+                                        {tunnel.public_url ? (
+                                            <div className="flex items-center gap-2">
+                                                <a
+                                                    href={tunnel.public_url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 text-sm"
+                                                >
+                                                    <ExternalLink className="h-3.5 w-3.5" />
+                                                    {new URL(tunnel.public_url).hostname}
+                                                </a>
+                                                <button
+                                                    onClick={() => onCopy(tunnel.public_url, 'Public URL')}
+                                                    className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                                >
+                                                    <Copy className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <span className="text-muted-foreground text-sm">—</span>
+                                        )}
+                                    </td>
+                                    <td className="p-4">
+                                        <div className="flex items-center gap-2">
+                                            <code className="text-xs font-mono text-muted-foreground">{tunnel.tunnel_id.substring(0, 8)}...</code>
                                             <button
-                                                onClick={() => onCopy(tunnel.public_url, 'Public URL')}
+                                                onClick={() => onCopy(tunnel.tunnel_id, 'Tunnel ID')}
                                                 className="opacity-0 group-hover:opacity-100 transition-opacity"
                                             >
                                                 <Copy className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
                                             </button>
                                         </div>
-                                    ) : (
-                                        <span className="text-muted-foreground text-sm">—</span>
-                                    )}
-                                </td>
-                                <td className="p-4">
-                                    <div className="flex items-center gap-2">
-                                        <code className="text-xs font-mono text-muted-foreground">{tunnel.tunnel_id.substring(0, 8)}...</code>
-                                        <button
-                                            onClick={() => onCopy(tunnel.tunnel_id, 'Tunnel ID')}
-                                            className="opacity-0 group-hover:opacity-100 transition-opacity"
-                                        >
-                                            <Copy className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
-                                        </button>
-                                    </div>
-                                </td>
-                                <td className="p-4 text-sm text-muted-foreground">
-                                    {new Date(tunnel.created_at).toLocaleDateString()}
-                                </td>
-                                <td className="p-4">
-                                    <div className="flex items-center justify-end gap-2">
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => onSync(tunnel.app_id, tunnel.tunnel_name)}
-                                            disabled={isSyncing}
-                                            className="button-press"
-                                            title="Sync tunnel"
-                                        >
-                                            <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                                        </Button>
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => {
-                                                const app = apps.find(a => a.id === tunnel.app_id)
-                                                const nodeIdParam = app?.node_id ? `?node_id=${app.node_id}` : ''
-                                                window.location.href = `/apps/${tunnel.app_id}${nodeIdParam}`
-                                            }}
-                                            className="button-press"
-                                            title="View app"
-                                        >
-                                            <Eye className="h-3.5 w-3.5" />
-                                        </Button>
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => onDelete(tunnel.app_id, tunnel.tunnel_name)}
-                                            disabled={isDeleting}
-                                            className="text-red-600 hover:text-red-700 button-press"
-                                            title="Delete tunnel"
-                                        >
-                                            <Trash2 className="h-3.5 w-3.5" />
-                                        </Button>
-                                    </div>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-        </Card>
+                                    </td>
+                                    <td className="p-4 text-sm text-muted-foreground">
+                                        {new Date(tunnel.created_at).toLocaleDateString()}
+                                    </td>
+                                    <td className="p-4">
+                                        <div className="flex items-center justify-end gap-2">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => onSync(tunnel.app_id, tunnel.tunnel_name)}
+                                                disabled={isSyncing}
+                                                className="button-press"
+                                                title="Sync tunnel"
+                                            >
+                                                <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                                            </Button>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => {
+                                                    const app = apps.find(a => a.id === tunnel.app_id)
+                                                    const nodeIdParam = app?.node_id ? `?node_id=${app.node_id}` : ''
+                                                    window.location.href = `/apps/${tunnel.app_id}${nodeIdParam}`
+                                                }}
+                                                className="button-press"
+                                                title="View app"
+                                            >
+                                                <Eye className="h-3.5 w-3.5" />
+                                            </Button>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => onDelete(tunnel.app_id, tunnel.tunnel_name)}
+                                                disabled={isDeleting}
+                                                className="text-red-600 hover:text-red-700 button-press"
+                                                title="Delete tunnel"
+                                            >
+                                                <Trash2 className="h-3.5 w-3.5" />
+                                            </Button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </Card>
         </>
     )
 }
@@ -285,9 +285,9 @@ function CloudflareManagement() {
     // Get global node context for filtering tunnels by selected nodes
     const { selectedNodeIds } = useNodeContext()
 
-    const { data: tunnelsData, isLoading, error, refetch } = useCloudflareTunnels(selectedNodeIds)
-    const syncTunnel = useSyncCloudflareTunnel()
-    const deleteTunnel = useDeleteCloudflareTunnel()
+    const { data: tunnelsData, isLoading, error, refetch } = useTunnels(selectedNodeIds)
+    const syncTunnel = useSyncTunnel()
+    const deleteTunnel = useDeleteTunnel()
     const { toast } = useToast()
 
     const [searchQuery, setSearchQuery] = useState('')
@@ -386,7 +386,11 @@ function CloudflareManagement() {
 
     const handleSync = (appId: string, appName: string) => {
         const app = apps.find(a => a.id === appId)
-        syncTunnel.mutate({ appId, nodeId: app?.node_id }, {
+        if (!app?.node_id) {
+            toast.error('Sync Failed', 'Unable to determine app node')
+            return
+        }
+        syncTunnel.mutate({ appId, nodeId: app.node_id }, {
             onSuccess: () => {
                 toast.success('Tunnel Synced', `${appName} tunnel configuration synced successfully`)
             },
@@ -404,7 +408,12 @@ function CloudflareManagement() {
         if (!tunnelToDelete) return
 
         const app = apps.find(a => a.id === tunnelToDelete.id)
-        deleteTunnel.mutate({ appId: tunnelToDelete.id, nodeId: app?.node_id }, {
+        if (!app?.node_id) {
+            toast.error('Delete Failed', 'Unable to determine app node')
+            setTunnelToDelete(null)
+            return
+        }
+        deleteTunnel.mutate({ appId: tunnelToDelete.id, nodeId: app.node_id }, {
             onSuccess: () => {
                 toast.success('Tunnel Deleted', `${tunnelToDelete.name} tunnel has been removed`)
                 setTunnelToDelete(null)

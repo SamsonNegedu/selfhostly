@@ -39,8 +39,8 @@ func (s *Server) setupRoutes() {
 		// Settings routes
 		s.setupSettingsRoutes(api)
 
-		// Cloudflare routes
-		s.setupCloudflareRoutes(api)
+		// Tunnel routes (provider-agnostic)
+		s.setupTunnelRoutes(api)
 
 		// System/monitoring routes
 		s.setupSystemRoutes(api)
@@ -72,6 +72,22 @@ func (s *Server) setupRoutes() {
 		internal.POST("/apps/:id/start", s.startLocalApp)
 		internal.POST("/apps/:id/stop", s.stopLocalApp)
 		internal.DELETE("/apps/:id", s.deleteLocalApp)
+
+		// Compose operations for inter-node communication (local only, no aggregation)
+		internal.GET("/apps/:id/compose/versions", s.getLocalComposeVersions)
+		internal.GET("/apps/:id/compose/versions/:version", s.getLocalComposeVersion)
+		internal.POST("/apps/:id/compose/rollback/:version", s.rollbackLocalComposeVersion)
+
+		// App logs and stats for inter-node communication (local only, no aggregation)
+		internal.GET("/apps/:id/logs", s.getLocalAppLogs)
+		internal.GET("/apps/:id/stats", s.getLocalAppStats)
+
+		// Tunnel operations for inter-node communication (local only, no aggregation)
+		internal.GET("/tunnels/apps/:appId", s.getLocalTunnelByAppID)
+		internal.POST("/tunnels/apps/:appId/sync", s.syncLocalTunnelStatus)
+		internal.PUT("/tunnels/apps/:appId/ingress", s.updateLocalTunnelIngress)
+		internal.POST("/tunnels/apps/:appId/dns", s.createLocalTunnelDNSRecord)
+		internal.DELETE("/tunnels/apps/:appId", s.deleteLocalTunnel)
 
 		// System stats for inter-node communication (local only, no aggregation)
 		internal.GET("/system/stats", s.getLocalSystemStats)
@@ -109,7 +125,6 @@ func (s *Server) setupAppRoutes(api *gin.RouterGroup) {
 			appSpecific.POST("/update", s.updateAppContainers)
 			appSpecific.GET("/logs", s.getAppLogs)
 			appSpecific.GET("/stats", s.getAppStats)
-			appSpecific.POST("/repair", s.repairApp)
 
 			// Compose version routes
 			appSpecific.GET("/compose/versions", s.getComposeVersions)
@@ -119,19 +134,24 @@ func (s *Server) setupAppRoutes(api *gin.RouterGroup) {
 	}
 }
 
-func (s *Server) setupCloudflareRoutes(api *gin.RouterGroup) {
-	cloudflare := api.Group("/cloudflare")
+func (s *Server) setupTunnelRoutes(api *gin.RouterGroup) {
+	tunnels := api.Group("/tunnels")
 	{
-		cloudflare.GET("/tunnels", s.listCloudflareTunnels)
+		// Provider discovery
+		tunnels.GET("/providers", s.ListTunnelProviders)
+		tunnels.GET("/providers/:provider/features", s.GetProviderFeatures)
+
+		// List all tunnels
+		tunnels.GET("", s.ListTunnelsGeneric)
 
 		// App-specific tunnel operations require node_id
-		tunnelOps := cloudflare.Group("/apps/:appId", s.requireNodeIDMiddleware())
+		tunnelOps := tunnels.Group("/apps/:appId", s.requireNodeIDMiddleware())
 		{
-			tunnelOps.GET("/tunnel", s.getCloudflareTunnel)
-			tunnelOps.POST("/tunnel/sync", s.syncCloudflareTunnel)
-			tunnelOps.PUT("/tunnel/ingress", s.updateTunnelIngress)
-			tunnelOps.POST("/tunnel/dns", s.createDNSRecord)
-			tunnelOps.DELETE("/tunnel", s.deleteCloudflareTunnel)
+			tunnelOps.GET("", s.GetTunnelByAppIDGeneric)
+			tunnelOps.POST("/sync", s.SyncTunnelStatusGeneric)
+			tunnelOps.PUT("/ingress", s.UpdateTunnelIngressGeneric)
+			tunnelOps.POST("/dns", s.CreateDNSRecordGeneric)
+			tunnelOps.DELETE("", s.DeleteTunnelGeneric)
 		}
 	}
 }

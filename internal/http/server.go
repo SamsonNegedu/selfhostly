@@ -15,6 +15,8 @@ import (
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/docker"
 	"github.com/selfhostly/internal/domain"
+	"github.com/selfhostly/internal/node"
+	"github.com/selfhostly/internal/routing"
 	"github.com/selfhostly/internal/service"
 )
 
@@ -72,7 +74,12 @@ func NewServer(cfg *config.Config, database *db.DB) *Server {
 	appService := service.NewAppService(database, dockerManager, cfg, logger)
 	tunnelService := service.NewTunnelService(database, cfg, logger)
 	systemService := service.NewSystemService(database, dockerManager, cfg, logger)
-	composeService := service.NewComposeService(database, dockerManager, logger)
+	
+	// Initialize routing dependencies for compose service
+	composeNodeClient := node.NewClient()
+	composeRouter := routing.NewNodeRouter(database, composeNodeClient, cfg.Node.ID, logger)
+	composeService := service.NewComposeService(database, dockerManager, composeRouter, composeNodeClient, logger)
+	
 	nodeService := service.NewNodeService(database, cfg, logger)
 
 	// Create shutdown context

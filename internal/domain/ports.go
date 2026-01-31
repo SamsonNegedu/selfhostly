@@ -22,25 +22,44 @@ type AppService interface {
 	StartApp(ctx context.Context, appID string, nodeID string) (*db.App, error)
 	StopApp(ctx context.Context, appID string, nodeID string) (*db.App, error)
 	UpdateAppContainers(ctx context.Context, appID string, nodeID string) (*db.App, error)
-	RepairApp(ctx context.Context, appID string) (*db.App, error)
 	RestartCloudflared(ctx context.Context, appID string, nodeID string) error
 }
 
 // TunnelService defines the primary port for tunnel management use cases
 type TunnelService interface {
-	GetTunnelByAppID(ctx context.Context, appID string) (*db.CloudflareTunnel, error)
+	// Tunnel operations
+	GetTunnelByAppID(ctx context.Context, appID string, nodeID string) (*db.CloudflareTunnel, error)
 	ListActiveTunnels(ctx context.Context, nodeIDs []string) ([]*db.CloudflareTunnel, error)
-	SyncTunnelStatus(ctx context.Context, appID string) error
-	UpdateTunnelIngress(ctx context.Context, appID string, req UpdateIngressRequest) error
-	CreateDNSRecord(ctx context.Context, appID string, req CreateDNSRequest) error
-	DeleteTunnel(ctx context.Context, appID string) error
+	SyncTunnelStatus(ctx context.Context, appID string, nodeID string) error
+	UpdateTunnelIngress(ctx context.Context, appID string, nodeID string, req UpdateIngressRequest) error
+	CreateDNSRecord(ctx context.Context, appID string, nodeID string, req CreateDNSRequest) error
+	DeleteTunnel(ctx context.Context, appID string, nodeID string) error
+
+	// Provider discovery (NEW)
+	ListProviders(ctx context.Context) ([]ProviderInfo, error)
+	GetProviderFeatures(ctx context.Context, providerName string) (*ProviderFeatures, error)
+}
+
+// ProviderInfo contains metadata about an available tunnel provider
+type ProviderInfo struct {
+	Name         string `json:"name"`
+	DisplayName  string `json:"display_name"`
+	IsConfigured bool   `json:"is_configured"`
+}
+
+// ProviderFeatures describes what features a tunnel provider supports
+type ProviderFeatures struct {
+	Provider     string `json:"provider"`
+	DisplayName  string `json:"display_name"`
+	IsConfigured bool   `json:"is_configured"`
+	Features     map[string]bool `json:"features"`
 }
 
 // SystemService defines the primary port for system monitoring use cases
 type SystemService interface {
 	GetSystemStats(ctx context.Context, nodeIDs []string) ([]*system.SystemStats, error)
-	GetAppStats(ctx context.Context, appID string) (*AppStats, error)
-	GetAppLogs(ctx context.Context, appID string) ([]byte, error)
+	GetAppStats(ctx context.Context, appID string, nodeID string) (*AppStats, error)
+	GetAppLogs(ctx context.Context, appID string, nodeID string) ([]byte, error)
 	RestartContainer(ctx context.Context, containerID, nodeID string) error
 	StopContainer(ctx context.Context, containerID, nodeID string) error
 	DeleteContainer(ctx context.Context, containerID, nodeID string) error
@@ -48,9 +67,9 @@ type SystemService interface {
 
 // ComposeService defines the primary port for compose version management
 type ComposeService interface {
-	GetVersions(ctx context.Context, appID string) ([]*db.ComposeVersion, error)
-	GetVersion(ctx context.Context, appID string, version int) (*db.ComposeVersion, error)
-	RollbackToVersion(ctx context.Context, appID string, version int, reason *string, changedBy *string) (*db.ComposeVersion, error)
+	GetVersions(ctx context.Context, appID string, nodeID string) ([]*db.ComposeVersion, error)
+	GetVersion(ctx context.Context, appID string, version int, nodeID string) (*db.ComposeVersion, error)
+	RollbackToVersion(ctx context.Context, appID string, version int, nodeID string, reason *string, changedBy *string) (*db.ComposeVersion, error)
 }
 
 // NodeService defines the primary port for node management use cases

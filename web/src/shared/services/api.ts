@@ -19,6 +19,8 @@ import type {
   Node,
   RegisterNodeRequest,
   UpdateNodeRequest,
+  ProviderFeatures,
+  TunnelProvidersResponse,
 } from '../types/api';
 
 interface IngressRule {
@@ -62,12 +64,11 @@ export function useApps(nodeIdsOverride?: string[]) {
   });
 }
 
-export function useApp(id: string, nodeId?: string) {
+export function useApp(id: string, nodeId: string) {
   return useQuery<App>({
     queryKey: ['app', id, nodeId],
     queryFn: () => {
-      const params = nodeId ? { node_id: nodeId } : undefined;
-      return apiClient.get<App>(`/api/apps/${id}`, params);
+      return apiClient.get<App>(`/api/apps/${id}`, { node_id: nodeId });
     },
     enabled: !!id && !!nodeId, // Require nodeId to be present before fetching
   });
@@ -84,13 +85,12 @@ export function useCreateApp() {
   });
 }
 
-export function useUpdateApp(id: string, nodeId?: string) {
+export function useUpdateApp(id: string, nodeId: string) {
   const queryClient = useQueryClient();
   
   return useMutation({
     mutationFn: (data: UpdateAppRequest) => {
-      const url = nodeId ? `/api/apps/${id}?node_id=${nodeId}` : `/api/apps/${id}`;
-      return apiClient.put<App, UpdateAppRequest>(url, data);
+      return apiClient.put<App, UpdateAppRequest>(`/api/apps/${id}?node_id=${nodeId}`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['apps'] });
@@ -103,9 +103,8 @@ export function useDeleteApp() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: ({ id, nodeId }: { id: string; nodeId?: string }) => {
-      const url = nodeId ? `/api/apps/${id}?node_id=${nodeId}` : `/api/apps/${id}`;
-      return apiClient.delete<{ message: string; appID: string }>(url);
+    mutationFn: ({ id, nodeId }: { id: string; nodeId: string }) => {
+      return apiClient.delete<{ message: string; appID: string }>(`/api/apps/${id}?node_id=${nodeId}`);
     },
     // Optimistic update - remove from cache immediately
     onMutate: async ({ id }) => {
@@ -139,9 +138,8 @@ export function useStartApp() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: ({ id, nodeId }: { id: string; nodeId?: string }) => {
-      const url = nodeId ? `/api/apps/${id}/start?node_id=${nodeId}` : `/api/apps/${id}/start`;
-      return apiClient.post<App>(url);
+    mutationFn: ({ id, nodeId }: { id: string; nodeId: string }) => {
+      return apiClient.post<App>(`/api/apps/${id}/start?node_id=${nodeId}`);
     },
     onMutate: async ({ id }) => {
       // Cancel any outgoing refetches
@@ -190,9 +188,8 @@ export function useStopApp() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: ({ id, nodeId }: { id: string; nodeId?: string }) => {
-      const url = nodeId ? `/api/apps/${id}/stop?node_id=${nodeId}` : `/api/apps/${id}/stop`;
-      return apiClient.post<App>(url);
+    mutationFn: ({ id, nodeId }: { id: string; nodeId: string }) => {
+      return apiClient.post<App>(`/api/apps/${id}/stop?node_id=${nodeId}`);
     },
     onMutate: async ({ id }) => {
       // Cancel any outgoing refetches
@@ -245,9 +242,8 @@ export function useUpdateAppContainers() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: ({ id, nodeId }: { id: string; nodeId?: string }) => {
-      const url = nodeId ? `/api/apps/${id}/update?node_id=${nodeId}` : `/api/apps/${id}/update`;
-      return apiClient.post<App>(url);
+    mutationFn: ({ id, nodeId }: { id: string; nodeId: string }) => {
+      return apiClient.post<App>(`/api/apps/${id}/update?node_id=${nodeId}`);
     },
     onMutate: async ({ id }) => {
       // Cancel any outgoing refetches
@@ -294,36 +290,33 @@ export function useUpdateAppContainers() {
 }
 
 // Compose Versions API
-export function useComposeVersions(appId: string, nodeId?: string) {
+export function useComposeVersions(appId: string, nodeId: string) {
   return useQuery<ComposeVersion[]>({
     queryKey: ['compose-versions', appId, nodeId],
     queryFn: () => {
-      const url = nodeId ? `/api/apps/${appId}/compose/versions?node_id=${nodeId}` : `/api/apps/${appId}/compose/versions`;
-      return apiClient.get<ComposeVersion[]>(url);
+      return apiClient.get<ComposeVersion[]>(`/api/apps/${appId}/compose/versions?node_id=${nodeId}`);
     },
-    enabled: !!appId,
+    enabled: !!appId && !!nodeId,
   });
 }
 
-export function useComposeVersion(appId: string, version: number, nodeId?: string) {
+export function useComposeVersion(appId: string, version: number, nodeId: string) {
   return useQuery<ComposeVersion>({
     queryKey: ['compose-version', appId, version, nodeId],
     queryFn: () => {
-      const url = nodeId ? `/api/apps/${appId}/compose/versions/${version}?node_id=${nodeId}` : `/api/apps/${appId}/compose/versions/${version}`;
-      return apiClient.get<ComposeVersion>(url);
+      return apiClient.get<ComposeVersion>(`/api/apps/${appId}/compose/versions/${version}?node_id=${nodeId}`);
     },
-    enabled: !!appId && version > 0,
+    enabled: !!appId && version > 0 && !!nodeId,
   });
 }
 
-export function useRollbackToVersion(appId: string, nodeId?: string) {
+export function useRollbackToVersion(appId: string, nodeId: string) {
   const queryClient = useQueryClient();
   
   return useMutation({
     mutationFn: ({ version, change_reason }: { version: number; change_reason?: string }) => {
       const body: RollbackRequest = change_reason ? { change_reason } : {};
-      const url = nodeId ? `/api/apps/${appId}/compose/rollback/${version}?node_id=${nodeId}` : `/api/apps/${appId}/compose/rollback/${version}`;
-      return apiClient.post<{ message: string; app: App; new_version: ComposeVersion }>(url, body);
+      return apiClient.post<{ message: string; app: App; new_version: ComposeVersion }>(`/api/apps/${appId}/compose/rollback/${version}?node_id=${nodeId}`, body);
     },
     onSuccess: () => {
       // Invalidate related queries
@@ -385,142 +378,127 @@ export function useCurrentUser() {
   });
 }
 
-// Cloudflare tunnel management hooks
-export function useCloudflareTunnels(nodeIdsOverride?: string[]) {
-  const { selectedNodeIds: globalNodeIds } = useNodeContext();
-  
-  // Use override if provided, otherwise use global context
-  const nodeIds = nodeIdsOverride ?? globalNodeIds;
-  
-  // Build query key with node filter
-  const queryKey = nodeIds && nodeIds.length > 0 
-    ? ['cloudflare', 'tunnels', { nodeIds }] 
-    : ['cloudflare', 'tunnels'];
-  
-  return useQuery<CloudflareTunnelResponse>({
-    queryKey,
+// ============================================================================
+// Provider-Agnostic Tunnel Hooks
+// ============================================================================
+
+// List all available tunnel providers
+export function useProviders() {
+  return useQuery({
+    queryKey: ['tunnels', 'providers'],
+    queryFn: () => apiClient.get<TunnelProvidersResponse>('/api/tunnels/providers'),
+  });
+}
+
+// Get features supported by a specific provider
+export function useProviderFeatures(provider: string) {
+  return useQuery({
+    queryKey: ['tunnels', 'providers', provider, 'features'],
+    queryFn: () => apiClient.get<ProviderFeatures>(`/api/tunnels/providers/${provider}/features`),
+    enabled: !!provider,
+  });
+}
+
+// List all tunnels (provider-agnostic)
+export function useTunnels(nodeIds?: string[]) {
+  return useQuery({
+    queryKey: ['tunnels', 'list', nodeIds],
     queryFn: () => {
-      // Build node_ids parameter
-      if (nodeIds && nodeIds.length > 0) {
-        const nodeIdsParam = nodeIds.join(',');
-        return apiClient.get<CloudflareTunnelResponse>('/api/cloudflare/tunnels', { node_ids: nodeIdsParam });
-      }
-      // Default: fetch from all nodes
-      return apiClient.get<CloudflareTunnelResponse>('/api/cloudflare/tunnels', { node_ids: 'all' });
+      const params = new URLSearchParams();
+      nodeIds?.forEach(id => params.append('node_ids[]', id));
+      const queryString = params.toString();
+      const url = queryString ? `/api/tunnels?${queryString}` : '/api/tunnels';
+      return apiClient.get<CloudflareTunnelResponse>(url);
     },
   });
 }
 
-export function useCloudflareTunnel(appId: string, nodeId?: string) {
-  return useQuery<CloudflareTunnel>({
-    queryKey: ['cloudflare', 'tunnel', appId, nodeId],
+// Get tunnel for specific app (provider-agnostic)
+export function useTunnel(appId: string, nodeId: string) {
+  return useQuery({
+    queryKey: ['tunnels', 'app', appId, nodeId],
     queryFn: () => {
-      const url = nodeId ? `/api/cloudflare/apps/${appId}/tunnel?node_id=${nodeId}` : `/api/cloudflare/apps/${appId}/tunnel`;
-      return apiClient.get<CloudflareTunnel>(url);
+      return apiClient.get<CloudflareTunnel>(`/api/tunnels/apps/${appId}?node_id=${nodeId}`);
     },
-    enabled: !!appId,
+    enabled: !!appId && !!nodeId,
   });
 }
 
-export function useSyncCloudflareTunnel() {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: ({ appId, nodeId }: { appId: string; nodeId?: string }) => {
-      const url = nodeId ? `/api/cloudflare/apps/${appId}/tunnel/sync?node_id=${nodeId}` : `/api/cloudflare/apps/${appId}/tunnel/sync`;
-      return apiClient.post<CloudflareTunnel>(url);
-    },
-    onSuccess: (_, variables) => {
-      // Invalidate queries with nodeId to match the query key structure
-      queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', variables.appId, variables.nodeId] });
-      queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', variables.appId] }); // Also invalidate without nodeId for backward compatibility
-      queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnels'] });
-      queryClient.invalidateQueries({ queryKey: ['app', variables.appId, variables.nodeId] });
-      queryClient.invalidateQueries({ queryKey: ['app', variables.appId] }); // Also invalidate without nodeId
-      queryClient.invalidateQueries({ queryKey: ['apps'] });
-    },
-  });
-}
-
-export function useDeleteCloudflareTunnel() {
+// Sync tunnel status (provider-agnostic, may return 501 if not supported)
+export function useSyncTunnel() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ appId, nodeId }: { appId: string; nodeId?: string }) => {
-      const url = nodeId ? `/api/cloudflare/apps/${appId}/tunnel?node_id=${nodeId}` : `/api/cloudflare/apps/${appId}/tunnel`;
-      return apiClient.delete<{ message: string }>(url);
+    mutationFn: ({ appId, nodeId }: { appId: string; nodeId: string }) => {
+      return apiClient.post<{ message: string }>(`/api/tunnels/apps/${appId}/sync?node_id=${nodeId}`, {});
     },
     onSuccess: (_, variables) => {
-      // Invalidate queries with nodeId to match the query key structure
-      queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', variables.appId, variables.nodeId] });
-      queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', variables.appId] }); // Also invalidate without nodeId for backward compatibility
-      queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnels'] });
-      queryClient.invalidateQueries({ queryKey: ['app', variables.appId, variables.nodeId] });
-      queryClient.invalidateQueries({ queryKey: ['app', variables.appId] }); // Also invalidate without nodeId
-      queryClient.invalidateQueries({ queryKey: ['apps'] });
+      queryClient.invalidateQueries({ queryKey: ['tunnels', 'app', variables.appId] });
+      queryClient.invalidateQueries({ queryKey: ['tunnels', 'list'] });
     },
   });
 }
 
+// Update tunnel ingress (provider-agnostic, may return 501 if not supported)
 export function useUpdateTunnelIngress() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ appId, nodeId, ingressRules, hostname, targetDomain }: { appId: string; nodeId?: string; ingressRules: IngressRule[]; hostname?: string; targetDomain?: string }) => {
-      const body: { ingress_rules: IngressRule[]; hostname?: string; target_domain?: string } = {
+    mutationFn: ({ 
+      appId, 
+      nodeId, 
+      ingressRules, 
+      hostname, 
+      targetDomain 
+    }: { 
+      appId: string; 
+      nodeId: string; 
+      ingressRules: IngressRule[]; 
+      hostname?: string; 
+      targetDomain?: string;
+    }) => {
+      return apiClient.put<{ message: string }>(`/api/tunnels/apps/${appId}/ingress?node_id=${nodeId}`, {
         ingress_rules: ingressRules,
-      };
-      
-      // Ensure there's a catch-all rule at the end if not provided
-      if (ingressRules.length === 0 || ingressRules[ingressRules.length - 1].service !== 'http_status:404') {
-        body.ingress_rules = [...ingressRules, { service: 'http_status:404' }];
-      }
-      
-      if (hostname) {
-        body.hostname = hostname;
-      }
-
-      if (targetDomain) {
-        body.target_domain = targetDomain;
-      }
-
-      const url = nodeId ? `/api/cloudflare/apps/${appId}/tunnel/ingress?node_id=${nodeId}` : `/api/cloudflare/apps/${appId}/tunnel/ingress`;
-      return apiClient.put<CloudflareTunnel>(url, body);
+        hostname,
+        target_domain: targetDomain,
+      });
     },
     onSuccess: (_, variables) => {
-      // Invalidate queries with nodeId to match the query key structure
-      queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', variables.appId, variables.nodeId] });
-      queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', variables.appId] }); // Also invalidate without nodeId for backward compatibility
-      queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnels'] });
-      queryClient.invalidateQueries({ queryKey: ['app', variables.appId, variables.nodeId] });
-      queryClient.invalidateQueries({ queryKey: ['app', variables.appId] }); // Also invalidate without nodeId
-      queryClient.invalidateQueries({ queryKey: ['apps'] });
+      queryClient.invalidateQueries({ queryKey: ['tunnels', 'app', variables.appId] });
+      queryClient.invalidateQueries({ queryKey: ['tunnels', 'list'] });
+      queryClient.invalidateQueries({ queryKey: ['app', variables.appId] });
     },
   });
 }
 
-export function useCreateDNSRecord() {
+// Create DNS record (provider-agnostic, may return 501 if not supported)
+export function useCreateTunnelDNSRecord() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ appId, nodeId, hostname, targetDomain }: { appId: string; nodeId?: string; hostname: string; targetDomain?: string }) => {
-      const body: { hostname: string; target_domain?: string } = { hostname };
-      
-      if (targetDomain) {
-        body.target_domain = targetDomain;
-      }
-
-      const url = nodeId ? `/api/cloudflare/apps/${appId}/tunnel/dns?node_id=${nodeId}` : `/api/cloudflare/apps/${appId}/tunnel/dns`;
-      return apiClient.post<{ message: string; tunnel: CloudflareTunnel }>(url, body);
+    mutationFn: ({ appId, nodeId, hostname }: { appId: string; nodeId: string; hostname: string }) => {
+      return apiClient.post<{ message: string; hostname: string }>(`/api/tunnels/apps/${appId}/dns?node_id=${nodeId}`, { hostname });
     },
     onSuccess: (_, variables) => {
-      // Invalidate queries with nodeId to match the query key structure
-      queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', variables.appId, variables.nodeId] });
-      queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', variables.appId] }); // Also invalidate without nodeId for backward compatibility
-      queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnels'] });
-      queryClient.invalidateQueries({ queryKey: ['app', variables.appId, variables.nodeId] });
-      queryClient.invalidateQueries({ queryKey: ['app', variables.appId] }); // Also invalidate without nodeId
-      queryClient.invalidateQueries({ queryKey: ['apps'] });
+      queryClient.invalidateQueries({ queryKey: ['tunnels', 'app', variables.appId] });
+      queryClient.invalidateQueries({ queryKey: ['tunnels', 'list'] });
+      queryClient.invalidateQueries({ queryKey: ['app', variables.appId] });
+    },
+  });
+}
+
+// Delete tunnel (provider-agnostic)
+export function useDeleteTunnel() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ appId, nodeId }: { appId: string; nodeId: string }) => {
+      return apiClient.delete<{ message: string }>(`/api/tunnels/apps/${appId}?node_id=${nodeId}`);
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['tunnels', 'app', variables.appId] });
+      queryClient.invalidateQueries({ queryKey: ['tunnels', 'list'] });
+      queryClient.invalidateQueries({ queryKey: ['app', variables.appId] });
     },
   });
 }

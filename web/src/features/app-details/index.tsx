@@ -46,7 +46,7 @@ function AppDetails() {
         return undefined
     }, [nodeIdFromUrl, cachedApp?.node_id, appsList, appId])
 
-    const { data: app, isLoading: isLoadingApp, refetch, isFetching } = useApp(appId!, nodeId || undefined)
+    const { data: app, isLoading: isLoadingApp, refetch, isFetching } = useApp(appId!, nodeId || '')
 
     // Combined loading state: wait for apps list if we need it to find nodeId
     const isLoading = isLoadingApp || (shouldFetchApps && isLoadingApps)
@@ -193,44 +193,44 @@ function AppDetails() {
                                     {app.status}
                                 </div>
                             </div>
-                        <AppActions
-                            appStatus={app.status}
-                            isStartPending={startApp.isPending}
-                            isStopPending={stopApp.isPending}
-                            isUpdatePending={updateApp.isPending}
-                            isDeletePending={deleteApp.isPending}
-                            isRefreshing={isFetching}
-                            onRefresh={() => refetch()}
-                            onStart={() => startApp.mutate({ id: app.id, nodeId: app.node_id }, {
-                                onSuccess: () => {
-                                    toast.success('App started', `${app.name} has been started successfully`)
-                                    refetch()
-                                },
-                                onError: (error) => {
-                                    toast.error('Failed to start app', error.message)
-                                }
-                            })}
-                            onStop={() => stopApp.mutate({ id: app.id, nodeId: app.node_id }, {
-                                onSuccess: () => {
-                                    toast.success('App stopped', `${app.name} has been stopped successfully`)
-                                    refetch()
-                                },
-                                onError: (error) => {
-                                    toast.error('Failed to stop app', error.message)
-                                }
-                            })}
-                            onUpdate={() => updateApp.mutate({ id: app.id, nodeId: app.node_id }, {
-                                onSuccess: () => {
-                                    toast.success('Update started', `${app.name} update process has begun`)
-                                    refetch()
-                                },
-                                onError: (error) => {
-                                    toast.error('Failed to start update', error.message)
-                                }
-                            })}
-                            onDelete={handleDelete}
-                        />
-                    </div>
+                            <AppActions
+                                appStatus={app.status}
+                                isStartPending={startApp.isPending}
+                                isStopPending={stopApp.isPending}
+                                isUpdatePending={updateApp.isPending}
+                                isDeletePending={deleteApp.isPending}
+                                isRefreshing={isFetching}
+                                onRefresh={() => refetch()}
+                                onStart={() => startApp.mutate({ id: app.id, nodeId: app.node_id }, {
+                                    onSuccess: () => {
+                                        toast.success('App started', `${app.name} has been started successfully`)
+                                        refetch()
+                                    },
+                                    onError: (error) => {
+                                        toast.error('Failed to start app', error.message)
+                                    }
+                                })}
+                                onStop={() => stopApp.mutate({ id: app.id, nodeId: app.node_id }, {
+                                    onSuccess: () => {
+                                        toast.success('App stopped', `${app.name} has been stopped successfully`)
+                                        refetch()
+                                    },
+                                    onError: (error) => {
+                                        toast.error('Failed to stop app', error.message)
+                                    }
+                                })}
+                                onUpdate={() => updateApp.mutate({ id: app.id, nodeId: app.node_id }, {
+                                    onSuccess: () => {
+                                        toast.success('Update started', `${app.name} update process has begun`)
+                                        refetch()
+                                    },
+                                    onError: (error) => {
+                                        toast.error('Failed to start update', error.message)
+                                    }
+                                })}
+                                onDelete={handleDelete}
+                            />
+                        </div>
 
                         {/* Enhanced Tab Navigation */}
                         <div className="flex overflow-x-auto border-b -mx-4 sm:-mx-6 px-4 sm:px-6 scrollbar-hide">
@@ -281,17 +281,38 @@ function AppDetails() {
                         <AppOverview app={app} />
                     )}
                     {activeTab === 'compose' && (
-                        <ComposeEditor
-                            appId={app.id}
-                            nodeId={app.node_id}
-                            initialComposeContent={app.compose_content}
-                        />
+                        !app.node_id ? (
+                            <div className="flex items-center justify-center min-h-[200px] text-muted-foreground">
+                                <AlertTriangle className="h-5 w-5 mr-2" />
+                                Unable to load compose editor: node_id is missing
+                            </div>
+                        ) : (
+                            <ComposeEditor
+                                appId={app.id}
+                                nodeId={app.node_id}
+                                initialComposeContent={app.compose_content}
+                            />
+                        )
                     )}
                     {activeTab === 'logs' && (
-                        <LogViewer appId={app.id} nodeId={app.node_id} />
+                        !app.node_id ? (
+                            <div className="flex items-center justify-center min-h-[200px] text-muted-foreground">
+                                <AlertTriangle className="h-5 w-5 mr-2" />
+                                Unable to load logs: node_id is missing
+                            </div>
+                        ) : (
+                            <LogViewer appId={app.id} nodeId={app.node_id} />
+                        )
                     )}
                     {activeTab === 'cloudflare' && (
-                        <CloudflareTab appId={app.id} nodeId={app.node_id} />
+                        !app.node_id ? (
+                            <div className="flex items-center justify-center min-h-[200px] text-muted-foreground">
+                                <AlertTriangle className="h-5 w-5 mr-2" />
+                                Unable to load tunnel info: node_id is missing
+                            </div>
+                        ) : (
+                            <CloudflareTab appId={app.id} nodeId={app.node_id} />
+                        )
                     )}
                 </CardContent>
             </Card>

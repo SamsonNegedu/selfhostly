@@ -56,8 +56,12 @@ export interface UpdateAppRequest {
 
 export interface Settings {
   id: string;
-  cloudflare_api_token: string;
-  cloudflare_account_id: string;
+  // Deprecated: use tunnel_provider_config instead
+  cloudflare_api_token?: string;
+  cloudflare_account_id?: string;
+  // New multi-provider support
+  active_tunnel_provider?: string;
+  tunnel_provider_config?: string; // JSON string
   auto_start_apps: boolean;
   updated_at: string;
 }
@@ -72,6 +76,8 @@ export interface IngressRule {
 export interface UpdateSettingsRequest {
   cloudflare_api_token?: string;
   cloudflare_account_id?: string;
+  active_tunnel_provider?: string;
+  tunnel_provider_config?: string;
   auto_start_apps?: boolean;
 }
 
@@ -93,6 +99,49 @@ export interface CloudflareTunnel {
 export interface CloudflareTunnelResponse {
   tunnels: CloudflareTunnel[];
   count: number;
+}
+
+// New provider-agnostic tunnel types
+export interface TunnelProvider {
+  name: string;
+  display_name: string;
+  is_configured: boolean;
+}
+
+export interface ProviderFeatures {
+  provider: string;
+  display_name: string;
+  is_configured: boolean;
+  features: {
+    ingress: boolean;
+    dns: boolean;
+    status_sync: boolean;
+    container: boolean;
+    list: boolean;
+  };
+}
+
+export interface TunnelProvidersResponse {
+  providers: TunnelProvider[];
+  active: string;
+}
+
+// Generic tunnel type (for future use with provider abstraction)
+// CloudflareTunnel will eventually be replaced by this
+export interface Tunnel {
+  id: string;
+  app_id: string;
+  provider_type: string;
+  tunnel_id: string;
+  tunnel_name: string;
+  public_url: string;
+  status: 'active' | 'inactive' | 'error' | 'deleted';
+  is_active: boolean;
+  ingress_rules?: IngressRule[] | null;
+  created_at: string;
+  updated_at: string;
+  last_synced_at?: string;
+  error_details?: string;
 }
 
 export interface ApiResponse<T = unknown> {

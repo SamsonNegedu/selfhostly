@@ -32,12 +32,19 @@ func setupTestTunnelService(t *testing.T) (domain.TunnelService, *db.DB, *cloudf
 	// Create mock HTTP client
 	mockHTTPClient := cloudflare.NewMockHTTPClient()
 
-	// Set up Cloudflare settings
+	// Set up Cloudflare settings with new multi-provider format
 	apiToken := "test-api-token"
 	accountID := "test-account-id"
+	activeProvider := "cloudflare"
+
+	// Create provider config JSON
+	providerConfigJSON := fmt.Sprintf(`{"cloudflare":{"api_token":"%s","account_id":"%s"}}`, apiToken, accountID)
+
 	if err := database.UpdateSettings(&db.Settings{
-		CloudflareAPIToken: &apiToken,
-		CloudflareAccountID: &accountID,
+		CloudflareAPIToken:   &apiToken,  // Keep for backward compatibility
+		CloudflareAccountID:  &accountID, // Keep for backward compatibility
+		ActiveTunnelProvider: &activeProvider,
+		TunnelProviderConfig: &providerConfigJSON,
 	}); err != nil {
 		t.Fatalf("Failed to update settings: %v", err)
 	}
@@ -123,7 +130,7 @@ func TestTunnelService_GetTunnelByAppID(t *testing.T) {
 	app, tunnel := createTestAppWithTunnel(t, database)
 
 	// Get tunnel by app ID
-	retrievedTunnel, err := service.GetTunnelByAppID(ctx, app.ID)
+	retrievedTunnel, err := service.GetTunnelByAppID(ctx, app.ID, "test-node-id")
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -145,7 +152,7 @@ func TestTunnelService_GetTunnelByAppID_NotFound(t *testing.T) {
 	ctx := context.Background()
 
 	// Try to get tunnel for non-existent app
-	_, err := service.GetTunnelByAppID(ctx, "non-existent-id")
+	_, err := service.GetTunnelByAppID(ctx, "non-existent-id", "test-node-id")
 	if err == nil {
 		t.Error("Expected error for non-existent tunnel, got nil")
 	}
@@ -242,7 +249,7 @@ func TestTunnelService_UpdateTunnelIngress(t *testing.T) {
 	req := domain.UpdateIngressRequest{
 		IngressRules: []db.IngressRule{
 			{
-				Service: "http://localhost:8080",
+				Service:  "http://localhost:8080",
 				Hostname: stringPtr("example.com"),
 			},
 			{
@@ -252,7 +259,7 @@ func TestTunnelService_UpdateTunnelIngress(t *testing.T) {
 		Hostname: "example.com",
 	}
 
-	err := service.UpdateTunnelIngress(ctx, app.ID, req)
+	err := service.UpdateTunnelIngress(ctx, app.ID, "test-node-id", req)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -297,7 +304,7 @@ func TestTunnelService_UpdateTunnelIngress_NotFound(t *testing.T) {
 	}
 
 	// Try to update ingress for non-existent app
-	err := service.UpdateTunnelIngress(ctx, "non-existent-id", req)
+	err := service.UpdateTunnelIngress(ctx, "non-existent-id", "test-node-id", req)
 	if err == nil {
 		t.Error("Expected error for non-existent tunnel, got nil")
 	}
@@ -361,7 +368,7 @@ func TestTunnelService_CreateDNSRecord(t *testing.T) {
 		Domain:   "example.com",
 	}
 
-	err := service.CreateDNSRecord(ctx, app.ID, req)
+	err := service.CreateDNSRecord(ctx, app.ID, "test-node-id", req)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -401,7 +408,7 @@ func TestTunnelService_CreateDNSRecord_ZoneNotFound(t *testing.T) {
 		Domain:   "example.com",
 	}
 
-	err := service.CreateDNSRecord(ctx, app.ID, req)
+	err := service.CreateDNSRecord(ctx, app.ID, "test-node-id", req)
 	if err == nil {
 		t.Error("Expected error when zone not found, got nil")
 	}
@@ -449,7 +456,7 @@ func TestTunnelService_DeleteTunnel(t *testing.T) {
 	})
 
 	// Delete tunnel
-	err := service.DeleteTunnel(ctx, app.ID)
+	err := service.DeleteTunnel(ctx, app.ID, "test-node-id")
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -479,7 +486,7 @@ func TestTunnelService_SyncTunnelStatus(t *testing.T) {
 	app, _ := createTestAppWithTunnel(t, database)
 
 	// Sync tunnel status
-	err := service.SyncTunnelStatus(ctx, app.ID)
+	err := service.SyncTunnelStatus(ctx, app.ID, "test-node-id")
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -492,7 +499,7 @@ func TestTunnelService_SyncTunnelStatus_NotFound(t *testing.T) {
 	ctx := context.Background()
 
 	// Try to sync non-existent tunnel
-	err := service.SyncTunnelStatus(ctx, "non-existent-id")
+	err := service.SyncTunnelStatus(ctx, "non-existent-id", "test-node-id")
 	if err == nil {
 		t.Error("Expected error for non-existent tunnel, got nil")
 	}

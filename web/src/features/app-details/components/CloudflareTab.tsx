@@ -4,21 +4,21 @@ import { Button } from '@/shared/components/ui/button'
 import { Badge } from '@/shared/components/ui/badge'
 import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog'
 import { RefreshCw, AlertCircle, CheckCircle2, Copy, Globe, Shield, ArrowRight, Clock, Trash2, Server } from 'lucide-react'
-import { useCloudflareTunnel, useSyncCloudflareTunnel, useDeleteCloudflareTunnel } from '@/shared/services/api'
+import { useTunnel, useSyncTunnel, useDeleteTunnel } from '@/shared/services/api'
 import { useToast } from '@/shared/components/ui/Toast'
 import { IngressConfiguration } from '@/features/cloudflare/IngressConfiguration'
 
 interface CloudflareTabProps {
     appId: string;
-    nodeId?: string;
+    nodeId: string;
 }
 
 type TunnelTab = 'overview' | 'ingress'
 
 function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
-    const { data: tunnel, isLoading, error, refetch } = useCloudflareTunnel(appId, nodeId)
-    const syncTunnel = useSyncCloudflareTunnel()
-    const deleteTunnel = useDeleteCloudflareTunnel()
+    const { data: tunnel, isLoading, error, refetch } = useTunnel(appId, nodeId)
+    const syncTunnel = useSyncTunnel()
+    const deleteTunnel = useDeleteTunnel()
     const { toast } = useToast()
 
     const [activeTab, setActiveTab] = useState<TunnelTab>('overview')

@@ -37,25 +37,11 @@ func NewDomainError(code, message string, cause error) *DomainError {
 }
 
 // ============================================================================
-// Common Domain Errors
+// Common Domain Errors (sentinels used as return values or in errors.Is)
 // ============================================================================
 
 var (
-	// App Errors
-	ErrAppNotFound = &DomainError{
-		Code:    "APP_NOT_FOUND",
-		Message: "app not found",
-	}
-	ErrAppNameInvalid = &DomainError{
-		Code:    "APP_NAME_INVALID",
-		Message: "app name is invalid",
-	}
-
 	// Compose Errors
-	ErrComposeInvalid = &DomainError{
-		Code:    "COMPOSE_INVALID",
-		Message: "compose file is invalid",
-	}
 	ErrComposeVersionNotFound = &DomainError{
 		Code:    "COMPOSE_VERSION_NOT_FOUND",
 		Message: "compose version not found",
@@ -66,49 +52,9 @@ var (
 		Code:    "TUNNEL_NOT_FOUND",
 		Message: "tunnel not found",
 	}
-	ErrTunnelCreationFailed = &DomainError{
-		Code:    "TUNNEL_CREATION_FAILED",
-		Message: "failed to create tunnel",
-	}
 	ErrTunnelNotConfigured = &DomainError{
 		Code:    "TUNNEL_NOT_CONFIGURED",
 		Message: "Cloudflare not configured",
-	}
-
-	// Container Errors
-	ErrContainerNotFound = &DomainError{
-		Code:    "CONTAINER_NOT_FOUND",
-		Message: "container not found",
-	}
-	ErrContainerOperationFailed = &DomainError{
-		Code:    "CONTAINER_OPERATION_FAILED",
-		Message: "container operation failed",
-	}
-
-	// Settings Errors
-	ErrSettingsNotFound = &DomainError{
-		Code:    "SETTINGS_NOT_FOUND",
-		Message: "settings not found",
-	}
-
-	// Validation Errors
-	ErrValidationFailed = &DomainError{
-		Code:    "VALIDATION_FAILED",
-		Message: "validation failed",
-	}
-	ErrRequiredFieldMissing = &DomainError{
-		Code:    "REQUIRED_FIELD_MISSING",
-		Message: "required field is missing",
-	}
-
-	// Infrastructure Errors
-	ErrDatabaseOperation = &DomainError{
-		Code:    "DATABASE_OPERATION_FAILED",
-		Message: "database operation failed",
-	}
-	ErrNetworkOperation = &DomainError{
-		Code:    "NETWORK_OPERATION_FAILED",
-		Message: "network operation failed",
 	}
 )
 
@@ -116,10 +62,24 @@ var (
 // Error Wrapping Helpers
 // ============================================================================
 
+// Error codes used by Wrap* and Is* (no sentinel vars; only these codes are checked)
+const (
+	codeAppNotFound              = "APP_NOT_FOUND"
+	codeComposeInvalid           = "COMPOSE_INVALID"
+	codeTunnelCreationFailed     = "TUNNEL_CREATION_FAILED"
+	codeContainerNotFound        = "CONTAINER_NOT_FOUND"
+	codeContainerOperationFailed = "CONTAINER_OPERATION_FAILED"
+	codeSettingsNotFound         = "SETTINGS_NOT_FOUND"
+	codeValidationFailed         = "VALIDATION_FAILED"
+	codeRequiredFieldMissing     = "REQUIRED_FIELD_MISSING"
+	codeAppNameInvalid           = "APP_NAME_INVALID"
+	codeDatabaseOperation        = "DATABASE_OPERATION_FAILED"
+)
+
 // WrapAppNotFound wraps an error as an app not found error
 func WrapAppNotFound(appID string, cause error) error {
 	return &DomainError{
-		Code:    ErrAppNotFound.Code,
+		Code:    codeAppNotFound,
 		Message: fmt.Sprintf("app not found: %s", appID),
 		Cause:   cause,
 	}
@@ -128,7 +88,7 @@ func WrapAppNotFound(appID string, cause error) error {
 // WrapComposeInvalid wraps an error as an invalid compose error
 func WrapComposeInvalid(cause error) error {
 	return &DomainError{
-		Code:    ErrComposeInvalid.Code,
+		Code:    codeComposeInvalid,
 		Message: "invalid compose file format",
 		Cause:   cause,
 	}
@@ -137,7 +97,7 @@ func WrapComposeInvalid(cause error) error {
 // WrapTunnelCreationFailed wraps an error as a tunnel creation failure
 func WrapTunnelCreationFailed(appName string, cause error) error {
 	return &DomainError{
-		Code:    ErrTunnelCreationFailed.Code,
+		Code:    codeTunnelCreationFailed,
 		Message: fmt.Sprintf("failed to create tunnel for app: %s", appName),
 		Cause:   cause,
 	}
@@ -146,7 +106,7 @@ func WrapTunnelCreationFailed(appName string, cause error) error {
 // WrapContainerOperationFailed wraps an error as a container operation failure
 func WrapContainerOperationFailed(operation string, cause error) error {
 	return &DomainError{
-		Code:    ErrContainerOperationFailed.Code,
+		Code:    codeContainerOperationFailed,
 		Message: fmt.Sprintf("container operation failed: %s", operation),
 		Cause:   cause,
 	}
@@ -155,7 +115,7 @@ func WrapContainerOperationFailed(operation string, cause error) error {
 // WrapDatabaseOperation wraps an error as a database operation failure
 func WrapDatabaseOperation(operation string, cause error) error {
 	return &DomainError{
-		Code:    ErrDatabaseOperation.Code,
+		Code:    codeDatabaseOperation,
 		Message: fmt.Sprintf("database operation failed: %s", operation),
 		Cause:   cause,
 	}
@@ -164,7 +124,7 @@ func WrapDatabaseOperation(operation string, cause error) error {
 // WrapValidationError wraps an error as a validation failure
 func WrapValidationError(field string, cause error) error {
 	return &DomainError{
-		Code:    ErrValidationFailed.Code,
+		Code:    codeValidationFailed,
 		Message: fmt.Sprintf("validation failed for %s", field),
 		Cause:   cause,
 	}
@@ -178,11 +138,11 @@ func WrapValidationError(field string, cause error) error {
 func IsNotFoundError(err error) bool {
 	var domainErr *DomainError
 	if errors.As(err, &domainErr) {
-		return domainErr.Code == ErrAppNotFound.Code ||
+		return domainErr.Code == codeAppNotFound ||
 			domainErr.Code == ErrTunnelNotFound.Code ||
-			domainErr.Code == ErrContainerNotFound.Code ||
+			domainErr.Code == codeContainerNotFound ||
 			domainErr.Code == ErrComposeVersionNotFound.Code ||
-			domainErr.Code == ErrSettingsNotFound.Code
+			domainErr.Code == codeSettingsNotFound
 	}
 	return false
 }
@@ -191,10 +151,10 @@ func IsNotFoundError(err error) bool {
 func IsValidationError(err error) bool {
 	var domainErr *DomainError
 	if errors.As(err, &domainErr) {
-		return domainErr.Code == ErrValidationFailed.Code ||
-			domainErr.Code == ErrRequiredFieldMissing.Code ||
-			domainErr.Code == ErrAppNameInvalid.Code ||
-			domainErr.Code == ErrComposeInvalid.Code
+		return domainErr.Code == codeValidationFailed ||
+			domainErr.Code == codeRequiredFieldMissing ||
+			domainErr.Code == codeAppNameInvalid ||
+			domainErr.Code == codeComposeInvalid
 	}
 	return false
 }

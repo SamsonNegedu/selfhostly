@@ -216,3 +216,69 @@ func checkPrimaryNodeExists(primaryURL, apiKey string) error {
 
 	return fmt.Errorf("primary returned status %d", resp.StatusCode)
 }
+
+// migrateCloudflareSettingsToProviderConfig migrates existing Cloudflare settings
+// to the new multi-provider configuration structure.
+// This ensures backward compatibility with existing installations.
+func migrateCloudflareSettingsToProviderConfig(db *sql.DB) error {
+	// Check if there are any settings to migrate
+	var count int
+	if err := db.QueryRow("SELECT COUNT(*) FROM settings WHERE cloudflare_api_token IS NOT NULL AND cloudflare_api_token != ''").Scan(&count); err != nil {
+		return fmt.Errorf("failed to check for settings to migrate: %w", err)
+	}
+
+	if count == 0 {
+		// No settings to migrate
+		return nil
+	}
+
+	// Get the current settings - handle NULL columns gracefully
+	var id string
+	var cfToken, cfAccountID, providerConfig sql.NullString
+	
+	err := db.QueryRow(`
+		SELECT id, cloudflare_api_token, cloudflare_account_id, tunnel_provider_config
+		FROM settings LIMIT 1
+	`).Scan(&id, &cfToken, &cfAccountID, &providerConfig)
+	
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil // No settings to migrate
+		}
+		return fmt.Errorf("failed to query settings: %w", err)
+	}
+
+	// Check if already migrated (tunnel_provider_config is not null)
+	if providerConfig.Valid && providerConfig.String != "" {
+		slog.Info("Settings already migrated to multi-provider format")
+		return nil
+	}
+
+	// Check if there's cloudflare configuration to migrate
+	if !cfToken.Valid || cfToken.String == "" {
+		return nil // Nothing to migrate
+	}
+
+	slog.Info("Migrating Cloudflare settings to multi-provider configuration")
+
+	// Build the new provider config as JSON string directly
+	configStr := fmt.Sprintf(`{"cloudflare":{"api_token":"%s","account_id":"%s"}}`, 
+		cfToken.String, cfAccountID.String)
+
+	// Update the settings with new format
+	_, err = db.Exec(`
+		UPDATE settings 
+		SET tunnel_provider_config = ?,
+		    active_tunnel_provider = 'cloudflare',
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, configStr, id)
+
+	if err != nil {
+		return fmt.Errorf("failed to update settings: %w", err)
+	}
+
+	slog.Info("Successfully migrated Cloudflare settings to multi-provider configuration")
+	return nil
+}
+

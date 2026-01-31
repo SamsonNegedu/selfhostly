@@ -167,7 +167,7 @@ func (tm *TunnelManager) UpdateTunnelIngress(tunnelID string, ingressRules []Ing
 	// Update the ingress configuration via API
 	err = tm.ApiManager.CreateIngressConfiguration(tunnelID, ingressRules)
 	if err != nil {
-		return fmt.Errorf("failed to update ingress configuration: %w", err)
+		return err // API error already has full context
 	}
 
 	// Determine the primary hostname from either the provided hostname or the ingress rules

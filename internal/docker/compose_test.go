@@ -2,6 +2,8 @@ package docker
 
 import (
 	"testing"
+
+	"github.com/selfhostly/internal/tunnel"
 )
 
 func TestParseCompose(t *testing.T) {
@@ -105,7 +107,18 @@ services:
 	}
 }
 
-func TestInjectCloudflared(t *testing.T) {
+// cloudflaredLikeContainerConfig returns a tunnel.ContainerConfig that mimics cloudflared for tests.
+func cloudflaredLikeContainerConfig(tunnelToken string) *tunnel.ContainerConfig {
+	return &tunnel.ContainerConfig{
+		Image:   "cloudflare/cloudflared:latest",
+		Command: []string{"tunnel", "run"},
+		Environment: map[string]string{
+			"TUNNEL_TOKEN": tunnelToken,
+		},
+	}
+}
+
+func TestInjectTunnelContainer(t *testing.T) {
 	// Test with existing network
 	compose := &ComposeFile{
 		Services: map[string]Service{
@@ -123,44 +136,47 @@ func TestInjectCloudflared(t *testing.T) {
 	tunnelToken := "test-token"
 	network := "webnet"
 
-	err := InjectCloudflared(compose, appName, tunnelToken, network)
+	injected, err := InjectTunnelContainer(compose, appName, cloudflaredLikeContainerConfig(tunnelToken), network)
 	if err != nil {
-		t.Fatalf("Failed to inject cloudflared: %v", err)
+		t.Fatalf("Failed to inject tunnel container: %v", err)
+	}
+	if !injected {
+		t.Fatalf("Expected container to be injected")
 	}
 
-	// Check if cloudflared service was added
-	cloudflaredService, exists := compose.Services["cloudflared"]
+	// Check if tunnel service was added
+	tunnelService, exists := compose.Services["tunnel"]
 	if !exists {
-		t.Fatalf("Expected cloudflared service to be added")
+		t.Fatalf("Expected tunnel service to be added")
 	}
 
-	if cloudflaredService.Image != "cloudflare/cloudflared:latest" {
-		t.Errorf("Expected image cloudflare/cloudflared:latest, got %s", cloudflaredService.Image)
+	if tunnelService.Image != "cloudflare/cloudflared:latest" {
+		t.Errorf("Expected image cloudflare/cloudflared:latest, got %s", tunnelService.Image)
 	}
 
-	expectedContainerName := "test-app-cloudflared"
-	if cloudflaredService.ContainerName != expectedContainerName {
-		t.Errorf("Expected container name %s, got %s", expectedContainerName, cloudflaredService.ContainerName)
+	expectedContainerName := "test-app-tunnel"
+	if tunnelService.ContainerName != expectedContainerName {
+		t.Errorf("Expected container name %s, got %s", expectedContainerName, tunnelService.ContainerName)
 	}
 
-	if cloudflaredService.Restart != "always" {
-		t.Errorf("Expected restart policy always, got %s", cloudflaredService.Restart)
+	if tunnelService.Restart != "always" {
+		t.Errorf("Expected restart policy always, got %s", tunnelService.Restart)
 	}
 
-	if len(cloudflaredService.Networks) != 1 || cloudflaredService.Networks[0] != network {
-		t.Errorf("Expected networks [%s], got %v", network, cloudflaredService.Networks)
+	if len(tunnelService.Networks) != 1 || tunnelService.Networks[0] != network {
+		t.Errorf("Expected networks [%s], got %v", network, tunnelService.Networks)
 	}
 
-	if cloudflaredService.Environment["TUNNEL_TOKEN"] != tunnelToken {
-		t.Errorf("Expected environment TUNNEL_TOKEN=%s, got %s", tunnelToken, cloudflaredService.Environment["TUNNEL_TOKEN"])
+	if tunnelService.Environment["TUNNEL_TOKEN"] != tunnelToken {
+		t.Errorf("Expected environment TUNNEL_TOKEN=%s, got %s", tunnelToken, tunnelService.Environment["TUNNEL_TOKEN"])
 	}
 
-	if cloudflaredService.Command != "tunnel run" {
-		t.Errorf("Expected command tunnel run, got %s", cloudflaredService.Command)
+	if tunnelService.Command != "tunnel run" {
+		t.Errorf("Expected command tunnel run, got %s", tunnelService.Command)
 	}
 }
 
-func TestInjectCloudflaredNoNetwork(t *testing.T) {
+func TestInjectTunnelContainerNoNetwork(t *testing.T) {
 	// Test with no existing network
 	compose := &ComposeFile{
 		Services: map[string]Service{
@@ -173,9 +189,12 @@ func TestInjectCloudflaredNoNetwork(t *testing.T) {
 	appName := "test-app"
 	tunnelToken := "test-token"
 
-	err := InjectCloudflared(compose, appName, tunnelToken, "")
+	injected, err := InjectTunnelContainer(compose, appName, cloudflaredLikeContainerConfig(tunnelToken), "")
 	if err != nil {
-		t.Fatalf("Failed to inject cloudflared: %v", err)
+		t.Fatalf("Failed to inject tunnel container: %v", err)
+	}
+	if !injected {
+		t.Fatalf("Expected container to be injected")
 	}
 
 	// Check if default network was created
@@ -188,14 +207,14 @@ func TestInjectCloudflaredNoNetwork(t *testing.T) {
 		t.Errorf("Expected bridge driver, got %s", network.Driver)
 	}
 
-	// Check if cloudflared service was added with the default network
-	cloudflaredService, exists := compose.Services["cloudflared"]
+	// Check if tunnel service was added with the default network
+	tunnelService, exists := compose.Services["tunnel"]
 	if !exists {
-		t.Fatalf("Expected cloudflared service to be added")
+		t.Fatalf("Expected tunnel service to be added")
 	}
 
-	if len(cloudflaredService.Networks) != 1 || cloudflaredService.Networks[0] != "selfhostly-network" {
-		t.Errorf("Expected networks [selfhostly-network], got %v", cloudflaredService.Networks)
+	if len(tunnelService.Networks) != 1 || tunnelService.Networks[0] != "selfhostly-network" {
+		t.Errorf("Expected networks [selfhostly-network], got %v", tunnelService.Networks)
 	}
 }
 
@@ -280,13 +299,14 @@ func TestMarshalComposeFile(t *testing.T) {
 	}
 }
 
-func TestMergeServices(t *testing.T) {
-	// Create original compose
+func TestInjectTunnelContainerAndMarshal(t *testing.T) {
+	// Create original compose, inject tunnel container, marshal and verify
 	original := &ComposeFile{
 		Version: "3.8",
 		Services: map[string]Service{
 			"web": {
-				Image: "nginx:latest",
+				Image:    "nginx:latest",
+				Networks: []string{"frontend"},
 			},
 		},
 		Networks: map[string]Network{
@@ -294,32 +314,27 @@ func TestMergeServices(t *testing.T) {
 		},
 	}
 
-	// Create cloudflared compose
-	cloudflared := &ComposeFile{
-		Services: map[string]Service{
-			"cloudflared": {
-				Image:    "cloudflare/cloudflared:latest",
-				Networks: []string{"tunnel"},
-			},
-		},
-		Networks: map[string]Network{
-			"tunnel": {Driver: "bridge"},
-		},
+	injected, err := InjectTunnelContainer(original, "web", cloudflaredLikeContainerConfig("test-token"), "frontend")
+	if err != nil {
+		t.Fatalf("Failed to inject tunnel container: %v", err)
+	}
+	if !injected {
+		t.Fatalf("Expected container to be injected")
 	}
 
-	// Merge services
-	data := MergeServices(original, cloudflared)
+	data, err := MarshalComposeFile(original)
+	if err != nil {
+		t.Fatalf("Failed to marshal compose file: %v", err)
+	}
 	if len(data) == 0 {
-		t.Error("Expected non-empty merged compose data")
+		t.Error("Expected non-empty compose data")
 	}
 
-	// Parse the merged data to verify
 	merged, err := ParseCompose(data)
 	if err != nil {
 		t.Fatalf("Failed to parse merged compose file: %v", err)
 	}
 
-	// Check if all services were merged
 	if len(merged.Services) != 2 {
 		t.Errorf("Expected 2 services, got %d", len(merged.Services))
 	}
@@ -328,21 +343,16 @@ func TestMergeServices(t *testing.T) {
 		t.Error("Expected web service to exist in merged compose")
 	}
 
-	if _, exists := merged.Services["cloudflared"]; !exists {
-		t.Error("Expected cloudflared service to exist in merged compose")
+	if _, exists := merged.Services["tunnel"]; !exists {
+		t.Error("Expected tunnel service to exist in merged compose")
 	}
 
-	// Check if all networks were merged
-	if len(merged.Networks) != 2 {
-		t.Errorf("Expected 2 networks, got %d", len(merged.Networks))
+	if len(merged.Networks) != 1 {
+		t.Errorf("Expected 1 network, got %d", len(merged.Networks))
 	}
 
 	if _, exists := merged.Networks["frontend"]; !exists {
 		t.Error("Expected frontend network to exist in merged compose")
-	}
-
-	if _, exists := merged.Networks["tunnel"]; !exists {
-		t.Error("Expected tunnel network to exist in merged compose")
 	}
 }
 
@@ -382,7 +392,7 @@ func TestUniqueStrings(t *testing.T) {
 	}
 }
 
-func TestInjectCloudflaredWithServiceWithoutNetwork(t *testing.T) {
+func TestInjectTunnelContainerWithServiceWithoutNetwork(t *testing.T) {
 	// Test with a service that has no network defined (like uptime-kuma)
 	// This is the real-world scenario where services use default bridge network
 	compose := &ComposeFile{
@@ -402,9 +412,12 @@ func TestInjectCloudflaredWithServiceWithoutNetwork(t *testing.T) {
 	appName := "uptime-kuma"
 	tunnelToken := "test-token"
 
-	err := InjectCloudflared(compose, appName, tunnelToken, "")
+	injected, err := InjectTunnelContainer(compose, appName, cloudflaredLikeContainerConfig(tunnelToken), "")
 	if err != nil {
-		t.Fatalf("Failed to inject cloudflared: %v", err)
+		t.Fatalf("Failed to inject tunnel container: %v", err)
+	}
+	if !injected {
+		t.Fatalf("Expected container to be injected")
 	}
 
 	// Check if default network was created
@@ -417,20 +430,20 @@ func TestInjectCloudflaredWithServiceWithoutNetwork(t *testing.T) {
 		t.Errorf("Expected bridge driver, got %s", network.Driver)
 	}
 
-	// Check if cloudflared service was added with the default network
-	cloudflaredService, exists := compose.Services["cloudflared"]
+	// Check if tunnel service was added with the default network
+	tunnelService, exists := compose.Services["tunnel"]
 	if !exists {
-		t.Fatalf("Expected cloudflared service to be added")
+		t.Fatalf("Expected tunnel service to be added")
 	}
 
-	if len(cloudflaredService.Networks) != 1 || cloudflaredService.Networks[0] != "selfhostly-network" {
-		t.Errorf("Expected networks [selfhostly-network], got %v", cloudflaredService.Networks)
+	if len(tunnelService.Networks) != 1 || tunnelService.Networks[0] != "selfhostly-network" {
+		t.Errorf("Expected networks [selfhostly-network], got %v", tunnelService.Networks)
 	}
 
 	// THE CRITICAL CHECK: The original service should also be updated to use the same network!
 	uptimeKumaService := compose.Services["uptime-kuma"]
 	if len(uptimeKumaService.Networks) == 0 {
-		t.Error("Original service should be updated to use the same network as cloudflared")
+		t.Error("Original service should be updated to use the same network as tunnel")
 	}
 
 	if len(uptimeKumaService.Networks) != 1 || uptimeKumaService.Networks[0] != "selfhostly-network" {
@@ -438,7 +451,7 @@ func TestInjectCloudflaredWithServiceWithoutNetwork(t *testing.T) {
 	}
 }
 
-func TestInjectCloudflaredPreservesExistingNetwork(t *testing.T) {
+func TestInjectTunnelContainerPreservesExistingNetwork(t *testing.T) {
 	// Test that if a service already has a network, we use it and don't override
 	compose := &ComposeFile{
 		Services: map[string]Service{
@@ -455,15 +468,18 @@ func TestInjectCloudflaredPreservesExistingNetwork(t *testing.T) {
 	appName := "web"
 	tunnelToken := "test-token"
 
-	err := InjectCloudflared(compose, appName, tunnelToken, "")
+	injected, err := InjectTunnelContainer(compose, appName, cloudflaredLikeContainerConfig(tunnelToken), "")
 	if err != nil {
-		t.Fatalf("Failed to inject cloudflared: %v", err)
+		t.Fatalf("Failed to inject tunnel container: %v", err)
+	}
+	if !injected {
+		t.Fatalf("Expected container to be injected")
 	}
 
-	// cloudflared should use the existing network
-	cloudflaredService := compose.Services["cloudflared"]
-	if len(cloudflaredService.Networks) != 1 || cloudflaredService.Networks[0] != "my-custom-network" {
-		t.Errorf("Expected cloudflared to use [my-custom-network], got %v", cloudflaredService.Networks)
+	// tunnel should use the existing network
+	tunnelService := compose.Services["tunnel"]
+	if len(tunnelService.Networks) != 1 || tunnelService.Networks[0] != "my-custom-network" {
+		t.Errorf("Expected tunnel to use [my-custom-network], got %v", tunnelService.Networks)
 	}
 
 	// Original service should keep its network unchanged

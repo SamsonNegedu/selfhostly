@@ -1,6 +1,7 @@
 package http
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -17,20 +18,29 @@ type ErrorResponse struct {
 	Details string `json:"details,omitempty"`
 }
 
+// detailForError returns a short, user-facing detail string (avoids redundant chained messages like "CODE: message: cause").
+func detailForError(err error) string {
+	var de *domain.DomainError
+	if errors.As(err, &de) && de.Message != "" {
+		return de.Message
+	}
+	return err.Error()
+}
+
 // handleServiceError handles errors from service layer
 func (s *Server) handleServiceError(c *gin.Context, operation string, err error) {
 	if domain.IsNotFoundError(err) {
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Resource not found", Details: err.Error()})
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Resource not found", Details: detailForError(err)})
 		return
 	}
 
 	if domain.IsValidationError(err) {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Validation error", Details: err.Error()})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Validation error", Details: detailForError(err)})
 		return
 	}
 
 	slog.ErrorContext(c.Request.Context(), "service error", "operation", operation, "error", err)
-	c.JSON(http.StatusInternalServerError, ErrorResponse{Error: fmt.Sprintf("Failed to %s", operation), Details: err.Error()})
+	c.JSON(http.StatusInternalServerError, ErrorResponse{Error: fmt.Sprintf("Failed to %s", operation), Details: detailForError(err)})
 }
 
 // getNodeIDFromContext extracts node_id from context, checking both possible keys
@@ -253,7 +263,14 @@ func (s *Server) getAppLogs(c *gin.Context) {
 		return
 	}
 
-	logs, err := s.systemService.GetAppLogs(c.Request.Context(), id)
+	// Get node_id from middleware (already validated)
+	nodeID := getNodeIDFromContext(c)
+	if nodeID == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "node_id is required"})
+		return
+	}
+
+	logs, err := s.systemService.GetAppLogs(c.Request.Context(), id, nodeID)
 	if err != nil {
 		s.handleServiceError(c, "get app logs", err)
 		return
@@ -271,33 +288,20 @@ func (s *Server) getAppStats(c *gin.Context) {
 		return
 	}
 
-	stats, err := s.systemService.GetAppStats(c.Request.Context(), id)
+	// Get node_id from middleware (already validated)
+	nodeID := getNodeIDFromContext(c)
+	if nodeID == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "node_id is required"})
+		return
+	}
+
+	stats, err := s.systemService.GetAppStats(c.Request.Context(), id, nodeID)
 	if err != nil {
 		s.handleServiceError(c, "get app stats", err)
 		return
 	}
 
 	c.JSON(http.StatusOK, stats)
-}
-
-// repairApp repairs an app's compose file if needed (e.g., adds missing cloudflared token)
-func (s *Server) repairApp(c *gin.Context) {
-	id := c.Param("id")
-	if id == "" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
-		return
-	}
-
-	app, err := s.appService.RepairApp(c.Request.Context(), id)
-	if err != nil {
-		s.handleServiceError(c, "repair app", err)
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "App repaired successfully",
-		"app":     app,
-	})
 }
 
 // listApps returns all apps
@@ -437,7 +441,14 @@ func (s *Server) getComposeVersions(c *gin.Context) {
 		return
 	}
 
-	versions, err := s.composeService.GetVersions(c.Request.Context(), id)
+	// Get node_id from middleware (already validated)
+	nodeID := getNodeIDFromContext(c)
+	if nodeID == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "node_id is required"})
+		return
+	}
+
+	versions, err := s.composeService.GetVersions(c.Request.Context(), id, nodeID)
 	if err != nil {
 		s.handleServiceError(c, "get compose versions", err)
 		return
@@ -460,7 +471,14 @@ func (s *Server) getComposeVersion(c *gin.Context) {
 		return
 	}
 
-	composeVersion, err := s.composeService.GetVersion(c.Request.Context(), id, version)
+	// Get node_id from middleware (already validated)
+	nodeID := getNodeIDFromContext(c)
+	if nodeID == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "node_id is required"})
+		return
+	}
+
+	composeVersion, err := s.composeService.GetVersion(c.Request.Context(), id, version, nodeID)
 	if err != nil {
 		s.handleServiceError(c, "get compose version", err)
 		return
@@ -483,6 +501,13 @@ func (s *Server) rollbackToVersion(c *gin.Context) {
 		return
 	}
 
+	// Get node_id from middleware (already validated)
+	nodeID := getNodeIDFromContext(c)
+	if nodeID == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "node_id is required"})
+		return
+	}
+
 	// Get optional rollback request body
 	var req RollbackRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -497,14 +522,13 @@ func (s *Server) rollbackToVersion(c *gin.Context) {
 		changedBy = &user.Name
 	}
 
-	newVersion, err := s.composeService.RollbackToVersion(c.Request.Context(), id, targetVersion, req.ChangeReason, changedBy)
+	newVersion, err := s.composeService.RollbackToVersion(c.Request.Context(), id, targetVersion, nodeID, req.ChangeReason, changedBy)
 	if err != nil {
 		s.handleServiceError(c, "rollback compose version", err)
 		return
 	}
 
 	// Get updated app
-	nodeID := getNodeIDFromContext(c)
 	var app *db.App
 	if nodeID != "" {
 		app, _ = s.appService.GetApp(c.Request.Context(), id, nodeID)
@@ -516,4 +540,127 @@ func (s *Server) rollbackToVersion(c *gin.Context) {
 		"new_version":  newVersion,
 		"from_version": targetVersion,
 	})
+}
+
+// ===== Local Compose Handlers (for inter-node communication) =====
+
+// getLocalComposeVersions returns all compose versions for a local app
+func (s *Server) getLocalComposeVersions(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
+		return
+	}
+
+	versions, err := s.database.GetComposeVersionsByAppID(id)
+	if err != nil {
+		s.handleServiceError(c, "get local compose versions", err)
+		return
+	}
+
+	// Return empty array instead of null if no versions
+	if versions == nil {
+		versions = []*db.ComposeVersion{}
+	}
+
+	c.JSON(http.StatusOK, versions)
+}
+
+// getLocalComposeVersion returns a specific compose version for a local app
+func (s *Server) getLocalComposeVersion(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
+		return
+	}
+
+	version, err := httputil.ValidateAndGetVersion(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	composeVersion, err := s.database.GetComposeVersion(id, version)
+	if err != nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Compose version not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, composeVersion)
+}
+
+// rollbackLocalComposeVersion rolls back a local app to a specific compose version
+func (s *Server) rollbackLocalComposeVersion(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
+		return
+	}
+
+	targetVersion, err := httputil.ValidateAndGetVersion(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	// Get optional rollback request body
+	var req RollbackRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// Body is optional, so just use empty request if binding fails
+		req = RollbackRequest{}
+	}
+
+	// For inter-node calls, use the node ID from the local config
+	nodeID := s.config.Node.ID
+
+	newVersion, err := s.composeService.RollbackToVersion(c.Request.Context(), id, targetVersion, nodeID, req.ChangeReason, nil)
+	if err != nil {
+		s.handleServiceError(c, "rollback local compose version", err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"new_version": newVersion,
+	})
+}
+
+// getLocalAppLogs returns logs for a local app
+func (s *Server) getLocalAppLogs(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
+		return
+	}
+
+	// For inter-node calls, use the node ID from the local config
+	nodeID := s.config.Node.ID
+
+	logs, err := s.systemService.GetAppLogs(c.Request.Context(), id, nodeID)
+	if err != nil {
+		s.handleServiceError(c, "get local app logs", err)
+		return
+	}
+
+	c.Header("Content-Type", "text/plain")
+	c.Data(http.StatusOK, "text/plain", logs)
+}
+
+// getLocalAppStats returns stats for a local app
+func (s *Server) getLocalAppStats(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
+		return
+	}
+
+	// For inter-node calls, use the node ID from the local config
+	nodeID := s.config.Node.ID
+
+	stats, err := s.systemService.GetAppStats(c.Request.Context(), id, nodeID)
+	if err != nil {
+		s.handleServiceError(c, "get local app stats", err)
+		return
+	}
+
+	c.JSON(http.StatusOK, stats)
 }

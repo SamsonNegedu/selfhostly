@@ -11,7 +11,7 @@ import type { ComposeVersion } from '@/shared/types/api'
 
 interface ComposeEditorProps {
     appId: string;
-    nodeId?: string;
+    nodeId: string;
     initialComposeContent: string;
 }
 

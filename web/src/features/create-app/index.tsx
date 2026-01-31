@@ -136,8 +136,9 @@ function CreateApp() {
         }
 
         createApp.mutate(submitData, {
-            onSuccess: () => {
-                navigate('/apps')
+            onSuccess: (data) => {
+                // Redirect to the newly created app's details page
+                navigate(`/apps/${data.id}`)
             },
         })
     }

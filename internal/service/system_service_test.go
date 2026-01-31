@@ -107,7 +107,7 @@ func TestSystemService_GetAppStats(t *testing.T) {
 	mockExecutor.SetMockOutput("docker", []string{"stats", "container-123", "--no-stream", "--no-trunc", "--format", "{{.CPUPerc}}|{{.MemUsage}}|{{.MemPerc}}|{{.NetIO}}|{{.BlockIO}}"}, []byte(statsOutput))
 
 	// Get app stats
-	stats, err := service.GetAppStats(ctx, app.ID)
+	stats, err := service.GetAppStats(ctx, app.ID, testNodeID)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -149,7 +149,7 @@ func TestSystemService_GetAppStats_StoppedApp(t *testing.T) {
 	}
 
 	// Get app stats
-	stats, err := service.GetAppStats(ctx, app.ID)
+	stats, err := service.GetAppStats(ctx, app.ID, testNodeID)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -170,13 +170,19 @@ func TestSystemService_GetAppStats_StoppedApp(t *testing.T) {
 
 func TestSystemService_GetAppStats_NotFound(t *testing.T) {
 	mockExecutor := docker.NewMockCommandExecutor()
-	service, _, cleanup := setupTestSystemService(t, mockExecutor)
+	service, database, cleanup := setupTestSystemService(t, mockExecutor)
 	defer cleanup()
 
 	ctx := context.Background()
 
+	nodes, err := database.GetAllNodes()
+	if err != nil || len(nodes) == 0 {
+		t.Fatalf("Failed to get test node: %v", err)
+	}
+	testNodeID := nodes[0].ID
+
 	// Try to get stats for non-existent app
-	_, err := service.GetAppStats(ctx, "non-existent-id")
+	_, err = service.GetAppStats(ctx, "non-existent-id", testNodeID)
 	if err == nil {
 		t.Error("Expected error for non-existent app, got nil")
 	}
@@ -212,7 +218,7 @@ func TestSystemService_GetAppLogs(t *testing.T) {
 	mockExecutor.SetMockOutput("docker", []string{"compose", "-f", "docker-compose.yml", "logs", "--tail=100"}, []byte(expectedLogs))
 
 	// Get app logs
-	logs, err := service.GetAppLogs(ctx, app.ID)
+	logs, err := service.GetAppLogs(ctx, app.ID, testNodeID)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -230,13 +236,19 @@ func TestSystemService_GetAppLogs(t *testing.T) {
 
 func TestSystemService_GetAppLogs_NotFound(t *testing.T) {
 	mockExecutor := docker.NewMockCommandExecutor()
-	service, _, cleanup := setupTestSystemService(t, mockExecutor)
+	service, database, cleanup := setupTestSystemService(t, mockExecutor)
 	defer cleanup()
 
 	ctx := context.Background()
 
+	nodes, err := database.GetAllNodes()
+	if err != nil || len(nodes) == 0 {
+		t.Fatalf("Failed to get test node: %v", err)
+	}
+	testNodeID := nodes[0].ID
+
 	// Try to get logs for non-existent app
-	_, err := service.GetAppLogs(ctx, "non-existent-id")
+	_, err = service.GetAppLogs(ctx, "non-existent-id", testNodeID)
 	if err == nil {
 		t.Error("Expected error for non-existent app, got nil")
 	}

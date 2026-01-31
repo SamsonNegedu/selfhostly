@@ -119,11 +119,6 @@ func (db *DB) IntegrityCheck() error {
 	return nil
 }
 
-// GetDBPath returns the database file path
-func (db *DB) GetDBPath() string {
-	return db.dbPath
-}
-
 // BeginTx starts a new transaction
 func (db *DB) BeginTx(ctx context.Context) (*Tx, error) {
 	tx, err := db.DB.BeginTx(ctx, nil)
@@ -253,6 +248,9 @@ func (db *DB) migrate() error {
 		// Add health check tracking columns to nodes table
 		`ALTER TABLE nodes ADD COLUMN consecutive_failures INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE nodes ADD COLUMN last_health_check DATETIME`,
+		// Add multi-provider tunnel support to settings table
+		`ALTER TABLE settings ADD COLUMN active_tunnel_provider TEXT DEFAULT 'cloudflare'`,
+		`ALTER TABLE settings ADD COLUMN tunnel_provider_config TEXT`,
 	}
 
 	for _, migration := range migrations {
@@ -262,6 +260,12 @@ func (db *DB) migrate() error {
 				return err
 			}
 		}
+	}
+
+	// Migrate existing Cloudflare settings to new multi-provider structure
+	if err := migrateCloudflareSettingsToProviderConfig(db.DB); err != nil {
+		slog.Warn("Failed to migrate cloudflare settings", "error", err)
+		// Don't fail the migration - old format still works with fallback
 	}
 
 	// Check if settings exist and have proper UUIDs
@@ -306,6 +310,81 @@ func isDuplicateColumnError(err error) bool {
 	errStr := strings.ToLower(err.Error())
 	return strings.Contains(errStr, "duplicate column name") ||
 		strings.Contains(errStr, "already exists")
+}
+
+// GetProviderConfig parses the tunnel_provider_config JSON and returns configuration
+// for the specified provider. Falls back to old cloudflare-specific fields if new
+// config doesn't exist (backward compatibility).
+func (settings *Settings) GetProviderConfig(providerName string) (map[string]interface{}, error) {
+	// Try new provider config first
+	if settings.TunnelProviderConfig != nil && *settings.TunnelProviderConfig != "" {
+		var providerConfigs map[string]interface{}
+		if err := json.Unmarshal([]byte(*settings.TunnelProviderConfig), &providerConfigs); err != nil {
+			return nil, fmt.Errorf("failed to parse provider config: %w", err)
+		}
+
+		if config, ok := providerConfigs[providerName]; ok {
+			if configMap, ok := config.(map[string]interface{}); ok {
+				return configMap, nil
+			}
+		}
+	}
+
+	// Fallback to old cloudflare-specific fields for backward compatibility
+	if providerName == "cloudflare" {
+		if settings.CloudflareAPIToken != nil && *settings.CloudflareAPIToken != "" &&
+			settings.CloudflareAccountID != nil && *settings.CloudflareAccountID != "" {
+			return map[string]interface{}{
+				"api_token":  *settings.CloudflareAPIToken,
+				"account_id": *settings.CloudflareAccountID,
+			}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("provider %s not configured", providerName)
+}
+
+// GetActiveProviderName returns the active tunnel provider name.
+// Falls back to "cloudflare" if not set (backward compatibility).
+func (settings *Settings) GetActiveProviderName() string {
+	if settings.ActiveTunnelProvider != nil && *settings.ActiveTunnelProvider != "" {
+		return *settings.ActiveTunnelProvider
+	}
+
+	// Fallback: if cloudflare credentials exist, assume cloudflare
+	if settings.CloudflareAPIToken != nil && *settings.CloudflareAPIToken != "" {
+		return "cloudflare"
+	}
+
+	return "cloudflare" // Default
+}
+
+// SetProviderConfig updates the configuration for a specific provider.
+func (settings *Settings) SetProviderConfig(providerName string, config map[string]interface{}) error {
+	var providerConfigs map[string]interface{}
+
+	// Parse existing config if it exists
+	if settings.TunnelProviderConfig != nil && *settings.TunnelProviderConfig != "" {
+		if err := json.Unmarshal([]byte(*settings.TunnelProviderConfig), &providerConfigs); err != nil {
+			return fmt.Errorf("failed to parse existing provider config: %w", err)
+		}
+	} else {
+		providerConfigs = make(map[string]interface{})
+	}
+
+	// Update the specific provider's config
+	providerConfigs[providerName] = config
+
+	// Marshal back to JSON
+	configJSON, err := json.Marshal(providerConfigs)
+	if err != nil {
+		return fmt.Errorf("failed to marshal provider config: %w", err)
+	}
+
+	configStr := string(configJSON)
+	settings.TunnelProviderConfig = &configStr
+
+	return nil
 }
 
 // InitNode initializes the node entry in the database (bootstrap for primary nodes)
@@ -404,27 +483,6 @@ func (db *DB) GetApp(id string) (*App, error) {
 		}
 	}
 	return app, err
-}
-
-// ListApps retrieves all apps
-func (db *DB) ListApps() ([]*App, error) {
-	rows, err := db.Query("SELECT id, name, description, compose_content, tunnel_token, tunnel_id, tunnel_domain, public_url, status, error_message, node_id, created_at, updated_at FROM apps ORDER BY created_at DESC")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var apps []*App
-	for rows.Next() {
-		app := &App{}
-		err := rows.Scan(&app.ID, &app.Name, &app.Description, &app.ComposeContent, &app.TunnelToken, &app.TunnelID, &app.TunnelDomain, &app.PublicURL, &app.Status, &app.ErrorMessage, &app.NodeID, &app.CreatedAt, &app.UpdatedAt)
-		if err != nil {
-			return nil, err
-		}
-		apps = append(apps, app)
-	}
-
-	return apps, nil
 }
 
 // UpdateApp updates an app
@@ -1008,44 +1066,6 @@ func (db *DB) GetNodeByName(name string) (*Node, error) {
 		`SELECT id, name, api_endpoint, api_key, is_primary, status, last_seen, created_at, updated_at 
 		 FROM nodes WHERE name = ?`,
 		name,
-	).Scan(&node.ID, &node.Name, &node.APIEndpoint, &node.APIKey,
-		&node.IsPrimary, &node.Status, &lastSeen,
-		&node.CreatedAt, &node.UpdatedAt)
-
-	if err == nil && lastSeen.Valid {
-		node.LastSeen = &lastSeen.Time
-	}
-
-	return node, err
-}
-
-// GetNodeByAPIKey retrieves a node by API key
-func (db *DB) GetNodeByAPIKey(apiKey string) (*Node, error) {
-	node := &Node{}
-	var lastSeen sql.NullTime
-	err := db.QueryRow(
-		`SELECT id, name, api_endpoint, api_key, is_primary, status, last_seen, created_at, updated_at 
-		 FROM nodes WHERE api_key = ? LIMIT 1`,
-		apiKey,
-	).Scan(&node.ID, &node.Name, &node.APIEndpoint, &node.APIKey,
-		&node.IsPrimary, &node.Status, &lastSeen,
-		&node.CreatedAt, &node.UpdatedAt)
-
-	if err == nil && lastSeen.Valid {
-		node.LastSeen = &lastSeen.Time
-	}
-
-	return node, err
-}
-
-// GetNodeByAPIEndpoint retrieves a node by API endpoint
-func (db *DB) GetNodeByAPIEndpoint(endpoint string) (*Node, error) {
-	node := &Node{}
-	var lastSeen sql.NullTime
-	err := db.QueryRow(
-		`SELECT id, name, api_endpoint, api_key, is_primary, status, last_seen, created_at, updated_at 
-		 FROM nodes WHERE api_endpoint = ? LIMIT 1`,
-		endpoint,
 	).Scan(&node.ID, &node.Name, &node.APIEndpoint, &node.APIKey,
 		&node.IsPrimary, &node.Status, &lastSeen,
 		&node.CreatedAt, &node.UpdatedAt)

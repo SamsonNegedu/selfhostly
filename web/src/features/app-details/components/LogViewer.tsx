@@ -3,15 +3,14 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui
 import { Button } from '@/shared/components/ui/button'
 import { Download, RefreshCw } from 'lucide-react'
 
-function LogViewer({ appId, nodeId }: { appId: string; nodeId?: string }) {
+function LogViewer({ appId, nodeId }: { appId: string; nodeId: string }) {
     const [logs, setLogs] = React.useState('')
     const [isLoading, setIsLoading] = React.useState(false)
 
     const fetchLogs = async () => {
         setIsLoading(true)
         try {
-            const url = nodeId ? `/api/apps/${appId}/logs?node_id=${nodeId}` : `/api/apps/${appId}/logs`
-            const response = await fetch(url)
+            const response = await fetch(`/api/apps/${appId}/logs?node_id=${nodeId}`)
             const text = await response.text()
             setLogs(text)
         } catch (error) {

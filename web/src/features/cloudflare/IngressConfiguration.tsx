@@ -5,12 +5,12 @@ import { Input } from '@/shared/components/ui/input'
 import { Badge } from '@/shared/components/ui/badge'
 import { Plus, Trash2, Save, AlertCircle, CheckCircle, Globe } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useUpdateTunnelIngress, useCreateDNSRecord } from '@/shared/services/api'
+import { useUpdateTunnelIngress, useCreateTunnelDNSRecord } from '@/shared/services/api'
 import type { IngressRule } from '@/shared/types/api'
 
 interface IngressConfigurationProps {
     appId: string;
-    nodeId?: string;
+    nodeId: string;
     existingIngress?: IngressRule[];
     existingHostname?: string;
     tunnelID?: string;
@@ -32,7 +32,7 @@ export function IngressConfiguration({ appId, nodeId, existingIngress = [], exis
     const [saveSuccess, setSaveSuccess] = useState(false)
 
     const updateTunnelIngressMutation = useUpdateTunnelIngress()
-    const createDNSRecordMutation = useCreateDNSRecord()
+    const createDNSRecordMutation = useCreateTunnelDNSRecord()
 
     const addRule = () => {
         setRules([...rules, { service: '', hostname: null, path: null }])
@@ -108,8 +108,7 @@ export function IngressConfiguration({ appId, nodeId, existingIngress = [], exis
                             createDNSRecordMutation.mutateAsync({
                                 appId,
                                 nodeId,
-                                hostname,
-                                targetDomain: undefined
+                                hostname
                             })
                         )
 

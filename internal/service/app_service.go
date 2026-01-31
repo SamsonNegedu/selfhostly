@@ -14,19 +14,22 @@ import (
 	"github.com/selfhostly/internal/domain"
 	"github.com/selfhostly/internal/node"
 	"github.com/selfhostly/internal/routing"
+	"github.com/selfhostly/internal/tunnel"
+	cloudflareProvider "github.com/selfhostly/internal/tunnel/providers/cloudflare"
 	"github.com/selfhostly/internal/validation"
 )
 
 // appService implements the AppService interface
 type appService struct {
-	database        *db.DB
-	dockerManager   *docker.Manager
-	nodeClient      *node.Client
-	config          *config.Config
-	logger          *slog.Logger
-	router          *routing.NodeRouter
-	appsAgg         *routing.AppsAggregator
-	settingsManager *cloudflare.SettingsManager
+	database         *db.DB
+	dockerManager    *docker.Manager
+	nodeClient       *node.Client
+	config           *config.Config
+	logger           *slog.Logger
+	router           *routing.NodeRouter
+	appsAgg          *routing.AppsAggregator
+	settingsManager  *cloudflare.SettingsManager  // DEPRECATED: for backward compatibility
+	providerRegistry *tunnel.Registry             // NEW: for multi-provider support
 }
 
 // NewAppService creates a new app service
@@ -41,15 +44,28 @@ func NewAppService(
 	appsAgg := routing.NewAppsAggregator(router, logger)
 	settingsManager := cloudflare.NewSettingsManager(database, logger)
 	
+	// Initialize provider registry
+	registry := tunnel.NewRegistry()
+	
+	// Register Cloudflare provider
+	registry.Register("cloudflare", func(config map[string]interface{}) (tunnel.Provider, error) {
+		config["database"] = database
+		config["logger"] = logger
+		return cloudflareProvider.NewProvider(config)
+	})
+	
+	// Future providers can be registered here
+	
 	return &appService{
-		database:        database,
-		dockerManager:   dockerManager,
-nodeClient:      nodeClient,
-		config:          cfg,
-		logger:          logger,
-		router:          router,
-		appsAgg:         appsAgg,
-		settingsManager: settingsManager,
+		database:         database,
+		dockerManager:    dockerManager,
+		nodeClient:       nodeClient,
+		config:           cfg,
+		logger:           logger,
+		router:           router,
+		appsAgg:          appsAgg,
+		settingsManager:  settingsManager,
+		providerRegistry: registry,
 	}
 }
 
@@ -97,8 +113,8 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 		}
 	}
 
-	// Get Cloudflare settings
-	settings, err := s.settingsManager.GetSettings()
+	// Get settings
+	settings, err := s.database.GetSettings()
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to get settings", "error", err)
 		return nil, err
@@ -112,59 +128,106 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 	}
 
 	var tunnelID, tunnelToken, publicURL string
+	var createdTunnelAppID string // Track the app ID used for tunnel creation
 
-	// Create Cloudflare tunnel if API token is configured
-	if settings.CloudflareAPIToken != nil && settings.CloudflareAccountID != nil &&
-		*settings.CloudflareAPIToken != "" && *settings.CloudflareAccountID != "" {
-		tunnelManager := cloudflare.NewTunnelManager(*settings.CloudflareAPIToken, *settings.CloudflareAccountID, s.database)
-
-		// Create Cloudflare tunnel
-		tunnelID, tunnelToken, err = tunnelManager.ApiManager.CreateTunnel(req.Name)
+	// Try to create tunnel using provider abstraction
+	providerName := settings.GetActiveProviderName()
+	providerConfig, err := settings.GetProviderConfig(providerName)
+	
+	if err == nil && providerConfig != nil {
+		s.logger.InfoContext(ctx, "creating tunnel using provider", "provider", providerName, "app", req.Name)
+		
+		provider, err := s.providerRegistry.GetProvider(providerName, providerConfig)
 		if err != nil {
-			s.logger.ErrorContext(ctx, "failed to create cloudflare tunnel", "app", req.Name, "error", err)
+			s.logger.ErrorContext(ctx, "failed to create provider", "provider", providerName, "error", err)
+			return nil, fmt.Errorf("failed to create tunnel provider: %w", err)
+		}
+
+		// Generate app ID that will be used (consistent with NewApp below)
+		tempApp := db.NewApp(req.Name, req.Description, req.ComposeContent)
+		createdTunnelAppID = tempApp.ID
+
+		// Create tunnel via provider (provider handles its own DB storage)
+		tunnelResult, err := provider.CreateTunnel(ctx, tunnel.CreateOptions{
+			AppID: createdTunnelAppID,
+			Name:  req.Name,
+		})
+		if err != nil {
+			s.logger.ErrorContext(ctx, "failed to create tunnel", "provider", providerName, "error", err)
 			return nil, domain.WrapTunnelCreationFailed(req.Name, err)
 		}
 
-		s.logger.InfoContext(ctx, "cloudflare tunnel created", "app", req.Name, "tunnelID", tunnelID)
+		tunnelID = tunnelResult.TunnelID
+		tunnelToken = tunnelResult.TunnelToken
+		publicURL = tunnelResult.PublicURL
 
-		// Create public route
-		publicURL, err = tunnelManager.ApiManager.CreatePublicRoute(tunnelID, "http://localhost:8080")
-		if err != nil {
-			s.logger.ErrorContext(ctx, "failed to create public route", "app", req.Name, "tunnelID", tunnelID, "error", err)
-			return nil, fmt.Errorf("failed to create public route: %w", err)
-		}
+		s.logger.InfoContext(ctx, "tunnel created successfully", "provider", providerName, "tunnel_id", tunnelID, "public_url", publicURL)
 
-		// Inject cloudflared service
-		networks := docker.ExtractNetworks(compose)
-		network := ""
-		if len(networks) > 0 {
-			network = networks[0]
-		}
+		// Check if provider needs container injection
+		if containerProvider, ok := provider.(tunnel.ContainerProvider); ok {
+			containerConfig := containerProvider.GetContainerConfig(tunnelToken, req.Name)
+			if containerConfig != nil {
+				networks := docker.ExtractNetworks(compose)
+				network := ""
+				if len(networks) > 0 {
+					network = networks[0]
+				}
 
-		s.logger.InfoContext(ctx, "injecting cloudflared into compose", "app", req.Name)
-		if err := docker.InjectCloudflared(compose, req.Name, tunnelToken, network); err != nil {
-			s.logger.ErrorContext(ctx, "failed to inject cloudflared service", "app", req.Name, "error", err)
-			return nil, fmt.Errorf("failed to inject cloudflared service: %w", err)
-		}
+				s.logger.InfoContext(ctx, "injecting tunnel container into compose", "provider", providerName, "app", req.Name)
+				injected, err := docker.InjectTunnelContainer(compose, req.Name, containerConfig, network)
+				if err != nil {
+					s.logger.ErrorContext(ctx, "failed to inject tunnel container", "app", req.Name, "error", err)
+					return nil, fmt.Errorf("failed to inject tunnel container: %w", err)
+				}
 
-		composeBytes, err := docker.MarshalComposeFile(compose)
-		if err != nil {
-			s.logger.ErrorContext(ctx, "failed to marshal compose file", "app", req.Name, "error", err)
-			return nil, fmt.Errorf("failed to marshal compose file: %w", err)
+				if injected {
+					composeBytes, err := docker.MarshalComposeFile(compose)
+					if err != nil {
+						s.logger.ErrorContext(ctx, "failed to marshal compose file", "app", req.Name, "error", err)
+						return nil, fmt.Errorf("failed to marshal compose file: %w", err)
+					}
+					req.ComposeContent = string(composeBytes)
+					s.logger.InfoContext(ctx, "tunnel container injected successfully", "provider", providerName)
+				}
+			}
+		} else {
+			s.logger.DebugContext(ctx, "provider does not require container injection", "provider", providerName)
 		}
-		req.ComposeContent = string(composeBytes)
+	} else {
+		s.logger.InfoContext(ctx, "no tunnel provider configured, creating app without tunnel", "app", req.Name)
 	}
 
-	// Create app in database
-	app := db.NewApp(req.Name, req.Description, req.ComposeContent)
-	app.TunnelToken = tunnelToken
-	app.TunnelID = tunnelID
-	app.TunnelDomain = publicURL
-	app.PublicURL = publicURL
-	app.Status = "stopped"
-	app.ErrorMessage = nil
-	app.NodeID = s.config.Node.ID // Assign to current node
-	app.UpdatedAt = time.Now()
+	// Create app in database (using the same ID if tunnel was created)
+	var app *db.App
+	if createdTunnelAppID != "" {
+		// Use the same ID that was used for tunnel creation
+		app = &db.App{
+			ID:             createdTunnelAppID,
+			Name:           req.Name,
+			Description:    req.Description,
+			ComposeContent: req.ComposeContent,
+			TunnelToken:    tunnelToken,
+			TunnelID:       tunnelID,
+			TunnelDomain:   publicURL,
+			PublicURL:      publicURL,
+			Status:         "stopped",
+			ErrorMessage:   nil,
+			NodeID:         s.config.Node.ID,
+			CreatedAt:      time.Now(),
+			UpdatedAt:      time.Now(),
+		}
+	} else {
+		// No tunnel created, use normal flow
+		app = db.NewApp(req.Name, req.Description, req.ComposeContent)
+		app.TunnelToken = tunnelToken
+		app.TunnelID = tunnelID
+		app.TunnelDomain = publicURL
+		app.PublicURL = publicURL
+		app.Status = "stopped"
+		app.ErrorMessage = nil
+		app.NodeID = s.config.Node.ID
+		app.UpdatedAt = time.Now()
+	}
 
 	if err := s.database.CreateApp(app); err != nil {
 		s.logger.ErrorContext(ctx, "failed to create app in database", "app", req.Name, "error", err)
@@ -190,15 +253,38 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 		return nil, domain.WrapContainerOperationFailed("create app directory", err)
 	}
 
-	// Update tunnel metadata with correct appID if Cloudflare tunnel was created
-	if tunnelID != "" && tunnelToken != "" {
-		tunnel := db.NewCloudflareTunnel(app.ID, tunnelID, req.Name, tunnelToken, *settings.CloudflareAccountID)
+	// Note: Tunnel metadata is already created by the provider during CreateTunnel() call
+	// The provider handles its own database table, so we don't need to create it here
+	s.logger.DebugContext(ctx, "tunnel metadata handled by provider", "has_tunnel", tunnelID != "")
 
-		if err := s.database.CreateCloudflareTunnel(tunnel); err != nil {
-			s.logger.ErrorContext(ctx, "failed to create tunnel metadata in database", "appID", app.ID, "error", err)
-			// Continue despite the error
-		} else {
-			s.logger.InfoContext(ctx, "tunnel metadata created successfully", "appID", app.ID, "tunnelID", tunnelID)
+	// Apply ingress rules if provided and tunnel was created (before auto-start)
+	if len(req.IngressRules) > 0 && createdTunnelAppID != "" {
+		s.logger.InfoContext(ctx, "applying ingress rules", "app", req.Name, "ruleCount", len(req.IngressRules))
+
+		// Get the provider again to apply ingress rules
+		if providerConfig, err := settings.GetProviderConfig(providerName); err == nil && providerConfig != nil {
+			if provider, err := s.providerRegistry.GetProvider(providerName, providerConfig); err == nil {
+				// Check if provider supports ingress configuration
+				if ingressProvider, ok := provider.(tunnel.IngressProvider); ok {
+					if err := ingressProvider.UpdateIngress(ctx, createdTunnelAppID, req.IngressRules); err != nil {
+						s.logger.ErrorContext(ctx, "failed to apply ingress rules", "provider", providerName, "app", req.Name, "error", err)
+						// Don't fail app creation if ingress update fails
+					} else {
+						s.logger.InfoContext(ctx, "ingress rules applied successfully", "provider", providerName, "app", req.Name)
+						
+						// Reload app from database to get updated tunnel_domain and public_url
+						// UpdateIngress may have updated these fields via the tunnel provider
+						if refreshedApp, err := s.database.GetApp(app.ID); err == nil {
+							app = refreshedApp
+							s.logger.DebugContext(ctx, "reloaded app after ingress update", "app", req.Name, "public_url", app.PublicURL)
+						} else {
+							s.logger.WarnContext(ctx, "failed to reload app after ingress update", "app", req.Name, "error", err)
+						}
+					}
+				} else {
+					s.logger.WarnContext(ctx, "provider does not support ingress configuration", "provider", providerName)
+				}
+			}
 		}
 	}
 
@@ -225,26 +311,13 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 				s.logger.ErrorContext(ctx, "failed to update app status after auto-start", "app", app.Name, "error", err)
 			}
 
-			// Apply ingress rules if provided
-			if len(req.IngressRules) > 0 && tunnelID != "" && settings.CloudflareAPIToken != nil && settings.CloudflareAccountID != nil {
-				s.logger.InfoContext(ctx, "applying ingress rules after app start", "app", req.Name, "ruleCount", len(req.IngressRules))
-
-				// Convert db.IngressRule to cloudflare.IngressRule and ensure catch-all rule
-				cfRules := cloudflare.ConvertToCloudflareRules(req.IngressRules)
-				cfRules = cloudflare.EnsureCatchAllRule(cfRules)
-
-				tunnelManager := cloudflare.NewTunnelManager(*settings.CloudflareAPIToken, *settings.CloudflareAccountID, s.database)
-				if err := tunnelManager.UpdateTunnelIngress(tunnelID, cfRules, "", ""); err != nil {
-					s.logger.ErrorContext(ctx, "failed to apply ingress rules", "app", req.Name, "error", err)
-					// Don't fail app creation if ingress update fails
+			// Restart tunnel container to pick up ingress configuration if app was auto-started
+			if len(req.IngressRules) > 0 && createdTunnelAppID != "" {
+				s.logger.InfoContext(ctx, "restarting tunnel container after auto-start", "app", req.Name)
+				if err := s.dockerManager.RestartTunnelService(app.Name); err != nil {
+					s.logger.WarnContext(ctx, "failed to restart tunnel container, ingress rules updated but container restart may be required", "app", req.Name, "appID", app.ID, "error", err)
 				} else {
-					// Restart cloudflared container to pick up new ingress configuration
-					// This is a best-effort operation - we don't fail the app creation if it fails
-					if err := s.dockerManager.RestartCloudflared(app.Name); err != nil {
-						s.logger.WarnContext(ctx, "failed to restart cloudflared container, ingress rules updated but container restart may be required", "app", req.Name, "appID", app.ID, "error", err)
-					} else {
-						s.logger.InfoContext(ctx, "cloudflared container restarted successfully after ingress update", "app", req.Name, "appID", app.ID)
-					}
+					s.logger.InfoContext(ctx, "tunnel container restarted successfully after ingress update", "app", req.Name, "appID", app.ID)
 				}
 			}
 		}
@@ -277,7 +350,10 @@ func (s *appService) GetApp(ctx context.Context, appID string, nodeID string) (*
 		return nil, err
 	}
 
-	return result.(*db.App), nil
+	app := result.(*db.App)
+	// Set the node_id for consistency with ListApps
+	app.NodeID = nodeID
+	return app, nil
 }
 
 // ListApps retrieves all apps
@@ -357,7 +433,7 @@ func (s *appService) UpdateApp(ctx context.Context, appID string, nodeID string,
 		return nil, domain.WrapAppNotFound(appID, err)
 	}
 
-	// Get Cloudflare settings
+	// Get settings
 	settings, err := s.settingsManager.GetSettings()
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to get settings", "error", err)
@@ -370,34 +446,49 @@ func (s *appService) UpdateApp(ctx context.Context, appID string, nodeID string,
 		composeContent = req.ComposeContent
 	}
 
-	// If Cloudflare is configured and app has a tunnel token, ensure cloudflared is in the compose
-	if settings.CloudflareAPIToken != nil && settings.CloudflareAccountID != nil &&
-		*settings.CloudflareAPIToken != "" && *settings.CloudflareAccountID != "" &&
-		app.TunnelToken != "" {
-		compose, err := docker.ParseCompose([]byte(composeContent))
-		if err != nil {
-			s.logger.WarnContext(ctx, "invalid compose file", "appID", appID, "error", err)
-			return nil, domain.WrapComposeInvalid(err)
-		}
+	// If app has a tunnel token, ensure tunnel container is in the compose using provider abstraction
+	if app.TunnelToken != "" {
+		providerName := settings.GetActiveProviderName()
+		providerConfig, err := settings.GetProviderConfig(providerName)
+		
+		if err == nil && providerConfig != nil {
+			provider, err := s.providerRegistry.GetProvider(providerName, providerConfig)
+			if err == nil {
+				// Check if provider needs container injection
+				if containerProvider, ok := provider.(tunnel.ContainerProvider); ok {
+					compose, err := docker.ParseCompose([]byte(composeContent))
+					if err != nil {
+						s.logger.WarnContext(ctx, "invalid compose file", "appID", appID, "error", err)
+						return nil, domain.WrapComposeInvalid(err)
+					}
 
-		// Extract network and inject cloudflared
-		networks := docker.ExtractNetworks(compose)
-		network := ""
-		if len(networks) > 0 {
-			network = networks[0]
-		}
+					containerConfig := containerProvider.GetContainerConfig(app.TunnelToken, app.Name)
+					if containerConfig != nil {
+						// Extract network
+						networks := docker.ExtractNetworks(compose)
+						network := ""
+						if len(networks) > 0 {
+							network = networks[0]
+						}
 
-		if err := docker.InjectCloudflared(compose, app.Name, app.TunnelToken, network); err != nil {
-			s.logger.ErrorContext(ctx, "failed to inject cloudflared service", "appID", appID, "error", err)
-			return nil, fmt.Errorf("failed to inject cloudflared service: %w", err)
-		}
+						injected, err := docker.InjectTunnelContainer(compose, app.Name, containerConfig, network)
+						if err != nil {
+							s.logger.ErrorContext(ctx, "failed to inject tunnel container", "appID", appID, "error", err)
+							return nil, fmt.Errorf("failed to inject tunnel container: %w", err)
+						}
 
-		composeBytes, err := docker.MarshalComposeFile(compose)
-		if err != nil {
-			s.logger.ErrorContext(ctx, "failed to marshal compose file", "appID", appID, "error", err)
-			return nil, fmt.Errorf("failed to marshal compose file: %w", err)
+						if injected {
+							composeBytes, err := docker.MarshalComposeFile(compose)
+							if err != nil {
+								s.logger.ErrorContext(ctx, "failed to marshal compose file", "appID", appID, "error", err)
+								return nil, fmt.Errorf("failed to marshal compose file: %w", err)
+							}
+							composeContent = string(composeBytes)
+						}
+					}
+				}
+			}
 		}
-		composeContent = string(composeBytes)
 	}
 
 	if req.Name != "" {
@@ -702,91 +793,6 @@ func (s *appService) UpdateAppContainers(ctx context.Context, appID string, node
 	}
 
 	s.logger.InfoContext(ctx, "app containers updated successfully", "app", app.Name, "appID", appID)
-	return app, nil
-}
-
-// RepairApp repairs an app's compose file (e.g., adds missing cloudflared token)
-func (s *appService) RepairApp(ctx context.Context, appID string) (*db.App, error) {
-	s.logger.InfoContext(ctx, "repairing app", "appID", appID)
-
-	app, err := s.database.GetApp(appID)
-	if err != nil {
-		s.logger.DebugContext(ctx, "app not found for repair", "appID", appID)
-		return nil, domain.WrapAppNotFound(appID, err)
-	}
-
-	// Get Cloudflare settings
-	settings, err := s.settingsManager.RequireCloudflareSettings()
-	if err != nil {
-		s.logger.ErrorContext(ctx, "failed to get settings", "error", err)
-		return nil, err
-	}
-
-	// Only repair if app has tunnel ID
-	if app.TunnelID == "" {
-		return nil, fmt.Errorf("cannot repair: no tunnel ID")
-	}
-
-	// If tunnel token is already in database, no repair needed
-	if app.TunnelToken != "" {
-		s.logger.InfoContext(ctx, "app already repaired - tunnel token exists", "appID", appID)
-		return app, nil
-	}
-
-	// Fetch tunnel token from Cloudflare
-	cfManager := cloudflare.NewManager(*settings.CloudflareAPIToken, *settings.CloudflareAccountID)
-	tunnelToken, err := cfManager.GetTunnelToken(app.TunnelID)
-	if err != nil {
-		s.logger.ErrorContext(ctx, "failed to get tunnel token from Cloudflare", "appID", appID, "tunnelID", app.TunnelID, "error", err)
-		return nil, fmt.Errorf("failed to get tunnel token from Cloudflare: %w", err)
-	}
-
-	// Update database with tunnel token
-	app.TunnelToken = tunnelToken
-	app.UpdatedAt = time.Now()
-	if err := s.database.UpdateApp(app); err != nil {
-		s.logger.ErrorContext(ctx, "failed to update app with tunnel token", "appID", appID, "error", err)
-		return nil, domain.WrapDatabaseOperation("update app", err)
-	}
-
-	// Parse existing compose content
-	compose, err := docker.ParseCompose([]byte(app.ComposeContent))
-	if err != nil {
-		s.logger.WarnContext(ctx, "invalid compose file", "appID", appID, "error", err)
-		return nil, domain.WrapComposeInvalid(err)
-	}
-
-	// Extract network and inject cloudflared with proper token
-	networks := docker.ExtractNetworks(compose)
-	network := ""
-	if len(networks) > 0 {
-		network = networks[0]
-	}
-
-	if err := docker.InjectCloudflared(compose, app.Name, tunnelToken, network); err != nil {
-		s.logger.ErrorContext(ctx, "failed to inject cloudflared service", "appID", appID, "error", err)
-		return nil, fmt.Errorf("failed to inject cloudflared service: %w", err)
-	}
-
-	composeBytes, err := docker.MarshalComposeFile(compose)
-	if err != nil {
-		s.logger.ErrorContext(ctx, "failed to marshal compose file", "appID", appID, "error", err)
-		return nil, fmt.Errorf("failed to marshal compose file: %w", err)
-	}
-
-	app.ComposeContent = string(composeBytes)
-	if err := s.database.UpdateApp(app); err != nil {
-		s.logger.ErrorContext(ctx, "failed to update compose content", "appID", appID, "error", err)
-		return nil, domain.WrapDatabaseOperation("update app", err)
-	}
-
-	// Update compose file on disk
-	if err := s.dockerManager.WriteComposeFile(app.Name, app.ComposeContent); err != nil {
-		s.logger.ErrorContext(ctx, "failed to update compose file", "app", app.Name, "error", err)
-		return nil, domain.WrapContainerOperationFailed("write compose file", err)
-	}
-
-	s.logger.InfoContext(ctx, "app repaired successfully", "app", app.Name, "appID", appID)
 	return app, nil
 }
 

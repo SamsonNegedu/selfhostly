@@ -26,8 +26,3 @@ func NewRealHTTPClient() *RealHTTPClient {
 func (r *RealHTTPClient) Do(req *http.Request) (*http.Response, error) {
 	return r.client.Do(req)
 }
-
-// NewHTTPClient creates a new http.Client (for backward compatibility)
-func NewHTTPClient() *http.Client {
-	return &http.Client{}
-}

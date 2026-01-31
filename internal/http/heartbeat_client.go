@@ -20,6 +20,7 @@ type HeartbeatClient struct {
 	mu              sync.Mutex
 	wasDisconnected bool
 	failureCount    int
+	onReconnect     func(context.Context) error // Callback for reconnection events
 }
 
 // Config holds heartbeat configuration
@@ -31,6 +32,7 @@ type Config struct {
 	MaxInterval       time.Duration
 	MaxRetries        int
 	HeartbeatInterval time.Duration
+	OnReconnect       func(context.Context) error // Callback for reconnection events
 }
 
 // NewHeartbeatClient creates a new heartbeat client
@@ -49,9 +51,10 @@ func NewHeartbeatClient(config *Config) *HeartbeatClient {
 	}
 
 	return &HeartbeatClient{
-		config: config,
-		client: &http.Client{Timeout: 10 * time.Second},
-		stopCh: make(chan struct{}),
+		config:      config,
+		client:      &http.Client{Timeout: 10 * time.Second},
+		stopCh:      make(chan struct{}),
+		onReconnect: config.OnReconnect,
 	}
 }
 
@@ -71,6 +74,18 @@ func (h *HeartbeatClient) Start(ctx context.Context) {
 
 	// Initial delay before first heartbeat
 	time.Sleep(2 * time.Second)
+
+	// Trigger initial settings sync on startup
+	if h.onReconnect != nil {
+		go func() {
+			slog.Info("Initial settings sync on startup")
+			if err := h.onReconnect(ctx); err != nil {
+				slog.Error("Failed initial settings sync", "error", err)
+			} else {
+				slog.Info("Initial settings synced successfully")
+			}
+		}()
+	}
 
 	go h.runHeartbeatLoop(ctx)
 }
@@ -251,6 +266,10 @@ func (s *Server) sendPeriodicHeartbeats() {
 		MaxInterval:       5 * time.Minute,
 		MaxRetries:        10,
 		HeartbeatInterval: 60 * time.Second,
+		OnReconnect: func(ctx context.Context) error {
+			// Sync settings from primary node
+			return s.nodeService.SyncSettingsFromPrimary(ctx)
+		},
 	}
 
 	heartbeatClient := NewHeartbeatClient(config)

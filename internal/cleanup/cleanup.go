@@ -1,6 +1,7 @@
 package cleanup
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"time"
@@ -8,6 +9,7 @@ import (
 	"github.com/selfhostly/internal/cloudflare"
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/docker"
+	"github.com/selfhostly/internal/domain"
 )
 
 // CleanupResult represents the result of a cleanup operation
@@ -32,7 +34,8 @@ type CleanupManager struct {
 	dockerManager  *docker.Manager
 	database       *db.DB
 	settings       *db.Settings
-	tunnelManager  *cloudflare.TunnelManager
+	tunnelManager  *cloudflare.TunnelManager // DEPRECATED: for backward compatibility
+	tunnelService  domain.TunnelService      // NEW: provider-agnostic
 	startTime      time.Time
 	results        []CleanupResult
 	operationCount int
@@ -71,48 +74,39 @@ func (cm *CleanupManager) CleanupApp(app *db.App) ([]CleanupResult, error) {
 			},
 		},
 		{
-			Name: "Clean up Cloudflare DNS records",
-			Executor: func() error {
-				if app.TunnelID == "" {
-					return nil // No tunnel to clean up
-				}
-				return cm.tunnelManager.ApiManager.DeleteDNSRecordsForTunnel(app.TunnelID)
-			},
-			OnSuccess: func() {
-				slog.Info("Successfully cleaned up Cloudflare DNS records", "app", app.Name, "tunnelID", app.TunnelID)
-			},
-			OnError: func(err error) {
-				slog.Warn("Failed to clean up Cloudflare DNS records, continuing anyway", "app", app.Name, "tunnelID", app.TunnelID, "error", err)
-			},
-		},
-		{
-			Name: "Delete Cloudflare tunnel from API",
+			Name: "Delete tunnel (provider-agnostic)",
 			Executor: func() error {
 				if app.TunnelID == "" {
 					return nil // No tunnel to delete
 				}
-				return cm.tunnelManager.ApiManager.DeleteTunnel(app.TunnelID)
-			},
-			OnSuccess: func() {
-				slog.Info("Successfully deleted Cloudflare tunnel from API", "app", app.Name, "tunnelID", app.TunnelID)
-			},
-			OnError: func(err error) {
-				slog.Warn("Failed to delete Cloudflare tunnel from API, continuing anyway", "app", app.Name, "tunnelID", app.TunnelID, "error", err)
-			},
-		},
-		{
-			Name: "Delete Cloudflare tunnel from database",
-			Executor: func() error {
-				if app.TunnelID == "" {
-					return nil // No tunnel to delete
+
+				// Use tunnel service if available (provider-agnostic)
+				if cm.tunnelService != nil {
+					ctx := context.Background()
+					return cm.tunnelService.DeleteTunnel(ctx, app.ID, app.NodeID)
 				}
-				return cm.tunnelManager.DeleteTunnelByAppID(app.ID)
+
+				// Fallback to old cloudflare manager for backward compatibility
+				if cm.tunnelManager != nil {
+					// DNS cleanup
+					if err := cm.tunnelManager.ApiManager.DeleteDNSRecordsForTunnel(app.TunnelID); err != nil {
+						slog.Warn("Failed to clean up DNS records", "app", app.Name, "error", err)
+					}
+					// API tunnel deletion
+					if err := cm.tunnelManager.ApiManager.DeleteTunnel(app.TunnelID); err != nil {
+						slog.Warn("Failed to delete tunnel from API", "app", app.Name, "error", err)
+					}
+					// Database tunnel deletion
+					return cm.tunnelManager.DeleteTunnelByAppID(app.ID)
+				}
+
+				return nil // No tunnel service or manager available
 			},
 			OnSuccess: func() {
-				slog.Info("Successfully deleted Cloudflare tunnel from database", "app", app.Name, "tunnelID", app.TunnelID)
+				slog.Info("Successfully deleted tunnel", "app", app.Name, "tunnelID", app.TunnelID)
 			},
 			OnError: func(err error) {
-				slog.Warn("Failed to delete Cloudflare tunnel from database, continuing anyway", "app", app.Name, "tunnelID", app.TunnelID, "error", err)
+				slog.Warn("Failed to delete tunnel, continuing anyway", "app", app.Name, "tunnelID", app.TunnelID, "error", err)
 			},
 		},
 		{

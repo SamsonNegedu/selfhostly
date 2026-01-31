@@ -311,10 +311,12 @@ func (s *nodeService) SyncSettingsFromPrimary(ctx context.Context) error {
 
 	s.logger.InfoContext(ctx, "syncing settings from primary node", "primaryURL", s.config.Node.PrimaryNodeURL)
 
-	// Get primary node from database
-	primaryNode, err := s.database.GetPrimaryNode()
-	if err != nil {
-		return fmt.Errorf("failed to get primary node: %w", err)
+	// Construct primary node info from config
+	// Use secondary's own credentials to authenticate with primary
+	primaryNode := &db.Node{
+		ID:          s.config.Node.ID, // Secondary's ID
+		APIEndpoint: s.config.Node.PrimaryNodeURL,
+		APIKey:      s.config.Node.APIKey, // Secondary's API key
 	}
 
 	// Fetch settings from primary
@@ -330,9 +332,11 @@ func (s *nodeService) SyncSettingsFromPrimary(ctx context.Context) error {
 		return fmt.Errorf("failed to get local settings: %w", err)
 	}
 
-	// Update only Cloudflare settings
 	localSettings.CloudflareAPIToken = settings.CloudflareAPIToken
 	localSettings.CloudflareAccountID = settings.CloudflareAccountID
+	localSettings.ActiveTunnelProvider = settings.ActiveTunnelProvider
+	localSettings.TunnelProviderConfig = settings.TunnelProviderConfig
+	localSettings.AutoStartApps = settings.AutoStartApps
 	localSettings.UpdatedAt = time.Now()
 
 	if err := s.database.UpdateSettings(localSettings); err != nil {

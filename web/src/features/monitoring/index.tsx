@@ -25,7 +25,7 @@ function Monitoring() {
     }
     const online: SystemStats[] = [];
     const offline: SystemStats[] = [];
-    
+
     statsArray.forEach(stat => {
       if (stat.status === 'online') {
         online.push(stat);
@@ -33,7 +33,7 @@ function Monitoring() {
         offline.push(stat);
       }
     });
-    
+
     return { onlineNodes: online, offlineNodes: offline };
   }, [statsArray]);
 
@@ -137,7 +137,7 @@ function Monitoring() {
       <div>
         <h1 className="text-2xl sm:text-3xl font-bold">System Monitoring</h1>
         <p className="text-muted-foreground mt-1 sm:mt-2 text-sm sm:text-base">
-          {nodeNames.length > 0 
+          {nodeNames.length > 0
             ? `Real-time monitoring of ${nodeNames.length > 1 ? `${nodeNames.length} nodes` : nodeNames[0]}`
             : 'Real-time monitoring'
           } • Updated {secondsAgo > 0 ? `${secondsAgo}s ago` : 'just now'}
@@ -204,7 +204,7 @@ function Monitoring() {
             <h2 className="text-xl sm:text-2xl font-bold">
               All Containers ({filteredContainers.length})
             </h2>
-            
+
             {/* Status Filter Buttons - Compact on mobile */}
             {allContainers.length > 0 && (
               <div className="flex items-center gap-1.5 sm:gap-2 bg-muted/50 rounded-lg p-1 w-fit">

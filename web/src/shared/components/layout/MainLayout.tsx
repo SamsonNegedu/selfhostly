@@ -39,10 +39,10 @@ function MainLayout({ children }: MainLayoutProps) {
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={handleToggleCollapse}
       />
-      
+
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header onMenuToggle={handleMenuToggle} />
-        
+
         <main className="flex-1 overflow-y-auto bg-background">
           <div className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 md:py-8">
             {children}

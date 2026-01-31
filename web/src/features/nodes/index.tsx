@@ -99,7 +99,7 @@ export function NodesPage() {
                     <Server className="h-5 w-5 text-muted-foreground flex-shrink-0" />
                     <h3 className="font-semibold text-base truncate flex-1">{node.name}</h3>
                   </div>
-                  
+
                   {/* Badges Row */}
                   <div className="flex items-center gap-2 flex-wrap">
                     {getStatusBadge(node.status)}
@@ -109,7 +109,7 @@ export function NodesPage() {
                       <Badge variant="secondary">Secondary</Badge>
                     )}
                   </div>
-                  
+
                   {/* Details Section */}
                   <div className="space-y-2 text-sm">
                     <div>
@@ -122,7 +122,7 @@ export function NodesPage() {
                     </div>
                   </div>
                 </div>
-                
+
                 {/* Delete Button - Only for secondary nodes */}
                 {!node.is_primary && (
                   <div className="border-t bg-muted/30 px-4 py-3">
@@ -140,7 +140,7 @@ export function NodesPage() {
               </Card>
             ))}
           </div>
-          
+
           {/* Desktop Table View */}
           <Card className="hidden sm:block">
             <div className="overflow-x-auto">

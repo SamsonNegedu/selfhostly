@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/selfhostly/internal/db"
+	"github.com/selfhostly/internal/domain"
 )
 
 // Client handles communication with other nodes
@@ -446,6 +447,295 @@ func (c *Client) DeleteContainer(node *db.Node, containerID string) error {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to delete container on node %s: %w", node.Name, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("node returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// GetComposeVersions fetches all compose versions for an app from a remote node
+func (c *Client) GetComposeVersions(node *db.Node, appID string) ([]*db.ComposeVersion, error) {
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/internal/apps/%s/compose/versions", node.APIEndpoint, appID), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.setNodeAuthHeaders(req, node)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch compose versions from node %s: %w", node.Name, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("node returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var versions []*db.ComposeVersion
+	if err := json.NewDecoder(resp.Body).Decode(&versions); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return versions, nil
+}
+
+// GetComposeVersion fetches a specific compose version for an app from a remote node
+func (c *Client) GetComposeVersion(node *db.Node, appID string, version int) (*db.ComposeVersion, error) {
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/internal/apps/%s/compose/versions/%d", node.APIEndpoint, appID, version), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.setNodeAuthHeaders(req, node)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch compose version from node %s: %w", node.Name, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("node returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var composeVersion *db.ComposeVersion
+	if err := json.NewDecoder(resp.Body).Decode(&composeVersion); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return composeVersion, nil
+}
+
+// RollbackComposeVersion rolls back an app to a specific compose version on a remote node
+func (c *Client) RollbackComposeVersion(node *db.Node, appID string, version int, reason *string, changedBy *string) (*db.ComposeVersion, error) {
+	// Prepare request body
+	body := make(map[string]interface{})
+	if reason != nil {
+		body["change_reason"] = *reason
+	}
+	if changedBy != nil {
+		body["changed_by"] = *changedBy
+	}
+
+	jsonData, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/internal/apps/%s/compose/rollback/%d", node.APIEndpoint, appID, version), bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	c.setNodeAuthHeaders(req, node)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to rollback compose version on node %s: %w", node.Name, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("node returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		NewVersion *db.ComposeVersion `json:"new_version"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return result.NewVersion, nil
+}
+
+// GetAppLogs fetches logs for an app from a remote node
+func (c *Client) GetAppLogs(node *db.Node, appID string) ([]byte, error) {
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/internal/apps/%s/logs", node.APIEndpoint, appID), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.setNodeAuthHeaders(req, node)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch app logs from node %s: %w", node.Name, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("node returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	logs, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	return logs, nil
+}
+
+// GetAppStats fetches stats for an app from a remote node
+func (c *Client) GetAppStats(node *db.Node, appID string) (*domain.AppStats, error) {
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/internal/apps/%s/stats", node.APIEndpoint, appID), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.setNodeAuthHeaders(req, node)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch app stats from node %s: %w", node.Name, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("node returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var stats *domain.AppStats
+	if err := json.NewDecoder(resp.Body).Decode(&stats); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return stats, nil
+}
+
+// GetTunnelByAppID fetches tunnel for an app from a remote node
+func (c *Client) GetTunnelByAppID(node *db.Node, appID string) (*db.CloudflareTunnel, error) {
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/internal/tunnels/apps/%s", node.APIEndpoint, appID), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.setNodeAuthHeaders(req, node)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch tunnel from node %s: %w", node.Name, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("node returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var tunnel *db.CloudflareTunnel
+	if err := json.NewDecoder(resp.Body).Decode(&tunnel); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return tunnel, nil
+}
+
+// SyncTunnelStatus syncs tunnel status on a remote node
+func (c *Client) SyncTunnelStatus(node *db.Node, appID string) error {
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/internal/tunnels/apps/%s/sync", node.APIEndpoint, appID), nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.setNodeAuthHeaders(req, node)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to sync tunnel on node %s: %w", node.Name, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("node returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// UpdateTunnelIngress updates tunnel ingress rules on a remote node
+func (c *Client) UpdateTunnelIngress(node *db.Node, appID string, req domain.UpdateIngressRequest) error {
+	jsonData, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequest("PUT", fmt.Sprintf("%s/api/internal/tunnels/apps/%s/ingress", node.APIEndpoint, appID), bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	c.setNodeAuthHeaders(httpReq, node)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("failed to update tunnel ingress on node %s: %w", node.Name, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("node returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// CreateTunnelDNSRecord creates a DNS record for a tunnel on a remote node
+func (c *Client) CreateTunnelDNSRecord(node *db.Node, appID string, req domain.CreateDNSRequest) error {
+	jsonData, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequest("POST", fmt.Sprintf("%s/api/internal/tunnels/apps/%s/dns", node.APIEndpoint, appID), bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	c.setNodeAuthHeaders(httpReq, node)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("failed to create DNS record on node %s: %w", node.Name, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("node returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// DeleteTunnel deletes a tunnel on a remote node
+func (c *Client) DeleteTunnel(node *db.Node, appID string) error {
+	req, err := http.NewRequest("DELETE", fmt.Sprintf("%s/api/internal/tunnels/apps/%s", node.APIEndpoint, appID), nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.setNodeAuthHeaders(req, node)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to delete tunnel on node %s: %w", node.Name, err)
 	}
 	defer resp.Body.Close()
 

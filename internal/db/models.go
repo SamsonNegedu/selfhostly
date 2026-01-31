@@ -79,10 +79,23 @@ type User struct {
 // Settings holds application settings
 type Settings struct {
 	ID                  string    `json:"id" db:"id"`
-	CloudflareAPIToken  *string   `json:"cloudflare_api_token" db:"cloudflare_api_token"`
-	CloudflareAccountID *string   `json:"cloudflare_account_id" db:"cloudflare_account_id"`
-	AutoStartApps       bool      `json:"auto_start_apps" db:"auto_start_apps"`
-	UpdatedAt           time.Time `json:"updated_at" db:"updated_at"`
+	
+	// DEPRECATED: Keep for backward compatibility during migration
+	// Use TunnelProviderConfig instead for new implementations
+	CloudflareAPIToken  *string   `json:"cloudflare_api_token,omitempty" db:"cloudflare_api_token"`
+	CloudflareAccountID *string   `json:"cloudflare_account_id,omitempty" db:"cloudflare_account_id"`
+	
+	// New multi-provider tunnel configuration
+	// ActiveTunnelProvider identifies which tunnel provider is currently active
+	// (e.g., "cloudflare", "ngrok", "tailscale")
+	ActiveTunnelProvider *string   `json:"active_tunnel_provider,omitempty" db:"active_tunnel_provider"`
+	
+	// TunnelProviderConfig stores provider-specific configuration as JSON
+	// Structure: {"cloudflare": {"api_token": "...", "account_id": "..."}, "ngrok": {"auth_token": "..."}}
+	TunnelProviderConfig *string   `json:"tunnel_provider_config,omitempty" db:"tunnel_provider_config"`
+	
+	AutoStartApps        bool      `json:"auto_start_apps" db:"auto_start_apps"`
+	UpdatedAt            time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // NewNode creates a new Node with a generated UUID (or uses provided ID if not empty)

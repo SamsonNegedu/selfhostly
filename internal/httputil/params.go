@@ -43,15 +43,6 @@ func ValidateAndGetContainerID(c *gin.Context) (string, error) {
 	return id, nil
 }
 
-// ValidateAndGetAppIDFromAppId validates and returns app ID from appId parameter
-func ValidateAndGetAppIDFromAppId(c *gin.Context) (string, error) {
-	id := c.Param("appId")
-	if id == "" {
-		return "", fmt.Errorf("invalid app ID")
-	}
-	return id, nil
-}
-
 // ValidateAndGetVersion validates and returns version number from URL parameter
 func ValidateAndGetVersion(c *gin.Context) (int, error) {
 	versionParam := c.Param("version")

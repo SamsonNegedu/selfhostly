@@ -237,6 +237,23 @@ func (m *Manager) RestartCloudflared(name string) error {
 	return nil
 }
 
+// RestartTunnelService restarts the generic tunnel service
+func (m *Manager) RestartTunnelService(name string) error {
+	appPath := filepath.Join(m.appsDir, name)
+	composeFile := "docker-compose.yml"
+
+	slog.Info("restarting tunnel service", "app", name, "appPath", appPath, "command", "docker compose restart tunnel")
+
+	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, "docker", "compose", "-f", composeFile, "restart", "tunnel")
+	if err != nil {
+		slog.Error("failed to restart tunnel service", "app", name, "error", err, "output", string(output))
+		return fmt.Errorf("failed to restart tunnel service: %w\nOutput: %s", err, string(output))
+	}
+
+	slog.Info("tunnel service restarted successfully", "app", name, "output", string(output))
+	return nil
+}
+
 // RestartContainer restarts a specific container by ID
 func (m *Manager) RestartContainer(containerID string) error {
 	slog.Info("restarting container", "containerID", containerID)

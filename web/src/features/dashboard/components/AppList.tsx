@@ -45,6 +45,12 @@ function AppList({ filteredApps }: AppListProps) {
             // Get the node_id from the app
             const app = apps.find(a => a.id === appId)
 
+            if (!app?.node_id) {
+                toast.error('Delete Failed', 'Unable to determine app node')
+                setAppToDelete(null)
+                return
+            }
+
             // Mark app as being deleted
             setDeletingAppId(appId)
 
@@ -52,7 +58,7 @@ function AppList({ filteredApps }: AppListProps) {
             toast.info('Deleting app', `Deleting "${appName}"...`)
 
             // Then trigger the actual deletion
-            deleteApp.mutate({ id: appId, nodeId: app?.node_id }, {
+            deleteApp.mutate({ id: appId, nodeId: app.node_id }, {
                 onSuccess: () => {
                     // Optimistically remove from local store on success
                     useAppStore.getState().removeApp(appId)
@@ -179,7 +185,7 @@ function AppList({ filteredApps }: AppListProps) {
                             )}
 
                             {/* Clickable Card Area */}
-                            <div 
+                            <div
                                 className="flex-1 flex flex-col"
                                 onClick={() => !isDeleting && navigate(`/apps/${app.id}${app.node_id ? `?node_id=${app.node_id}` : ''}`)}
                             >
@@ -188,7 +194,7 @@ function AppList({ filteredApps }: AppListProps) {
                                     {/* Title Row */}
                                     <div className="flex items-start justify-between gap-2">
                                         <CardTitle className="text-base sm:text-lg lg:text-xl font-bold truncate flex-1 pr-2">{app.name}</CardTitle>
-                                        
+
                                         {/* Desktop Actions Menu */}
                                         <div onClick={(e) => e.stopPropagation()} className="hidden sm:block">
                                             <SimpleDropdown
@@ -249,7 +255,7 @@ function AppList({ filteredApps }: AppListProps) {
                                             </SimpleDropdown>
                                         </div>
                                     </div>
-                                    
+
                                     {/* Status and Quick Actions Row */}
                                     <div className="flex items-center gap-2 flex-wrap">
                                         <div

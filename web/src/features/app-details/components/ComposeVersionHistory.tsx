@@ -9,7 +9,7 @@ import { ComposeVersion } from '@/shared/types/api'
 
 interface ComposeVersionHistoryProps {
     appId: string;
-    nodeId?: string;
+    nodeId: string;
     onVersionSelect?: (version: ComposeVersion) => void;
 }
 

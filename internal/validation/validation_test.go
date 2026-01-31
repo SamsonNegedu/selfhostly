@@ -204,38 +204,3 @@ func TestValidateDescription(t *testing.T) {
 	}
 }
 
-func TestValidateHostname(t *testing.T) {
-	tests := []struct {
-		name      string
-		hostname  string
-		shouldErr bool
-	}{
-		// Valid hostnames
-		{"simple domain", "example.com", false},
-		{"subdomain", "app.example.com", false},
-		{"with hyphen", "my-app.example.com", false},
-		{"deep subdomain", "a.b.c.example.com", false},
-		
-		// Invalid hostnames
-		{"empty", "", true},
-		{"starts with hyphen", "-example.com", true},
-		{"ends with hyphen", "example-.com", true},
-		{"double hyphen", "ex--ample.com", false}, // Double hyphens are valid in DNS
-		{"special characters", "app@example.com", true},
-		{"spaces", "my app.com", true},
-		{"too long", strings.Repeat("a", 254) + ".com", true},
-		{"label too long", strings.Repeat("a", 64) + ".com", true},
-	}
-	
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateHostname(tt.hostname)
-			if tt.shouldErr && err == nil {
-				t.Errorf("expected error but got none for hostname: %s", tt.hostname)
-			}
-			if !tt.shouldErr && err != nil {
-				t.Errorf("unexpected error for valid hostname %s: %v", tt.hostname, err)
-			}
-		})
-	}
-}

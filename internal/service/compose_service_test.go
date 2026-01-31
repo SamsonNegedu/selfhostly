@@ -10,6 +10,8 @@ import (
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/docker"
 	"github.com/selfhostly/internal/domain"
+	"github.com/selfhostly/internal/node"
+	"github.com/selfhostly/internal/routing"
 )
 
 // setupTestComposeService creates a test compose service with mocked dependencies
@@ -57,7 +59,9 @@ func setupTestComposeServiceWithAppsDir(t *testing.T, mockExecutor docker.Comman
 	}
 
 	logger := slog.Default()
-	service := NewComposeService(database, dockerManager, logger)
+	nodeClient := node.NewClient()
+	router := routing.NewNodeRouter(database, nodeClient, testNodeID, logger)
+	service := NewComposeService(database, dockerManager, router, nodeClient, logger)
 
 	cleanup := func() {
 		database.Close()
@@ -103,7 +107,7 @@ func TestComposeService_GetVersions(t *testing.T) {
 	}
 
 	// Get versions
-	versions, err := service.GetVersions(ctx, app.ID)
+	versions, err := service.GetVersions(ctx, app.ID, testNodeID)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -130,14 +134,21 @@ func TestComposeService_GetVersions_Empty(t *testing.T) {
 
 	ctx := context.Background()
 
+	nodes, err := database.GetAllNodes()
+	if err != nil || len(nodes) == 0 {
+		t.Fatalf("Failed to get test node: %v", err)
+	}
+	testNodeID := nodes[0].ID
+
 	// Create app without versions
 	app := db.NewApp("test-app", "Test application", "version: '3'\nservices:\n  web:\n    image: nginx:latest")
+	app.NodeID = testNodeID
 	if err := database.CreateApp(app); err != nil {
 		t.Fatalf("Failed to create app: %v", err)
 	}
 
 	// Get versions
-	versions, err := service.GetVersions(ctx, app.ID)
+	versions, err := service.GetVersions(ctx, app.ID, testNodeID)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -154,13 +165,19 @@ func TestComposeService_GetVersions_Empty(t *testing.T) {
 
 func TestComposeService_GetVersions_NotFound(t *testing.T) {
 	mockExecutor := docker.NewMockCommandExecutor()
-	service, _, cleanup := setupTestComposeService(t, mockExecutor)
+	service, database, cleanup := setupTestComposeService(t, mockExecutor)
 	defer cleanup()
 
 	ctx := context.Background()
 
+	nodes, err := database.GetAllNodes()
+	if err != nil || len(nodes) == 0 {
+		t.Fatalf("Failed to get test node: %v", err)
+	}
+	testNodeID := nodes[0].ID
+
 	// Try to get versions for non-existent app
-	_, err := service.GetVersions(ctx, "non-existent-id")
+	_, err = service.GetVersions(ctx, "non-existent-id", testNodeID)
 	if err == nil {
 		t.Error("Expected error for non-existent app, got nil")
 	}
@@ -199,7 +216,7 @@ func TestComposeService_GetVersion(t *testing.T) {
 	}
 
 	// Get specific version
-	retrievedVersion, err := service.GetVersion(ctx, app.ID, 1)
+	retrievedVersion, err := service.GetVersion(ctx, app.ID, 1, testNodeID)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -236,7 +253,7 @@ func TestComposeService_GetVersion_NotFound(t *testing.T) {
 	}
 
 	// Try to get non-existent version
-	_, err = service.GetVersion(ctx, app.ID, 999)
+	_, err = service.GetVersion(ctx, app.ID, 999, testNodeID)
 	if err == nil {
 		t.Error("Expected error for non-existent version, got nil")
 	}
@@ -253,8 +270,15 @@ func TestComposeService_RollbackToVersion(t *testing.T) {
 
 	ctx := context.Background()
 
+	nodes, err := database.GetAllNodes()
+	if err != nil || len(nodes) == 0 {
+		t.Fatalf("Failed to get test node: %v", err)
+	}
+	testNodeID := nodes[0].ID
+
 	// Create app
 	app := db.NewApp("test-app", "Test application", "version: '3'\nservices:\n  web:\n    image: nginx:alpine")
+	app.NodeID = testNodeID
 	if err := database.CreateApp(app); err != nil {
 		t.Fatalf("Failed to create app: %v", err)
 	}
@@ -286,7 +310,7 @@ func TestComposeService_RollbackToVersion(t *testing.T) {
 
 	// Rollback to version 1
 	rollbackReason := "Rolling back to stable version"
-	newVersion, err := service.RollbackToVersion(ctx, app.ID, 1, &rollbackReason, nil)
+	newVersion, err := service.RollbackToVersion(ctx, app.ID, 1, testNodeID, &rollbackReason, nil)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -343,7 +367,7 @@ func TestComposeService_RollbackToVersion_NotFound(t *testing.T) {
 	}
 
 	// Try to rollback to non-existent version
-	_, err = service.RollbackToVersion(ctx, app.ID, 999, nil, nil)
+	_, err = service.RollbackToVersion(ctx, app.ID, 999, testNodeID, nil, nil)
 	if err == nil {
 		t.Error("Expected error for non-existent version, got nil")
 	}
@@ -355,13 +379,19 @@ func TestComposeService_RollbackToVersion_NotFound(t *testing.T) {
 
 func TestComposeService_RollbackToVersion_AppNotFound(t *testing.T) {
 	mockExecutor := docker.NewMockCommandExecutor()
-	service, _, cleanup := setupTestComposeService(t, mockExecutor)
+	service, database, cleanup := setupTestComposeService(t, mockExecutor)
 	defer cleanup()
 
 	ctx := context.Background()
 
+	nodes, err := database.GetAllNodes()
+	if err != nil || len(nodes) == 0 {
+		t.Fatalf("Failed to get test node: %v", err)
+	}
+	testNodeID := nodes[0].ID
+
 	// Try to rollback for non-existent app
-	_, err := service.RollbackToVersion(ctx, "non-existent-id", 1, nil, nil)
+	_, err = service.RollbackToVersion(ctx, "non-existent-id", 1, testNodeID, nil, nil)
 	if err == nil {
 		t.Error("Expected error for non-existent app, got nil")
 	}

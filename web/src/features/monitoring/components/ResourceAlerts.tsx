@@ -76,8 +76,8 @@ function ResourceAlerts({ stats }: ResourceAlertsProps) {
         <div
           key={index}
           className={`flex items-start gap-2 sm:gap-3 p-3 sm:p-4 rounded-lg border ${alert.type === 'critical'
-              ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-900/50'
-              : 'bg-yellow-50 dark:bg-yellow-900/10 border-yellow-200 dark:border-yellow-900/50'
+            ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-900/50'
+            : 'bg-yellow-50 dark:bg-yellow-900/10 border-yellow-200 dark:border-yellow-900/50'
             }`}
         >
           {alert.type === 'critical' ? (
@@ -88,8 +88,8 @@ function ResourceAlerts({ stats }: ResourceAlertsProps) {
           <div className="flex-1 min-w-0">
             <p
               className={`text-xs sm:text-sm font-medium break-words ${alert.type === 'critical'
-                  ? 'text-red-900 dark:text-red-200'
-                  : 'text-yellow-900 dark:text-yellow-200'
+                ? 'text-red-900 dark:text-red-200'
+                : 'text-yellow-900 dark:text-yellow-200'
                 }`}
             >
               {alert.message}
