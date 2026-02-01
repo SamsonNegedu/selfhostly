@@ -112,7 +112,12 @@ func Load() (*Config, error) {
 		slog.Warn("No REGISTRATION_TOKEN set - generated new token", "token", registrationToken)
 		slog.Info("Save this token to .env and share it with secondary nodes for auto-registration")
 	}
-	
+
+	authBaseURL := getEnv("AUTH_BASE_URL", "")
+	if authBaseURL == "" {
+		authBaseURL = nodeAPIEndpoint
+	}
+
 	cfg := &Config{
 		ServerAddress: getEnv("SERVER_ADDRESS", ":8080"),
 		DatabasePath:  getEnv("DATABASE_PATH", "./data/selfhostly.db"),
@@ -126,7 +131,7 @@ func Load() (*Config, error) {
 			Enabled:      authEnabled,
 			JWTSecret:    jwtSecret,
 			SecureCookie: getEnv("AUTH_SECURE_COOKIE", "false") == "true",
-			BaseURL:      nodeAPIEndpoint,
+			BaseURL:      authBaseURL,
 			GitHub: GitHubOAuthConfig{
 				ClientID:     os.Getenv("GITHUB_CLIENT_ID"),
 				ClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"),
