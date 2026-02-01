@@ -198,18 +198,33 @@ function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
                                     <ArrowRight className="h-4 w-4" />
                                 </a>
                                 <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto">
-                                    Enter your custom domain and service URL (e.g. http://vert:90) to switch. Ingress rules will be applied so the public URL is your domain, not a placeholder.
+                                    If the tunnel stops working, you can recreate it. Or switch to a custom domain for a stable URL.
                                 </p>
-                                <Button
-                                    onClick={() => {
-                                        setSwitchIngressRules([{ service: '', hostname: null, path: null }])
-                                        setSwitchFormError(null)
-                                        setShowSwitchDialog(true)
-                                    }}
-                                    className="button-press"
-                                >
-                                    Switch to custom domain
-                                </Button>
+                                <div className="flex flex-wrap gap-3 justify-center">
+                                    <Button
+                                        onClick={() => {
+                                            setQuickTunnelService('')
+                                            setQuickTunnelPort(80)
+                                            setQuickTunnelFormError(null)
+                                            setShowQuickTunnelDialog(true)
+                                        }}
+                                        variant="outline"
+                                        className="button-press"
+                                    >
+                                        <RefreshCw className="h-4 w-4 mr-2" />
+                                        Recreate Quick Tunnel
+                                    </Button>
+                                    <Button
+                                        onClick={() => {
+                                            setSwitchIngressRules([{ service: '', hostname: null, path: null }])
+                                            setSwitchFormError(null)
+                                            setShowSwitchDialog(true)
+                                        }}
+                                        className="button-press"
+                                    >
+                                        Switch to custom domain
+                                    </Button>
+                                </div>
                                 <Dialog open={showSwitchDialog} onOpenChange={(open) => { setShowSwitchDialog(open); if (!open) setSwitchFormError(null) }}>
                                     <DialogContent className="max-w-md">
                                         <DialogHeader>
@@ -308,6 +323,72 @@ function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
                                                 }}
                                             >
                                                 {switchToCustom.isPending ? 'Switching...' : 'Switch to custom domain'}
+                                            </Button>
+                                        </DialogFooter>
+                                    </DialogContent>
+                                </Dialog>
+                                <Dialog open={showQuickTunnelDialog} onOpenChange={(open) => { setShowQuickTunnelDialog(open); if (!open) setQuickTunnelFormError(null) }}>
+                                    <DialogContent className="max-w-md">
+                                        <DialogHeader>
+                                            <DialogTitle>Recreate Quick Tunnel</DialogTitle>
+                                            <DialogDescription>
+                                                Recreate the Quick Tunnel with a new temporary trycloudflare.com URL. Enter the compose service name and port that serves the app (e.g. web and 80).
+                                            </DialogDescription>
+                                        </DialogHeader>
+                                        <div className="space-y-4 py-2">
+                                            {quickTunnelFormError && (
+                                                <p className="text-sm text-destructive">{quickTunnelFormError}</p>
+                                            )}
+                                            <div>
+                                                <label className="text-xs font-medium text-muted-foreground">Service name (compose service)</label>
+                                                <Input
+                                                    value={quickTunnelService}
+                                                    onChange={(e) => setQuickTunnelService(e.target.value.trim())}
+                                                    placeholder="web"
+                                                    className="mt-1"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="text-xs font-medium text-muted-foreground">Port</label>
+                                                <Input
+                                                    type="number"
+                                                    min={1}
+                                                    max={65535}
+                                                    value={quickTunnelPort}
+                                                    onChange={(e) => setQuickTunnelPort(parseInt(e.target.value, 10) || 80)}
+                                                    className="mt-1"
+                                                />
+                                            </div>
+                                        </div>
+                                        <DialogFooter>
+                                            <Button variant="outline" onClick={() => setShowQuickTunnelDialog(false)}>Cancel</Button>
+                                            <Button
+                                                disabled={createQuickTunnel.isPending}
+                                                onClick={() => {
+                                                    if (!quickTunnelService.trim()) {
+                                                        setQuickTunnelFormError('Service name is required.')
+                                                        return
+                                                    }
+                                                    const port = Number(quickTunnelPort)
+                                                    if (port < 1 || port > 65535) {
+                                                        setQuickTunnelFormError('Port must be between 1 and 65535.')
+                                                        return
+                                                    }
+                                                    setQuickTunnelFormError(null)
+                                                    createQuickTunnel.mutate(
+                                                        { appId: appId, nodeId: nodeId, service: quickTunnelService.trim(), port },
+                                                        {
+                                                            onSuccess: () => {
+                                                                setShowQuickTunnelDialog(false)
+                                                                toast.success('Quick Tunnel recreated', 'Your app is available at the new temporary URL.')
+                                                                refetch()
+                                                            },
+                                                            onError: (e: Error) => setQuickTunnelFormError(e.message),
+                                                        }
+                                                    )
+                                                }}
+                                            >
+                                                {createQuickTunnel.isPending ? 'Recreating...' : 'Recreate Quick Tunnel'}
                                             </Button>
                                         </DialogFooter>
                                     </DialogContent>

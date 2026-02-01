@@ -130,7 +130,7 @@ func (tm *TunnelManager) GetAllActiveTunnels() ([]*db.CloudflareTunnel, error) {
 
 // mapCloudflareStatusToInternal maps Cloudflare API tunnel status to our internal status.
 // Cloudflare returns: healthy, degraded, inactive, down (see Cloudflare API docs).
-// We store: active, inactive, error so the UI can show Healthy / Inactive / Error.
+// We store: active, inactive, error for consistent status representation across the system.
 func mapCloudflareStatusToInternal(apiStatus string) string {
 	switch apiStatus {
 	case "healthy", "degraded":

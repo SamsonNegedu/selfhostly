@@ -63,14 +63,14 @@ func (m *Manager) CreateAppDirectory(name, composeContent string) error {
 // WriteComposeFile writes the compose file content to the app directory
 func (m *Manager) WriteComposeFile(name, content string) error {
 	composePath := filepath.Join(m.appsDir, name, "docker-compose.yml")
-	
+
 	slog.Info("writing compose file", "app", name, "composePath", composePath, "composeSize", len(content))
-	
+
 	if err := os.WriteFile(composePath, []byte(content), 0644); err != nil {
 		slog.Error("failed to write compose file", "app", name, "composePath", composePath, "error", err)
 		return fmt.Errorf("failed to write compose file: %w", err)
 	}
-	
+
 	slog.Info("compose file written successfully", "app", name, "composePath", composePath)
 	return nil
 }
@@ -114,16 +114,16 @@ func (m *Manager) ReconcileApp(name string) error {
 // StopApp stops the app using docker compose
 func (m *Manager) StopApp(name string) error {
 	appPath := filepath.Join(m.appsDir, name)
-	
+
 	slog.Info("stopping app", "app", name, "appPath", appPath, "command", "docker compose down")
-	
+
 	cmd := ComposeDownCommand()
 	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, cmd[0], cmd[1:]...)
 	if err != nil {
 		slog.Error("failed to stop app", "app", name, "error", err, "output", string(output))
 		return fmt.Errorf("failed to stop app: %w\nOutput: %s", err, string(output))
 	}
-	
+
 	slog.Info("app stopped successfully", "app", name, "output", string(output))
 	return nil
 }
@@ -149,9 +149,9 @@ func (m *Manager) UpdateApp(name string) error {
 	if pullErr != nil {
 		// If pull fails (e.g., older docker compose version, or all services use build),
 		// log but continue - the 'up' command will handle building if needed
-		slog.Warn("failed to pull images, continuing with update", 
-			"app", name, 
-			"error", pullErr, 
+		slog.Warn("failed to pull images, continuing with update",
+			"app", name,
+			"error", pullErr,
 			"output", string(pullOutput),
 			"note", "this is expected for services using 'build:' directives or older docker compose versions")
 	} else {
@@ -163,9 +163,9 @@ func (m *Manager) UpdateApp(name string) error {
 	upCmd := ComposeUpWithBuildCommand()
 	upOutput, upErr := m.commandExecutor.ExecuteCommandInDir(appPath, upCmd[0], upCmd[1:]...)
 	if upErr != nil {
-		slog.Error("failed to update app services", 
-			"app", name, 
-			"error", upErr, 
+		slog.Error("failed to update app services",
+			"app", name,
+			"error", upErr,
 			"output", string(upOutput),
 			"exitCode", upErr.Error())
 		return fmt.Errorf("failed to update app: %w\nCommand: docker compose -f %s up -d --build\nOutput: %s", upErr, composeFile, string(upOutput))
@@ -196,9 +196,9 @@ func (m *Manager) ForceRecreateTunnel(name string) error {
 // GetAppStatus checks the status of app containers
 func (m *Manager) GetAppStatus(name string) (string, error) {
 	appPath := filepath.Join(m.appsDir, name)
-	
+
 	slog.Debug("getting app status", "app", name, "appPath", appPath)
-	
+
 	cmd := ComposePsCommand()
 	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, cmd[0], cmd[1:]...)
 	if err != nil {
@@ -219,9 +219,9 @@ func (m *Manager) GetAppStatus(name string) (string, error) {
 // GetAppLogs fetches logs from the app
 func (m *Manager) GetAppLogs(name string) ([]byte, error) {
 	appPath := filepath.Join(m.appsDir, name)
-	
+
 	slog.Debug("fetching app logs", "app", name, "appPath", appPath, "command", "docker compose logs --tail=100")
-	
+
 	cmd := ComposeLogsCommand(100)
 	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, cmd[0], cmd[1:]...)
 	if err != nil {
@@ -253,14 +253,14 @@ func (m *Manager) GetAppLogs(name string) ([]byte, error) {
 // DeleteAppDirectory removes the app directory
 func (m *Manager) DeleteAppDirectory(name string) error {
 	appPath := filepath.Join(m.appsDir, name)
-	
+
 	slog.Info("deleting app directory", "app", name, "appPath", appPath)
-	
+
 	if err := os.RemoveAll(appPath); err != nil {
 		slog.Error("failed to delete app directory", "app", name, "appPath", appPath, "error", err)
 		return fmt.Errorf("failed to delete app directory: %w", err)
 	}
-	
+
 	slog.Info("app directory deleted successfully", "app", name, "appPath", appPath)
 	return nil
 }

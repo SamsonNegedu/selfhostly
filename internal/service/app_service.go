@@ -807,7 +807,9 @@ func (s *appService) SwitchAppToCustomTunnel(ctx context.Context, appID string, 
 }
 
 // CreateQuickTunnelForApp adds a Quick Tunnel (temporary trycloudflare.com URL) to an app that has no tunnel.
+// If the app already has a Quick Tunnel, it will be recreated with new configuration.
 func (s *appService) CreateQuickTunnelForApp(ctx context.Context, appID string, nodeID string, service string, port int) (*db.App, error) {
+	isRecreating := false
 	s.logger.InfoContext(ctx, "creating Quick Tunnel for app", "appID", appID, "nodeID", nodeID, "service", service, "port", port)
 
 	if strings.TrimSpace(service) == "" {
@@ -821,8 +823,16 @@ func (s *appService) CreateQuickTunnelForApp(ctx context.Context, appID string, 
 	if err != nil {
 		return nil, domain.WrapAppNotFound(appID, err)
 	}
-	if app.TunnelMode == constants.TunnelModeCustom || app.TunnelToken != "" {
-		return nil, domain.WrapValidationError("tunnel", fmt.Errorf("this app uses a custom domain tunnel; delete the tunnel from the Cloudflare tab first if you want a temporary Quick Tunnel URL instead"))
+	
+	// Allow recreating if already in Quick Tunnel mode, but prevent if using custom tunnel
+	if app.TunnelMode == constants.TunnelModeCustom || (app.TunnelToken != "" && app.TunnelMode != constants.TunnelModeQuick) {
+		return nil, domain.WrapValidationError("tunnel", fmt.Errorf("this app uses a custom domain tunnel; delete the existing tunnel first if you want to use a Quick Tunnel instead"))
+	}
+	
+	// Check if we're recreating an existing quick tunnel
+	if app.TunnelMode == constants.TunnelModeQuick {
+		isRecreating = true
+		s.logger.InfoContext(ctx, "recreating existing Quick Tunnel", "appID", appID)
 	}
 
 	compose, err := docker.ParseCompose([]byte(app.ComposeContent))
@@ -831,10 +841,34 @@ func (s *appService) CreateQuickTunnelForApp(ctx context.Context, appID string, 
 		return nil, domain.WrapComposeInvalid(err)
 	}
 
-	metricsPort, err := s.tunnelService.NextFreeQuickTunnelMetricsPort()
-	if err != nil {
-		s.logger.WarnContext(ctx, "failed to allocate Quick Tunnel metrics port, using fallback", "appID", appID, "error", err)
+	// If recreating, try to reuse the existing metrics port, otherwise allocate a new one
+	var metricsPort int
+	if isRecreating {
+		if existingPort, ok := docker.ExtractQuickTunnelMetricsHostPort(app.ComposeContent); ok {
+			metricsPort = existingPort
+			s.logger.InfoContext(ctx, "reusing existing Quick Tunnel metrics port", "appID", appID, "metricsPort", metricsPort)
+		} else {
+			var err error
+			metricsPort, err = s.tunnelService.NextFreeQuickTunnelMetricsPort()
+			if err != nil {
+				s.logger.WarnContext(ctx, "failed to allocate Quick Tunnel metrics port, using fallback", "appID", appID, "error", err)
+			}
+		}
+	} else {
+		var err error
+		metricsPort, err = s.tunnelService.NextFreeQuickTunnelMetricsPort()
+		if err != nil {
+			s.logger.WarnContext(ctx, "failed to allocate Quick Tunnel metrics port, using fallback", "appID", appID, "error", err)
+		}
 	}
+	
+	// Remove existing tunnel service if recreating
+	if isRecreating {
+		if removed := docker.RemoveTunnelService(compose); removed {
+			s.logger.InfoContext(ctx, "removed existing tunnel service before recreating", "app", app.Name)
+		}
+	}
+	
 	containerConfig, err := s.tunnelService.CreateQuickTunnelConfig(strings.TrimSpace(service), port, metricsPort)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Quick Tunnel config: %w", err)
@@ -844,14 +878,14 @@ func (s *appService) CreateQuickTunnelForApp(ctx context.Context, appID string, 
 	if len(networks) > 0 {
 		network = networks[0]
 	}
-	s.logger.InfoContext(ctx, "injecting Quick Tunnel container into compose", "app", app.Name, "service", service, "port", port, "metricsPort", metricsPort)
+	s.logger.InfoContext(ctx, "injecting Quick Tunnel container into compose", "app", app.Name, "service", service, "port", port, "metricsPort", metricsPort, "isRecreating", isRecreating)
 	injected, err := docker.InjectTunnelContainer(compose, app.Name, containerConfig, network)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to inject Quick Tunnel container", "app", app.Name, "error", err)
 		return nil, fmt.Errorf("failed to inject Quick Tunnel container: %w", err)
 	}
 	if !injected {
-		return nil, fmt.Errorf("Quick Tunnel container was not injected (may already exist)")
+		return nil, fmt.Errorf("Quick Tunnel container was not injected")
 	}
 	composeBytes, err := docker.MarshalComposeFile(compose)
 	if err != nil {
@@ -889,27 +923,52 @@ func (s *appService) CreateQuickTunnelForApp(ctx context.Context, appID string, 
 		return nil, domain.WrapContainerOperationFailed("write compose file", err)
 	}
 
-	if err := s.dockerManager.StartApp(app.Name); err != nil {
-		s.logger.ErrorContext(ctx, "failed to start app for Quick Tunnel", "app", app.Name, "error", err)
-		app.Status = constants.AppStatusError
-		em := err.Error()
-		app.ErrorMessage = &em
+	// When recreating, use UpdateAppContainers to ensure tunnel container is properly recreated
+	// Otherwise, use StartApp for new quick tunnels
+	if isRecreating {
+		s.logger.InfoContext(ctx, "updating app containers to recreate Quick Tunnel", "app", app.Name)
+		if err := s.dockerManager.UpdateApp(app.Name); err != nil {
+			s.logger.ErrorContext(ctx, "failed to update app containers for Quick Tunnel recreation", "app", app.Name, "error", err)
+			app.Status = constants.AppStatusError
+			em := err.Error()
+			app.ErrorMessage = &em
+			app.UpdatedAt = time.Now()
+			_ = s.database.UpdateApp(app)
+			return nil, domain.WrapContainerOperationFailed("update app containers", err)
+		}
+		// Force recreate tunnel container to ensure it picks up new configuration
+		if err := s.dockerManager.ForceRecreateTunnel(app.Name); err != nil {
+			s.logger.WarnContext(ctx, "could not force-recreate tunnel container", "app", app.Name, "error", err)
+		}
+		app.Status = constants.AppStatusRunning
+		app.ErrorMessage = nil
 		app.UpdatedAt = time.Now()
-		_ = s.database.UpdateApp(app)
-		return nil, domain.WrapContainerOperationFailed("start app", err)
-	}
-	app.Status = constants.AppStatusRunning
-	app.ErrorMessage = nil
-	app.UpdatedAt = time.Now()
-	if err := s.database.UpdateApp(app); err != nil {
-		s.logger.WarnContext(ctx, "failed to update app status after start", "app", app.Name, "error", err)
+		if err := s.database.UpdateApp(app); err != nil {
+			s.logger.WarnContext(ctx, "failed to update app status after recreation", "app", app.Name, "error", err)
+		}
+	} else {
+		if err := s.dockerManager.StartApp(app.Name); err != nil {
+			s.logger.ErrorContext(ctx, "failed to start app for Quick Tunnel", "app", app.Name, "error", err)
+			app.Status = constants.AppStatusError
+			em := err.Error()
+			app.ErrorMessage = &em
+			app.UpdatedAt = time.Now()
+			_ = s.database.UpdateApp(app)
+			return nil, domain.WrapContainerOperationFailed("start app", err)
+		}
+		app.Status = constants.AppStatusRunning
+		app.ErrorMessage = nil
+		app.UpdatedAt = time.Now()
+		if err := s.database.UpdateApp(app); err != nil {
+			s.logger.WarnContext(ctx, "failed to update app status after start", "app", app.Name, "error", err)
+		}
 	}
 
 	// Delegate URL extraction to tunnel service (which uses QuickTunnelProvider)
 	// The extractor has built-in retry logic to handle startup delays
 	quickURL, err := s.tunnelService.ExtractQuickTunnelURL(ctx, appID, nodeID)
 	if err != nil {
-		s.logger.WarnContext(ctx, "failed to extract Quick Tunnel URL, app may need manual refresh", "app", app.Name, "error", err)
+		s.logger.WarnContext(ctx, "failed to extract Quick Tunnel URL, URL may need to be retrieved later", "app", app.Name, "error", err)
 	} else if quickURL != "" {
 		app.PublicURL = quickURL
 		app.TunnelDomain = strings.TrimPrefix(quickURL, "https://")
