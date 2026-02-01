@@ -19,6 +19,11 @@ func setupTestProxy(t *testing.T) (*Proxy, *NodeRegistry, *Config) {
 	}
 
 	registry := NewNodeRegistry(cfg.PrimaryBackendURL, cfg.GatewayAPIKey, cfg.RegistryTTL, logger)
+	// Mark registry as initialized for tests (simulate successful refresh)
+	registry.mu.Lock()
+	registry.initialized = true
+	registry.mu.Unlock()
+	
 	router := NewRouter(registry, logger)
 	proxy := NewProxy(router, registry, cfg, logger)
 

@@ -38,18 +38,16 @@ services:
           "--spider",
           "http://localhost:8080/api/health",
         ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s # Give gateway time to start server and connect to primary
 
   # Primary Backend - Main application server (not publicly exposed)
   primary:
     image: ghcr.io/samsonnegedu/selfhostly-primary:latest
     container_name: selfhostly-primary
     user: 1000:984
-    extra_hosts:
-      - "host.docker.internal:host-gateway"  # Enables accessing host's published ports
     environment:
       # Server Configuration
       SERVER_ADDRESS: ":8082"
@@ -119,7 +117,9 @@ services:
         condition: service_healthy
 
 networks:
+  # Core API network - must match constants.CoreAPINetwork in internal/constants/constants.go
   selfhostly-network:
+    name: selfhostly-network # Use exact name, no project prefix
     driver: bridge
 
 volumes:

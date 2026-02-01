@@ -27,9 +27,10 @@ type NodeRegistry struct {
 	logger            *slog.Logger
 	ttl               time.Duration
 
-	mu      sync.RWMutex
-	nodes   map[string]NodeEntry // nodeID -> NodeEntry (includes endpoint and status)
-	primary string               // primary node ID for "global" routes
+	mu          sync.RWMutex
+	nodes       map[string]NodeEntry // nodeID -> NodeEntry (includes endpoint and status)
+	primary     string               // primary node ID for "global" routes
+	initialized bool                 // true after first successful refresh
 }
 
 // NewNodeRegistry creates a registry that fetches from primary
@@ -48,9 +49,14 @@ func NewNodeRegistry(primaryBackendURL, gatewayAPIKey string, ttl time.Duration,
 
 // Start begins periodic refresh; call once after creation
 func (r *NodeRegistry) Start() {
-	if err := r.refresh(); err != nil {
-		r.logger.Warn("initial node registry refresh failed", "error", err)
-	}
+	// Do initial refresh in background to not block gateway startup
+	// Gateway can serve health checks immediately while registry initializes
+	go func() {
+		if err := r.refresh(); err != nil {
+			r.logger.Warn("initial node registry refresh failed", "error", err)
+		}
+	}()
+	
 	go func() {
 		ticker := time.NewTicker(r.ttl)
 		defer ticker.Stop()
@@ -104,6 +110,7 @@ func (r *NodeRegistry) refresh() error {
 	if r.primary == "" && len(list) > 0 {
 		r.primary = list[0].ID
 	}
+	r.initialized = true // Mark as initialized after first successful refresh
 	r.logger.Info("node registry refreshed",
 		"count", len(r.nodes),
 		"primary", r.primary,
@@ -154,6 +161,14 @@ func (r *NodeRegistry) PrimaryID() string {
 // when the primary's DB has a different self-reported api_endpoint (e.g. from an old seed).
 func (r *NodeRegistry) PrimaryBaseURL() string {
 	return r.primaryBackendURL
+}
+
+// IsReady returns true if the registry has been initialized with at least one successful refresh.
+// This indicates the gateway can actually route requests to the primary backend.
+func (r *NodeRegistry) IsReady() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.initialized
 }
 
 type errStatusCode int

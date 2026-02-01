@@ -37,6 +37,12 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// Handle gateway health check directly (don't route to primary)
 	if req.Method == http.MethodGet && req.URL.Path == "/api/health" {
 		w.Header().Set("Content-Type", "application/json")
+		// Check if registry is ready (has successfully connected to primary at least once)
+		if !p.registry.IsReady() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"status":"initializing","service":"gateway","message":"waiting for node registry"}`))
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"healthy","service":"gateway"}`))
 		return

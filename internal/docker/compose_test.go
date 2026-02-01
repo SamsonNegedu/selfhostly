@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/selfhostly/internal/constants"
 	"github.com/selfhostly/internal/tunnel"
 )
 
@@ -177,8 +178,15 @@ func TestInjectTunnelContainer(t *testing.T) {
 		t.Errorf("Expected restart policy always, got %s", tunnelService.Restart)
 	}
 
-	if len(tunnelService.Networks) != 1 || tunnelService.Networks[0] != network {
-		t.Errorf("Expected networks [%s], got %v", network, tunnelService.Networks)
+	// Tunnel should be on both the app's network and core API network
+	expectedNetworks := []string{network, constants.CoreAPINetwork}
+	if len(tunnelService.Networks) != len(expectedNetworks) {
+		t.Errorf("Expected %d networks, got %d: %v", len(expectedNetworks), len(tunnelService.Networks), tunnelService.Networks)
+	}
+	for i, expectedNet := range expectedNetworks {
+		if i >= len(tunnelService.Networks) || tunnelService.Networks[i] != expectedNet {
+			t.Errorf("Expected network %d to be %s, got %v", i, expectedNet, tunnelService.Networks)
+		}
 	}
 
 	if tunnelService.Environment["TUNNEL_TOKEN"] != tunnelToken {
@@ -212,7 +220,7 @@ func TestInjectTunnelContainerNoNetwork(t *testing.T) {
 	}
 
 	// Check if default network was created
-	network, exists := compose.Networks["selfhostly-network"]
+	network, exists := compose.Networks[constants.CoreAPINetwork]
 	if !exists {
 		t.Fatalf("Expected default network to be created")
 	}
@@ -227,8 +235,8 @@ func TestInjectTunnelContainerNoNetwork(t *testing.T) {
 		t.Fatalf("Expected tunnel service to be added")
 	}
 
-	if len(tunnelService.Networks) != 1 || tunnelService.Networks[0] != "selfhostly-network" {
-		t.Errorf("Expected networks [selfhostly-network], got %v", tunnelService.Networks)
+	if len(tunnelService.Networks) != 1 || tunnelService.Networks[0] != constants.CoreAPINetwork {
+		t.Errorf("Expected networks [%s], got %v", constants.CoreAPINetwork, tunnelService.Networks)
 	}
 }
 
@@ -493,12 +501,17 @@ func TestInjectTunnelContainerAndMarshal(t *testing.T) {
 		t.Error("Expected tunnel service to exist in merged compose")
 	}
 
-	if len(merged.Networks) != 1 {
-		t.Errorf("Expected 1 network, got %d", len(merged.Networks))
+	// Should have both the app's network (frontend) and core API network (external)
+	if len(merged.Networks) != 2 {
+		t.Errorf("Expected 2 networks, got %d", len(merged.Networks))
 	}
 
 	if _, exists := merged.Networks["frontend"]; !exists {
 		t.Error("Expected frontend network to exist in merged compose")
+	}
+	
+	if _, exists := merged.Networks[constants.CoreAPINetwork]; !exists {
+		t.Errorf("Expected %s to exist in merged compose", constants.CoreAPINetwork)
 	}
 }
 
@@ -567,7 +580,7 @@ func TestInjectTunnelContainerWithServiceWithoutNetwork(t *testing.T) {
 	}
 
 	// Check if default network was created
-	network, exists := compose.Networks["selfhostly-network"]
+	network, exists := compose.Networks[constants.CoreAPINetwork]
 	if !exists {
 		t.Fatalf("Expected default network to be created")
 	}
@@ -582,8 +595,8 @@ func TestInjectTunnelContainerWithServiceWithoutNetwork(t *testing.T) {
 		t.Fatalf("Expected tunnel service to be added")
 	}
 
-	if len(tunnelService.Networks) != 1 || tunnelService.Networks[0] != "selfhostly-network" {
-		t.Errorf("Expected networks [selfhostly-network], got %v", tunnelService.Networks)
+	if len(tunnelService.Networks) != 1 || tunnelService.Networks[0] != constants.CoreAPINetwork {
+		t.Errorf("Expected networks [%s], got %v", constants.CoreAPINetwork, tunnelService.Networks)
 	}
 
 	// THE CRITICAL CHECK: The original service should also be updated to use the same network!
@@ -592,8 +605,8 @@ func TestInjectTunnelContainerWithServiceWithoutNetwork(t *testing.T) {
 		t.Error("Original service should be updated to use the same network as tunnel")
 	}
 
-	if len(uptimeKumaService.Networks) != 1 || uptimeKumaService.Networks[0] != "selfhostly-network" {
-		t.Errorf("Expected original service to use [selfhostly-network], got %v", uptimeKumaService.Networks)
+	if len(uptimeKumaService.Networks) != 1 || uptimeKumaService.Networks[0] != constants.CoreAPINetwork {
+		t.Errorf("Expected original service to use [%s], got %v", constants.CoreAPINetwork, uptimeKumaService.Networks)
 	}
 }
 
@@ -622,10 +635,16 @@ func TestInjectTunnelContainerPreservesExistingNetwork(t *testing.T) {
 		t.Fatalf("Expected container to be injected")
 	}
 
-	// tunnel should use the existing network
+	// tunnel should use both the existing network and core API network
 	tunnelService := compose.Services["tunnel"]
-	if len(tunnelService.Networks) != 1 || tunnelService.Networks[0] != "my-custom-network" {
-		t.Errorf("Expected tunnel to use [my-custom-network], got %v", tunnelService.Networks)
+	expectedNetworks := []string{"my-custom-network", constants.CoreAPINetwork}
+	if len(tunnelService.Networks) != len(expectedNetworks) {
+		t.Errorf("Expected tunnel to have %d networks, got %d: %v", len(expectedNetworks), len(tunnelService.Networks), tunnelService.Networks)
+	}
+	for i, expectedNet := range expectedNetworks {
+		if i >= len(tunnelService.Networks) || tunnelService.Networks[i] != expectedNet {
+			t.Errorf("Expected network %d to be %s, got %v", i, expectedNet, tunnelService.Networks)
+		}
 	}
 
 	// Original service should keep its network unchanged

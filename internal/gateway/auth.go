@@ -34,6 +34,11 @@ func (c *Config) pathSkipsAuth(path, method string) bool {
 	if path == "/api/health" {
 		return true
 	}
+	// /api/me must be accessible to unauthenticated users to determine auth status
+	// It will return 401 if not authenticated, but shouldn't be blocked by gateway
+	if path == "/api/me" {
+		return true
+	}
 	return false
 }
 

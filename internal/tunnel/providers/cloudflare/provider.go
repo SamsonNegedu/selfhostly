@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -404,31 +403,34 @@ func (p *Provider) buildQuickTunnelMetricsEndpoints(composeContent string) []str
 	isInDocker := p.isRunningInDocker()
 
 	if isInDocker {
-		// Backend is running in Docker, tunnel is on a different network with published ports.
-		// We need to access the tunnel via the Docker HOST's published port, not the container IP.
-		// Priority order:
-		// 1. host.docker.internal (Docker Desktop on Mac/Windows)
-		// 2. Default Docker bridge gateway (172.17.0.1) - routes to host on Linux
-		// 3. Network gateway (might work in some setups)
-		// 4. Other common gateway IPs
-		// Note: Container name/IP won't work across different Docker networks
+		// Backend is running in Docker. Tunnel containers are automatically injected to join both:
+		// 1. Their app's network (e.g., fizzy-network) - to reach the app
+		// 2. Core API network (external) - to be reached by primary backend
+		// This enables direct container-to-container communication via DNS.
 		
-		endpoints = append(endpoints,
-			fmt.Sprintf("http://host.docker.internal:%d/metrics", hostPort),
-			fmt.Sprintf("http://172.17.0.1:%d/metrics", hostPort), // Default Docker bridge - often routes to host
-		)
-		
-		// Try current network gateway (might work for published ports)
-		if gatewayIP := p.getNetworkGatewayIP(); gatewayIP != "" && gatewayIP != "172.17.0.1" {
-			endpoints = append(endpoints, fmt.Sprintf("http://%s:%d/metrics", gatewayIP, hostPort))
+		// Parse container name from compose to construct DNS name
+		composeFile, err := docker.ParseCompose([]byte(composeContent))
+		if err == nil {
+			for _, svc := range composeFile.Services {
+				if strings.Contains(svc.Image, "cloudflared") {
+					if svc.ContainerName != "" {
+						// Primary method: Use container name via DNS (works because tunnel joins core API network)
+						containerPort := constants.QuickTunnelMetricsPort
+						if extractedPort := docker.ExtractQuickTunnelMetricsContainerPort(svc.Command); extractedPort > 0 {
+							containerPort = extractedPort
+						}
+						endpoints = append(endpoints, fmt.Sprintf("http://%s:%d/metrics", svc.ContainerName, containerPort))
+					}
+					break
+				}
+			}
 		}
 		
-		endpoints = append(endpoints,
-			fmt.Sprintf("http://172.18.0.1:%d/metrics", hostPort), // Common Docker Compose network gateway
-			fmt.Sprintf("http://172.19.0.1:%d/metrics", hostPort), // Another common gateway
-			fmt.Sprintf("http://172.20.0.1:%d/metrics", hostPort), // Yet another gateway
-			fmt.Sprintf("http://localhost:%d/metrics", hostPort),  // Fallback (usually doesn't work in containers)
-		)
+		// Fallback: Service name "tunnel" (Docker Compose network alias)
+		endpoints = append(endpoints, fmt.Sprintf("http://tunnel:%d/metrics", constants.QuickTunnelMetricsPort))
+		
+		// Legacy fallback: For tunnels created before dual-network fix (uses published ports)
+		endpoints = append(endpoints, fmt.Sprintf("http://localhost:%d/metrics", hostPort))
 	} else {
 		// Backend is running locally - use host port
 		endpoints = []string{
@@ -441,14 +443,7 @@ func (p *Provider) buildQuickTunnelMetricsEndpoints(composeContent string) []str
 
 // buildDefaultEndpoints builds default endpoints when compose parsing fails
 func (p *Provider) buildDefaultEndpoints(port int) []string {
-	isInDocker := p.isRunningInDocker()
-	if isInDocker {
-		return []string{
-			fmt.Sprintf("http://host.docker.internal:%d/metrics", port),
-			fmt.Sprintf("http://172.17.0.1:%d/metrics", port),
-			fmt.Sprintf("http://localhost:%d/metrics", port),
-		}
-	}
+	// Fallback when we can't parse compose - just try localhost
 	return []string{
 		fmt.Sprintf("http://localhost:%d/metrics", port),
 	}
@@ -470,59 +465,6 @@ func (p *Provider) isRunningInDocker() bool {
 	}
 	
 	return false
-}
-
-// getNetworkGatewayIP gets the default gateway IP for the Docker network.
-// Reads from /proc/net/route to find the gateway IP.
-func (p *Provider) getNetworkGatewayIP() string {
-	// Read /proc/net/route to find default gateway
-	routeFile := "/proc/net/route"
-	data, err := os.ReadFile(routeFile)
-	if err != nil {
-		return ""
-	}
-	
-	// Parse route file to find default gateway (destination 00000000)
-	lines := strings.Split(string(data), "\n")
-	for _, line := range lines {
-		if strings.HasPrefix(line, "Iface") {
-			continue // Skip header
-		}
-		fields := strings.Fields(line)
-		if len(fields) >= 3 {
-			// Check if this is the default route (destination is 00000000)
-			if fields[1] == "00000000" && fields[2] != "00000000" {
-				// Gateway is in hex format, convert to IP
-				gatewayHex := fields[2]
-				if len(gatewayHex) == 8 {
-					// Convert hex to IP (little-endian)
-					ip := p.hexToIP(gatewayHex)
-					if ip != "" {
-						return ip
-					}
-				}
-			}
-		}
-	}
-	return ""
-}
-
-// hexToIP converts a hex string (little-endian) to IP address string.
-func (p *Provider) hexToIP(hexStr string) string {
-	if len(hexStr) != 8 {
-		return ""
-	}
-	// Parse hex bytes in reverse order (little-endian)
-	var bytes [4]int
-	for i := 0; i < 4; i++ {
-		byteStr := hexStr[i*2:(i+1)*2]
-		val, err := strconv.ParseInt(byteStr, 16, 64)
-		if err != nil {
-			return ""
-		}
-		bytes[3-i] = int(val) // Reverse for little-endian
-	}
-	return fmt.Sprintf("%d.%d.%d.%d", bytes[0], bytes[1], bytes[2], bytes[3])
 }
 
 // GetQuickTunnelContainerConfig returns the Docker container configuration for a Quick Tunnel

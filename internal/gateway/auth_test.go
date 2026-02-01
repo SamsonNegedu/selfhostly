@@ -158,6 +158,7 @@ func TestConfig_pathSkipsAuth(t *testing.T) {
 		{"auth subpath", "/auth/github/callback", http.MethodGet, true},
 		{"health endpoint", "/api/health", http.MethodGet, true},
 		{"health POST", "/api/health", http.MethodPost, true},
+		{"me endpoint", "/api/me", http.MethodGet, true},
 		{"protected path", "/api/apps", http.MethodGet, false},
 		{"other path", "/api/other", http.MethodGet, false},
 	}

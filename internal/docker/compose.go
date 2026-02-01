@@ -2,6 +2,7 @@ package docker
 
 import (
 	"fmt"
+	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -53,7 +54,9 @@ type Service struct {
 
 // Network represents a docker-compose network
 type Network struct {
-	Driver string `yaml:"driver,omitempty"`
+	Name     string `yaml:"name,omitempty"`
+	Driver   string `yaml:"driver,omitempty"`
+	External bool   `yaml:"external,omitempty"`
 }
 
 // Volume represents a docker-compose volume
@@ -160,6 +163,13 @@ func ParseCompose(content []byte) (*ComposeFile, error) {
 	return &compose, nil
 }
 
+// checkDockerNetworkExists checks if a Docker network exists
+func checkDockerNetworkExists(networkName string) bool {
+	cmd := exec.Command("docker", "network", "inspect", networkName)
+	err := cmd.Run()
+	return err == nil
+}
+
 // InjectTunnelContainer injects a tunnel provider's container into the compose file.
 // This is a generic function that works with any tunnel provider that needs a sidecar container.
 // Returns true if a container was injected, false if containerConfig was nil.
@@ -193,7 +203,7 @@ func InjectTunnelContainer(compose *ComposeFile, appName string, containerConfig
 			}
 		} else {
 			// Default network name
-			network = "selfhostly-network"
+			network = constants.CoreAPINetwork
 		}
 	}
 
@@ -212,10 +222,35 @@ func InjectTunnelContainer(compose *ComposeFile, appName string, containerConfig
 		}
 	}
 
-	// Use containerConfig.Networks if provided, otherwise use the detected network
+	// Build network list for tunnel container
+	// Always include the app's network (for reaching the app) and core API network (for being reached by primary)
 	networks := containerConfig.Networks
 	if len(networks) == 0 {
 		networks = []string{network}
+	}
+	
+	// Ensure core API network is added (for cross-network access from primary backend)
+	hasCoreAPINetwork := false
+	for _, n := range networks {
+		if n == constants.CoreAPINetwork {
+			hasCoreAPINetwork = true
+			break
+		}
+	}
+	if !hasCoreAPINetwork && network != constants.CoreAPINetwork {
+		// Add core API network as an external network for cross-app communication
+		networks = append(networks, constants.CoreAPINetwork)
+		// Add it to compose.Networks
+		if _, exists := compose.Networks[constants.CoreAPINetwork]; !exists {
+			// Check if the network exists in Docker
+			// If it exists, mark as external (use existing network)
+			// If it doesn't exist, create it normally
+			networkExists := checkDockerNetworkExists(constants.CoreAPINetwork)
+			compose.Networks[constants.CoreAPINetwork] = Network{
+				Driver:   "bridge",
+				External: networkExists, // Only external if network already exists
+			}
+		}
 	}
 
 	// Build command string from array
