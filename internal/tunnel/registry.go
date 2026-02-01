@@ -19,7 +19,6 @@ type ProviderFactory func(config map[string]interface{}) (Provider, error)
 //
 //	registry := tunnel.NewRegistry()
 //	registry.Register("cloudflare", cloudflareProviderFactory)
-//	registry.Register("ngrok", ngrokProviderFactory)
 //
 //	provider, err := registry.GetProvider("cloudflare", config)
 type Registry struct {

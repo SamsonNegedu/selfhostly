@@ -20,6 +20,10 @@ const (
 
 	// FeatureList indicates the provider can list all tunnels
 	FeatureList Feature = "list"
+
+	// FeatureQuickTunnel indicates the provider supports Quick Tunnels
+	// (temporary tunnels without API registration, e.g., Cloudflare's trycloudflare.com)
+	FeatureQuickTunnel Feature = "quick_tunnel"
 )
 
 // SupportsFeature checks if a provider implements a specific feature
@@ -69,10 +73,11 @@ func SupportsFeature(p Provider, feature Feature) bool {
 // This is useful for API responses to inform clients about provider capabilities.
 func GetSupportedFeatures(p Provider) map[Feature]bool {
 	return map[Feature]bool{
-		FeatureIngress:    SupportsFeature(p, FeatureIngress),
-		FeatureDNS:        SupportsFeature(p, FeatureDNS),
-		FeatureStatusSync: SupportsFeature(p, FeatureStatusSync),
-		FeatureContainer:  SupportsFeature(p, FeatureContainer),
-		FeatureList:       SupportsFeature(p, FeatureList),
+		FeatureIngress:     SupportsFeature(p, FeatureIngress),
+		FeatureDNS:         SupportsFeature(p, FeatureDNS),
+		FeatureStatusSync:  SupportsFeature(p, FeatureStatusSync),
+		FeatureContainer:   SupportsFeature(p, FeatureContainer),
+		FeatureList:        SupportsFeature(p, FeatureList),
+		FeatureQuickTunnel: SupportsFeature(p, FeatureQuickTunnel),
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/selfhostly/internal/cloudflare"
@@ -47,10 +48,6 @@ func NewTunnelService(database *db.DB, dockerManager *docker.Manager, cfg *confi
 		config["logger"] = logger
 		return cloudflareProvider.NewProvider(config)
 	})
-
-	// Future providers can be registered here:
-	// registry.Register("ngrok", ngrokProviderFactory)
-	// registry.Register("tailscale", tailscaleProviderFactory)
 
 	return &tunnelService{
 		database:         database,
@@ -532,11 +529,12 @@ func (s *tunnelService) GetProviderFeatures(ctx context.Context, providerName st
 
 	// Convert Feature type to string for domain layer
 	featuresMap := map[string]bool{
-		"ingress":     features[tunnel.FeatureIngress],
-		"dns":         features[tunnel.FeatureDNS],
-		"status_sync": features[tunnel.FeatureStatusSync],
+		"ingress":      features[tunnel.FeatureIngress],
+		"dns":          features[tunnel.FeatureDNS],
+		"status_sync":  features[tunnel.FeatureStatusSync],
 		"container":   features[tunnel.FeatureContainer],
-		"list":        features[tunnel.FeatureList],
+		"list":         features[tunnel.FeatureList],
+		"quick_tunnel": features[tunnel.FeatureQuickTunnel],
 	}
 
 	return &domain.ProviderFeatures{
@@ -545,4 +543,93 @@ func (s *tunnelService) GetProviderFeatures(ctx context.Context, providerName st
 		IsConfigured: true,
 		Features:     featuresMap,
 	}, nil
+}
+
+// ExtractQuickTunnelURL extracts the public URL from a Quick Tunnel (local only).
+// Delegates to QuickTunnelProvider if the active provider supports it.
+func (s *tunnelService) ExtractQuickTunnelURL(ctx context.Context, appID string, nodeID string) (string, error) {
+	s.logger.InfoContext(ctx, "extracting Quick Tunnel URL", "appID", appID, "nodeID", nodeID)
+
+	app, err := s.database.GetApp(appID)
+	if err != nil {
+		return "", domain.WrapAppNotFound(appID, err)
+	}
+	if app.TunnelMode != "quick" {
+		return "", fmt.Errorf("app is not in Quick Tunnel mode (tunnel_mode=%q)", app.TunnelMode)
+	}
+
+	provider, err := s.getActiveProvider()
+	if err != nil {
+		return "", fmt.Errorf("failed to get provider: %w", err)
+	}
+
+	// Check if provider supports Quick Tunnel
+	quickTunnelProvider, ok := provider.(tunnel.QuickTunnelProvider)
+	if !ok {
+		return "", fmt.Errorf("provider %s does not support Quick Tunnel", provider.Name())
+	}
+
+	// Extract URL using provider's implementation
+	commandExecutor := s.dockerManager.GetCommandExecutor()
+	url, err := quickTunnelProvider.ExtractQuickTunnelURL(ctx, app.Name, app.ComposeContent, s.config.AppsDir, commandExecutor)
+	if err != nil {
+		return "", fmt.Errorf("failed to extract Quick Tunnel URL: %w", err)
+	}
+
+	// Update app with the extracted URL
+	app.PublicURL = url
+	app.TunnelDomain = strings.TrimPrefix(url, "https://")
+	app.UpdatedAt = time.Now()
+	if updateErr := s.database.UpdateApp(app); updateErr != nil {
+		s.logger.WarnContext(ctx, "failed to save Quick Tunnel URL to app", "app", app.Name, "error", updateErr)
+	}
+
+	return url, nil
+}
+
+// CreateQuickTunnelConfig creates a Quick Tunnel container configuration using the active provider.
+// Returns an error if the provider doesn't support Quick Tunnel.
+func (s *tunnelService) CreateQuickTunnelConfig(targetService string, targetPort int, metricsHostPort int) (*tunnel.ContainerConfig, error) {
+	provider, err := s.getActiveProvider()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get provider: %w", err)
+	}
+
+	// Check if provider supports Quick Tunnel
+	quickTunnelProvider, ok := provider.(tunnel.QuickTunnelProvider)
+	if !ok {
+		return nil, fmt.Errorf("provider %s does not support Quick Tunnel", provider.Name())
+	}
+
+	return quickTunnelProvider.CreateQuickTunnelConfig(targetService, targetPort, metricsHostPort), nil
+}
+
+// NextFreeQuickTunnelMetricsPort returns a host port in [2000, 2999]
+// that is not already used by any app's Quick Tunnel metrics. Used to avoid port conflicts when running multiple quick tunnels.
+func (s *tunnelService) NextFreeQuickTunnelMetricsPort() (int, error) {
+	const (
+		quickTunnelMetricsPortMin = 2000
+		quickTunnelMetricsPortMax = 2999
+	)
+
+	apps, err := s.database.GetAllApps()
+	if err != nil {
+		return quickTunnelMetricsPortMin, fmt.Errorf("failed to get apps for port allocation: %w", err)
+	}
+
+	used := make(map[int]bool)
+	for _, app := range apps {
+		if p, ok := docker.ExtractQuickTunnelMetricsHostPort(app.ComposeContent); ok {
+			used[p] = true
+		}
+	}
+
+	for p := quickTunnelMetricsPortMin; p <= quickTunnelMetricsPortMax; p++ {
+		if !used[p] {
+			return p, nil
+		}
+	}
+
+	// All ports in range are used - return min as fallback (caller should handle this case)
+	return quickTunnelMetricsPortMin, fmt.Errorf("no free Quick Tunnel metrics port available (all ports %d-%d are in use)", quickTunnelMetricsPortMin, quickTunnelMetricsPortMax)
 }

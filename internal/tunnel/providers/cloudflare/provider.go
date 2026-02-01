@@ -5,9 +5,14 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/selfhostly/internal/cloudflare"
 	"github.com/selfhostly/internal/db"
+	"github.com/selfhostly/internal/docker"
 	"github.com/selfhostly/internal/tunnel"
 )
 
@@ -322,9 +327,138 @@ func (p *Provider) GetContainerConfig(tunnelToken string, appName string) *tunne
 	}
 }
 
+// ============================================================================
+// QuickTunnelProvider Interface
+// ============================================================================
+
+// CreateQuickTunnelConfig implements QuickTunnelProvider interface.
+// Creates a container configuration for a Cloudflare Quick Tunnel.
+func (p *Provider) CreateQuickTunnelConfig(targetService string, targetPort int, metricsHostPort int) *tunnel.ContainerConfig {
+	return QuickTunnelContainerConfig(targetService, targetPort, metricsHostPort)
+}
+
+// ExtractQuickTunnelURL implements QuickTunnelProvider interface.
+// Extracts the public URL from a running Quick Tunnel by querying the metrics endpoint.
+func (p *Provider) ExtractQuickTunnelURL(ctx context.Context, appName string, composeContent string, appsDir string, commandExecutor tunnel.CommandExecutor) (string, error) {
+	// Method 1: Try exec into tunnel container (most reliable)
+	metricsBody, execErr := p.fetchQuickTunnelMetricsFromContainer(ctx, appName, composeContent, appsDir, commandExecutor)
+	if execErr == nil && metricsBody != "" {
+		url, err := cloudflare.ParseQuickTunnelURLFromMetrics(metricsBody)
+		if err == nil && url != "" {
+			p.logger.InfoContext(ctx, "Quick Tunnel URL extracted via exec method", "app", appName, "public_url", url)
+			return url, nil
+		}
+	}
+
+	// Method 2: Fall back to HTTP if exec failed
+	// Build list of endpoints to try, prioritizing based on environment
+	endpoints := p.buildQuickTunnelMetricsEndpoints(composeContent)
+	p.logger.InfoContext(ctx, "extracting Quick Tunnel URL from metrics (HTTP method)", "app", appName, "endpoints", endpoints)
+	
+	// Try each endpoint with retries
+	for _, endpoint := range endpoints {
+		url, err := cloudflare.ExtractQuickTunnelURL(endpoint, 10, 1*time.Second) // Fewer retries per endpoint since we try multiple
+		if err == nil && url != "" {
+			p.logger.InfoContext(ctx, "Quick Tunnel URL extracted via HTTP method", "app", appName, "public_url", url, "endpoint", endpoint)
+			return url, nil
+		}
+		p.logger.DebugContext(ctx, "failed to extract URL from endpoint, trying next", "app", appName, "endpoint", endpoint, "error", err)
+	}
+	
+	return "", fmt.Errorf("failed to extract Quick Tunnel URL from any endpoint (exec_error: %v, tried_endpoints: %v)", execErr, endpoints)
+}
+
+// fetchQuickTunnelMetricsFromContainer execs into the tunnel container and fetches metrics directly.
+// This is more reliable than accessing via host ports, especially when backend is in Docker.
+func (p *Provider) fetchQuickTunnelMetricsFromContainer(ctx context.Context, appName string, composeContent string, appsDir string, commandExecutor tunnel.CommandExecutor) (string, error) {
+	_ = ctx // Reserved for future use (e.g., command cancellation)
+	// Extract container metrics port from compose file
+	compose, err := docker.ParseCompose([]byte(composeContent))
+	if err != nil {
+		return "", fmt.Errorf("failed to parse compose file: %w", err)
+	}
+
+	containerPort := 2000 // Default fallback
+	if tunnelSvc, ok := compose.Services["tunnel"]; ok {
+		if extractedPort := docker.ExtractQuickTunnelMetricsContainerPort(tunnelSvc.Command); extractedPort > 0 {
+			containerPort = extractedPort
+		}
+	}
+
+	appPath := filepath.Join(appsDir, appName)
+
+	// Try curl first, then wget as fallback
+	metricsURL := fmt.Sprintf("http://localhost:%d/metrics", containerPort)
+	commands := [][]string{
+		{"docker", "compose", "-f", "docker-compose.yml", "exec", "-T", "tunnel", "curl", "-s", metricsURL},
+		{"docker", "compose", "-f", "docker-compose.yml", "exec", "-T", "tunnel", "wget", "-qO-", metricsURL},
+	}
+
+	var lastErr error
+	for _, cmd := range commands {
+		output, err := commandExecutor.ExecuteCommandInDir(appPath, cmd[0], cmd[1:]...)
+		if err == nil {
+			return string(output), nil
+		}
+		lastErr = err
+	}
+
+	return "", fmt.Errorf("failed to fetch metrics from tunnel container (port %d): %w", containerPort, lastErr)
+}
+
+// buildQuickTunnelMetricsEndpoints returns a list of metrics endpoints to try, ordered by priority.
+// Works in both local and Docker environments by trying multiple host options.
+func (p *Provider) buildQuickTunnelMetricsEndpoints(composeContent string) []string {
+	port := 2000
+	if hostPort, ok := docker.ExtractQuickTunnelMetricsHostPort(composeContent); ok {
+		port = hostPort
+	}
+
+	var endpoints []string
+	isInDocker := p.isRunningInDocker()
+
+	if isInDocker {
+		// Backend is running in Docker - try multiple options:
+		// 1. host.docker.internal (works on Mac/Windows Docker Desktop)
+		// 2. 172.17.0.1 (Linux Docker bridge gateway - default bridge network)
+		// 3. localhost (fallback - might work if ports are exposed)
+		endpoints = []string{
+			fmt.Sprintf("http://host.docker.internal:%d/metrics", port),
+			fmt.Sprintf("http://172.17.0.1:%d/metrics", port),
+			fmt.Sprintf("http://localhost:%d/metrics", port),
+		}
+	} else {
+		// Backend is running locally - localhost should work
+		endpoints = []string{
+			fmt.Sprintf("http://localhost:%d/metrics", port),
+		}
+	}
+
+	return endpoints
+}
+
+// isRunningInDocker checks if the current process is running inside a Docker container.
+func (p *Provider) isRunningInDocker() bool {
+	// Check for /.dockerenv file (Docker sets this)
+	if _, err := os.Stat("/.dockerenv"); err == nil {
+		return true
+	}
+	
+	// Check /proc/self/cgroup for docker (Linux)
+	if _, err := os.ReadFile("/proc/self/cgroup"); err == nil {
+		cgroup, err := os.ReadFile("/proc/self/cgroup")
+		if err == nil && strings.Contains(string(cgroup), "docker") {
+			return true
+		}
+	}
+	
+	return false
+}
+
 // GetQuickTunnelContainerConfig returns the Docker container configuration for a Quick Tunnel
 // (temporary trycloudflare.com URL). No tunnel token; cloudflared runs with --url and exposes metrics.
 // metricsHostPort is the host port for the metrics endpoint (container port is always 2000); use a unique port per app to avoid conflicts.
+// DEPRECATED: Use CreateQuickTunnelConfig instead (implements QuickTunnelProvider interface).
 func (p *Provider) GetQuickTunnelContainerConfig(targetService string, targetPort int, metricsHostPort int) *tunnel.ContainerConfig {
 	return QuickTunnelContainerConfig(targetService, targetPort, metricsHostPort)
 }

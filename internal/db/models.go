@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/selfhostly/internal/constants"
 )
 
 // SECURITY NOTICE:
@@ -92,11 +93,11 @@ type Settings struct {
 	
 	// New multi-provider tunnel configuration
 	// ActiveTunnelProvider identifies which tunnel provider is currently active
-	// (e.g., "cloudflare", "ngrok", "tailscale")
+	// (e.g., "cloudflare")
 	ActiveTunnelProvider *string   `json:"active_tunnel_provider,omitempty" db:"active_tunnel_provider"`
 	
 	// TunnelProviderConfig stores provider-specific configuration as JSON
-	// Structure: {"cloudflare": {"api_token": "...", "account_id": "..."}, "ngrok": {"auth_token": "..."}}
+	// Structure: {"cloudflare": {"api_token": "...", "account_id": "..."}}
 	TunnelProviderConfig *string   `json:"tunnel_provider_config,omitempty" db:"tunnel_provider_config"`
 	
 	AutoStartApps        bool      `json:"auto_start_apps" db:"auto_start_apps"`
@@ -112,7 +113,7 @@ func NewNode(name, apiEndpoint, apiKey string, isPrimary bool) *Node {
 		APIEndpoint: apiEndpoint,
 		APIKey:      apiKey,
 		IsPrimary:   isPrimary,
-		Status:      "online",
+		Status:      constants.NodeStatusOnline,
 		LastSeen:    &now,
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -128,7 +129,7 @@ func NewNodeWithID(id, name, apiEndpoint, apiKey string, isPrimary bool) *Node {
 		APIEndpoint: apiEndpoint,
 		APIKey:      apiKey,
 		IsPrimary:   isPrimary,
-		Status:      "online",
+		Status:      constants.NodeStatusOnline,
 		LastSeen:    &now,
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -142,7 +143,7 @@ func NewApp(name, description, composeContent string) *App {
 		Name:           name,
 		Description:    description,
 		ComposeContent: composeContent,
-		Status:         "stopped",
+		Status:         constants.AppStatusStopped,
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
 	}
@@ -159,7 +160,7 @@ func NewCloudflareTunnel(appID, tunnelID, tunnelName, tunnelToken, accountID, pu
 		TunnelToken: tunnelToken,
 		AccountID:   accountID,
 		IsActive:    true,
-		Status:      "active",
+		Status:      constants.TunnelStatusActive,
 		PublicURL:   publicURL,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),

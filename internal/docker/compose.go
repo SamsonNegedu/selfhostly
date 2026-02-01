@@ -288,7 +288,7 @@ func ExtractQuickTunnelTargetFromCompose(composeContent string) (service string,
 }
 
 // ExtractQuickTunnelMetricsHostPort parses compose content and returns the host port used for Quick Tunnel metrics
-// (the host side of the "HOST:2000" mapping on the tunnel service). Returns (0, false) if not found.
+// (the host side of the "HOST:CONTAINER" mapping on the tunnel service). Returns (0, false) if not found.
 func ExtractQuickTunnelMetricsHostPort(composeContent string) (hostPort int, ok bool) {
 	compose, err := ParseCompose([]byte(composeContent))
 	if err != nil || compose.Services == nil {
@@ -298,10 +298,20 @@ func ExtractQuickTunnelMetricsHostPort(composeContent string) (hostPort int, ok 
 		if !strings.Contains(svc.Image, "cloudflared") || len(svc.Ports) == 0 {
 			continue
 		}
-		// Port format is "hostPort:2000" (container port 2000 is fixed for cloudflared metrics)
+		// Extract container port from command first to be more robust
+		containerPort := ExtractQuickTunnelMetricsContainerPort(svc.Command)
+		if containerPort == 0 {
+			containerPort = 2000 // Default fallback
+		}
+		
+		// Port format is "hostPort:containerPort"
 		for _, p := range svc.Ports {
 			parts := strings.Split(p, ":")
-			if len(parts) != 2 || strings.TrimSpace(parts[1]) != "2000" {
+			if len(parts) != 2 {
+				continue
+			}
+			cp, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+			if err != nil || cp != containerPort {
 				continue
 			}
 			hp, err := strconv.Atoi(strings.TrimSpace(parts[0]))
@@ -312,6 +322,25 @@ func ExtractQuickTunnelMetricsHostPort(composeContent string) (hostPort int, ok 
 		}
 	}
 	return 0, false
+}
+
+// ExtractQuickTunnelMetricsContainerPort extracts the container port from the cloudflared command.
+// Looks for --metrics 0.0.0.0:PORT or --metrics localhost:PORT in the command string.
+// Returns 0 if not found (caller should use default 2000).
+func ExtractQuickTunnelMetricsContainerPort(command string) int {
+	if command == "" {
+		return 0
+	}
+	// Match --metrics 0.0.0.0:PORT or --metrics localhost:PORT or --metrics :PORT
+	re := regexp.MustCompile(`--metrics\s+(?:0\.0\.0\.0|localhost|127\.0\.0\.1)?:?(\d+)`)
+	matches := re.FindStringSubmatch(command)
+	if len(matches) >= 2 {
+		port, err := strconv.Atoi(matches[1])
+		if err == nil && port >= 1 && port <= 65535 {
+			return port
+		}
+	}
+	return 0
 }
 
 // ExtractNetworks extracts network names from services

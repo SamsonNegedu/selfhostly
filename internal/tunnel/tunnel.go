@@ -18,7 +18,7 @@ type Tunnel struct {
 	AppID string `json:"app_id"`
 
 	// ProviderType identifies which provider manages this tunnel
-	// (e.g., "cloudflare", "ngrok", "tailscale")
+	// (e.g., "cloudflare")
 	ProviderType string `json:"provider_type"`
 
 	// TunnelID is the provider's unique identifier for this tunnel

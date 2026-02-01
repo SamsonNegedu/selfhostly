@@ -11,6 +11,7 @@ import (
 	"github.com/selfhostly/internal/cleanup"
 	"github.com/selfhostly/internal/cloudflare"
 	"github.com/selfhostly/internal/config"
+	"github.com/selfhostly/internal/constants"
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/docker"
 	"github.com/selfhostly/internal/domain"
@@ -19,11 +20,6 @@ import (
 	"github.com/selfhostly/internal/tunnel"
 	cloudflareProvider "github.com/selfhostly/internal/tunnel/providers/cloudflare"
 	"github.com/selfhostly/internal/validation"
-)
-
-const (
-	quickTunnelMetricsPortMin = 2000
-	quickTunnelMetricsPortMax = 2999
 )
 
 // appService implements the AppService interface
@@ -37,37 +33,10 @@ type appService struct {
 	appsAgg          *routing.AppsAggregator
 	settingsManager  *cloudflare.SettingsManager  // DEPRECATED: for backward compatibility
 	providerRegistry *tunnel.Registry             // NEW: for multi-provider support
+	tunnelService    domain.TunnelService          // NEW: for Quick Tunnel operations
 }
 
-// nextFreeQuickTunnelMetricsPort returns a host port in [quickTunnelMetricsPortMin, quickTunnelMetricsPortMax]
-// that is not already used by any app's Quick Tunnel metrics. Used to avoid port conflicts when running multiple quick tunnels.
-func (s *appService) nextFreeQuickTunnelMetricsPort() int {
-	apps, err := s.database.GetAllApps()
-	if err != nil {
-		return quickTunnelMetricsPortMin
-	}
-	used := make(map[int]bool)
-	for _, app := range apps {
-		if p, ok := docker.ExtractQuickTunnelMetricsHostPort(app.ComposeContent); ok {
-			used[p] = true
-		}
-	}
-	for p := quickTunnelMetricsPortMin; p <= quickTunnelMetricsPortMax; p++ {
-		if !used[p] {
-			return p
-		}
-	}
-	return quickTunnelMetricsPortMin
-}
 
-// quickTunnelMetricsEndpoint returns the metrics URL for an app's Quick Tunnel (e.g. http://localhost:2001/metrics).
-func (s *appService) quickTunnelMetricsEndpoint(composeContent string) string {
-	port := 2000
-	if p, ok := docker.ExtractQuickTunnelMetricsHostPort(composeContent); ok {
-		port = p
-	}
-	return fmt.Sprintf("http://localhost:%d/metrics", port)
-}
 
 // NewAppService creates a new app service
 func NewAppService(
@@ -75,6 +44,7 @@ func NewAppService(
 	dockerManager *docker.Manager,
 	cfg *config.Config,
 	logger *slog.Logger,
+	tunnelService domain.TunnelService,
 ) domain.AppService {
 	nodeClient := node.NewClient()
 	router := routing.NewNodeRouter(database, nodeClient, cfg.Node.ID, logger)
@@ -103,6 +73,7 @@ func NewAppService(
 		appsAgg:          appsAgg,
 		settingsManager:  settingsManager,
 		providerRegistry: registry,
+		tunnelService:    tunnelService,
 	}
 }
 
@@ -131,12 +102,12 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 	}
 
 	// Validate Quick Tunnel params when tunnel_mode is "quick"
-	if req.TunnelMode == "quick" {
+	if req.TunnelMode == constants.TunnelModeQuick {
 		if strings.TrimSpace(req.QuickTunnelService) == "" {
 			return nil, domain.WrapValidationError("quick_tunnel_service", fmt.Errorf("quick_tunnel_service is required for Quick Tunnel mode"))
 		}
-		if req.QuickTunnelPort < 1 || req.QuickTunnelPort > 65535 {
-			return nil, domain.WrapValidationError("quick_tunnel_port", fmt.Errorf("quick_tunnel_port must be between 1 and 65535"))
+		if req.QuickTunnelPort < constants.MinPort || req.QuickTunnelPort > constants.MaxPort {
+			return nil, domain.WrapValidationError("quick_tunnel_port", fmt.Errorf("quick_tunnel_port must be between %d and %d", constants.MinPort, constants.MaxPort))
 		}
 	}
 
@@ -162,13 +133,21 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 	providerConfig, providerConfigErr := settings.GetProviderConfig(providerName)
 
 	if req.TunnelMode == "quick" {
-		// Quick Tunnel: no API call, inject cloudflared with --url and metrics (unique metrics port per app to avoid conflicts)
+		// Quick Tunnel: delegate to tunnel service for provider-agnostic handling
 		tunnelMode = "quick"
 		tempApp := db.NewApp(req.Name, req.Description, req.ComposeContent)
 		createdTunnelAppID = tempApp.ID
 
-		metricsPort := s.nextFreeQuickTunnelMetricsPort()
-		containerConfig := cloudflareProvider.QuickTunnelContainerConfig(strings.TrimSpace(req.QuickTunnelService), req.QuickTunnelPort, metricsPort)
+		metricsPort, err := s.tunnelService.NextFreeQuickTunnelMetricsPort()
+		if err != nil {
+			s.logger.WarnContext(ctx, "failed to allocate Quick Tunnel metrics port, using fallback", "app", req.Name, "error", err)
+		}
+		containerConfig, err := s.tunnelService.CreateQuickTunnelConfig(strings.TrimSpace(req.QuickTunnelService), req.QuickTunnelPort, metricsPort)
+		if err != nil {
+			s.logger.ErrorContext(ctx, "failed to create Quick Tunnel config", "app", req.Name, "error", err)
+			return nil, fmt.Errorf("failed to create Quick Tunnel config: %w", err)
+		}
+		
 		networks := docker.ExtractNetworks(compose)
 		network := ""
 		if len(networks) > 0 {
@@ -189,9 +168,9 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 			req.ComposeContent = string(composeBytes)
 			s.logger.InfoContext(ctx, "Quick Tunnel container injected successfully", "app", req.Name)
 		}
-	} else if providerConfigErr == nil && providerConfig != nil {
+	} else if req.TunnelMode == constants.TunnelModeCustom && providerConfigErr == nil && providerConfig != nil {
 		// Custom (named) tunnel: create via provider API and inject container
-		tunnelMode = "custom"
+		tunnelMode = constants.TunnelModeCustom
 		s.logger.InfoContext(ctx, "creating tunnel using provider", "provider", providerName, "app", req.Name)
 
 		provider, err := s.providerRegistry.GetProvider(providerName, providerConfig)
@@ -245,7 +224,11 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 			s.logger.DebugContext(ctx, "provider does not require container injection", "provider", providerName)
 		}
 	} else {
-		s.logger.InfoContext(ctx, "no tunnel provider configured, creating app without tunnel", "app", req.Name)
+		if req.TunnelMode == "" {
+			s.logger.InfoContext(ctx, "no tunnel selected, creating app without tunnel", "app", req.Name)
+		} else {
+			s.logger.InfoContext(ctx, "no tunnel provider configured, creating app without tunnel", "app", req.Name)
+		}
 	}
 
 	// Create app in database (using the same ID if tunnel was created)
@@ -260,7 +243,7 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 			TunnelID:       tunnelID,
 			TunnelDomain:   publicURL,
 			PublicURL:      publicURL,
-			Status:         "stopped",
+			Status:         constants.AppStatusStopped,
 			ErrorMessage:   nil,
 			NodeID:         s.config.Node.ID,
 			TunnelMode:     tunnelMode,
@@ -273,7 +256,7 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 		app.TunnelID = tunnelID
 		app.TunnelDomain = publicURL
 		app.PublicURL = publicURL
-		app.Status = "stopped"
+		app.Status = constants.AppStatusStopped
 		app.ErrorMessage = nil
 		app.NodeID = s.config.Node.ID
 		app.TunnelMode = tunnelMode
@@ -287,7 +270,7 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 
 	// Create initial compose version (version 1)
 	// Note: changedBy will be set by the caller if user context is available
-	initialReason := "Initial version"
+	initialReason := constants.ComposeVersionReasonInitial
 	initialVersion := db.NewComposeVersion(app.ID, 1, app.ComposeContent, &initialReason, nil)
 	if err := s.database.CreateComposeVersion(initialVersion); err != nil {
 		s.logger.WarnContext(ctx, "failed to create initial compose version", "appID", app.ID, "error", err)
@@ -309,7 +292,7 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 	s.logger.DebugContext(ctx, "tunnel metadata handled by provider", "has_tunnel", tunnelID != "")
 
 	// Apply ingress rules if provided and named tunnel was created (custom mode only)
-	if len(req.IngressRules) > 0 && createdTunnelAppID != "" && tunnelMode == "custom" {
+	if len(req.IngressRules) > 0 && createdTunnelAppID != "" && tunnelMode == constants.TunnelModeCustom {
 		s.logger.InfoContext(ctx, "applying ingress rules", "app", req.Name, "ruleCount", len(req.IngressRules))
 
 		// Get the provider again to apply ingress rules
@@ -363,13 +346,15 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 			}
 
 			// Quick Tunnel: extract URL from metrics endpoint and update app
-			if app.TunnelMode == "quick" {
-				metricsEndpoint := s.quickTunnelMetricsEndpoint(app.ComposeContent)
-				s.logger.InfoContext(ctx, "extracting Quick Tunnel URL from metrics", "app", app.Name, "endpoint", metricsEndpoint)
-				quickURL, err := cloudflare.ExtractQuickTunnelURL(metricsEndpoint, 30, 2*time.Second)
+			if app.TunnelMode == constants.TunnelModeQuick {
+				// Give cloudflared a moment to start and establish the tunnel
+				time.Sleep(constants.QuickTunnelStartupDelay)
+				
+				// Delegate URL extraction to tunnel service (which uses QuickTunnelProvider)
+				quickURL, err := s.tunnelService.ExtractQuickTunnelURL(ctx, app.ID, s.config.Node.ID)
 				if err != nil {
 					s.logger.WarnContext(ctx, "failed to extract Quick Tunnel URL, app may need manual refresh", "app", app.Name, "error", err)
-				} else {
+				} else if quickURL != "" {
 					app.PublicURL = quickURL
 					app.TunnelDomain = strings.TrimPrefix(quickURL, "https://")
 					app.UpdatedAt = time.Now()
@@ -477,7 +462,7 @@ func (s *appService) UpdateApp(ctx context.Context, appID string, nodeID string,
 		composeContent = req.ComposeContent
 	}
 
-	if app.TunnelMode == "quick" && req.ComposeContent != "" {
+	if app.TunnelMode == constants.TunnelModeQuick && req.ComposeContent != "" {
 		if targetService, targetPort, ok := docker.ExtractQuickTunnelTargetFromCompose(app.ComposeContent); ok {
 			compose, err := docker.ParseCompose([]byte(composeContent))
 			if err == nil {
@@ -485,18 +470,20 @@ func (s *appService) UpdateApp(ctx context.Context, appID string, nodeID string,
 				if p, ok := docker.ExtractQuickTunnelMetricsHostPort(app.ComposeContent); ok {
 					metricsPort = p
 				}
-				containerConfig := cloudflareProvider.QuickTunnelContainerConfig(targetService, targetPort, metricsPort)
-				networks := docker.ExtractNetworks(compose)
-				network := ""
-				if len(networks) > 0 {
-					network = networks[0]
-				}
-				injected, err := docker.InjectTunnelContainer(compose, app.Name, containerConfig, network)
-				if err == nil && injected {
-					composeBytes, err := docker.MarshalComposeFile(compose)
-					if err == nil {
-						composeContent = string(composeBytes)
-						s.logger.InfoContext(ctx, "re-injected Quick Tunnel container into updated compose", "appID", appID, "target", targetService+":"+fmt.Sprint(targetPort))
+				containerConfig, err := s.tunnelService.CreateQuickTunnelConfig(targetService, targetPort, metricsPort)
+				if err == nil {
+					networks := docker.ExtractNetworks(compose)
+					network := ""
+					if len(networks) > 0 {
+						network = networks[0]
+					}
+					injected, err := docker.InjectTunnelContainer(compose, app.Name, containerConfig, network)
+					if err == nil && injected {
+						composeBytes, err := docker.MarshalComposeFile(compose)
+						if err == nil {
+							composeContent = string(composeBytes)
+							s.logger.InfoContext(ctx, "re-injected Quick Tunnel container into updated compose", "appID", appID, "target", targetService+":"+fmt.Sprint(targetPort))
+						}
 					}
 				}
 			}
@@ -566,7 +553,7 @@ func (s *appService) UpdateApp(ctx context.Context, appID string, nodeID string,
 		if err := s.database.MarkAllVersionsAsNotCurrent(appID); err != nil {
 			s.logger.WarnContext(ctx, "failed to mark versions as not current", "appID", appID, "error", err)
 		}
-		updateReason := "Compose file updated"
+		updateReason := constants.ComposeVersionReasonUpdated
 		newVersion := db.NewComposeVersion(appID, latestVersion+1, app.ComposeContent, &updateReason, nil)
 		if err := s.database.CreateComposeVersion(newVersion); err != nil {
 			s.logger.WarnContext(ctx, "failed to create compose version", "appID", appID, "error", err)
@@ -647,14 +634,14 @@ func (s *appService) StopApp(ctx context.Context, appID string, nodeID string) (
 		return nil, domain.WrapAppNotFound(appID, err)
 	}
 	if err := s.dockerManager.StopApp(app.Name); err != nil {
-		app.Status = "error"
+		app.Status = constants.AppStatusError
 		em := err.Error()
 		app.ErrorMessage = &em
 		app.UpdatedAt = time.Now()
 		_ = s.database.UpdateApp(app)
 		return nil, domain.WrapContainerOperationFailed("stop app", err)
 	}
-	app.Status = "stopped"
+	app.Status = constants.AppStatusStopped
 	app.ErrorMessage = nil
 	app.UpdatedAt = time.Now()
 	if err := s.database.UpdateApp(app); err != nil {
@@ -814,7 +801,7 @@ func (s *appService) SwitchAppToCustomTunnel(ctx context.Context, appID string, 
 	if err != nil {
 		return nil, domain.WrapAppNotFound(appID, err)
 	}
-	if app.TunnelMode != "quick" {
+	if app.TunnelMode != constants.TunnelModeQuick {
 		return nil, fmt.Errorf("app is not using Quick Tunnel (tunnel_mode=%q)", app.TunnelMode)
 	}
 	createdApp, _, err := s.CreateTunnelForApp(ctx, appID, nodeID, body)
@@ -828,8 +815,8 @@ func (s *appService) CreateQuickTunnelForApp(ctx context.Context, appID string, 
 	if strings.TrimSpace(service) == "" {
 		return nil, domain.WrapValidationError("service", fmt.Errorf("service is required for Quick Tunnel"))
 	}
-	if port < 1 || port > 65535 {
-		return nil, domain.WrapValidationError("port", fmt.Errorf("port must be between 1 and 65535"))
+	if port < constants.MinPort || port > constants.MaxPort {
+		return nil, domain.WrapValidationError("port", fmt.Errorf("port must be between %d and %d", constants.MinPort, constants.MaxPort))
 	}
 
 	app, err := s.database.GetApp(appID)
@@ -846,8 +833,14 @@ func (s *appService) CreateQuickTunnelForApp(ctx context.Context, appID string, 
 		return nil, domain.WrapComposeInvalid(err)
 	}
 
-	metricsPort := s.nextFreeQuickTunnelMetricsPort()
-	containerConfig := cloudflareProvider.QuickTunnelContainerConfig(strings.TrimSpace(service), port, metricsPort)
+	metricsPort, err := s.tunnelService.NextFreeQuickTunnelMetricsPort()
+	if err != nil {
+		s.logger.WarnContext(ctx, "failed to allocate Quick Tunnel metrics port, using fallback", "appID", appID, "error", err)
+	}
+	containerConfig, err := s.tunnelService.CreateQuickTunnelConfig(strings.TrimSpace(service), port, metricsPort)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Quick Tunnel config: %w", err)
+	}
 	networks := docker.ExtractNetworks(compose)
 	network := ""
 	if len(networks) > 0 {
@@ -868,7 +861,7 @@ func (s *appService) CreateQuickTunnelForApp(ctx context.Context, appID string, 
 		return nil, fmt.Errorf("failed to marshal compose file: %w", err)
 	}
 	app.ComposeContent = string(composeBytes)
-	app.TunnelMode = "quick"
+	app.TunnelMode = constants.TunnelModeQuick
 	app.TunnelID = ""
 	app.TunnelToken = ""
 	app.TunnelDomain = ""
@@ -887,7 +880,7 @@ func (s *appService) CreateQuickTunnelForApp(ctx context.Context, appID string, 
 	if err := s.database.MarkAllVersionsAsNotCurrent(appID); err != nil {
 		s.logger.WarnContext(ctx, "failed to mark versions as not current", "appID", appID, "error", err)
 	}
-	updateReason := "Quick Tunnel added"
+	updateReason := constants.ComposeVersionReasonQuickTunnel
 	newVersion := db.NewComposeVersion(appID, latestVersion+1, app.ComposeContent, &updateReason, nil)
 	if err := s.database.CreateComposeVersion(newVersion); err != nil {
 		s.logger.WarnContext(ctx, "failed to create compose version", "appID", appID, "error", err)
@@ -914,12 +907,14 @@ func (s *appService) CreateQuickTunnelForApp(ctx context.Context, appID string, 
 		s.logger.WarnContext(ctx, "failed to update app status after start", "app", app.Name, "error", err)
 	}
 
-	metricsEndpoint := s.quickTunnelMetricsEndpoint(app.ComposeContent)
-	s.logger.InfoContext(ctx, "extracting Quick Tunnel URL from metrics", "app", app.Name, "endpoint", metricsEndpoint)
-	quickURL, err := cloudflare.ExtractQuickTunnelURL(metricsEndpoint, 30, 2*time.Second)
+	// Give cloudflared a moment to start and establish the tunnel
+	time.Sleep(3 * time.Second)
+	
+	// Delegate URL extraction to tunnel service (which uses QuickTunnelProvider)
+	quickURL, err := s.tunnelService.ExtractQuickTunnelURL(ctx, appID, nodeID)
 	if err != nil {
 		s.logger.WarnContext(ctx, "failed to extract Quick Tunnel URL, app may need manual refresh", "app", app.Name, "error", err)
-	} else {
+	} else if quickURL != "" {
 		app.PublicURL = quickURL
 		app.TunnelDomain = strings.TrimPrefix(quickURL, "https://")
 		app.UpdatedAt = time.Now()
@@ -933,27 +928,18 @@ func (s *appService) CreateQuickTunnelForApp(ctx context.Context, appID string, 
 }
 
 // GetQuickTunnelURL runs Quick Tunnel URL extraction on this node and returns the URL (local only).
+// Delegates to tunnel service which uses QuickTunnelProvider.
 func (s *appService) GetQuickTunnelURL(ctx context.Context, appID string, nodeID string) (string, error) {
 	app, err := s.database.GetApp(appID)
 	if err != nil {
 		return "", domain.WrapAppNotFound(appID, err)
 	}
-	if app.TunnelMode != "quick" {
+	if app.TunnelMode != constants.TunnelModeQuick {
 		return "", fmt.Errorf("app is not in Quick Tunnel mode (tunnel_mode=%q)", app.TunnelMode)
 	}
-	metricsEndpoint := s.quickTunnelMetricsEndpoint(app.ComposeContent)
-	s.logger.InfoContext(ctx, "extracting Quick Tunnel URL from metrics", "app", app.Name, "endpoint", metricsEndpoint)
-	url, err := cloudflare.ExtractQuickTunnelURL(metricsEndpoint, 30, 2*time.Second)
-	if err != nil {
-		return "", err
-	}
-	app.PublicURL = url
-	app.TunnelDomain = strings.TrimPrefix(url, "https://")
-	app.UpdatedAt = time.Now()
-	if err := s.database.UpdateApp(app); err != nil {
-		s.logger.WarnContext(ctx, "failed to save Quick Tunnel URL to app", "app", app.Name, "error", err)
-	}
-	return url, nil
+	
+	// Delegate to tunnel service (which uses QuickTunnelProvider)
+	return s.tunnelService.ExtractQuickTunnelURL(ctx, appID, nodeID)
 }
 
 // RestartCloudflared restarts the cloudflared container for an app (local only; gateway routes to this node)

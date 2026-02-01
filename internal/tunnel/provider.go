@@ -108,3 +108,30 @@ type ListProvider interface {
 	// The nodeIDs parameter can be used to filter tunnels by node in multi-node setups.
 	ListTunnels(ctx context.Context, nodeIDs []string) ([]*Tunnel, error)
 }
+
+// QuickTunnelProvider defines the interface for providers that support Quick Tunnels
+// (temporary tunnels without API registration, e.g., Cloudflare's trycloudflare.com).
+//
+// Quick Tunnels are provider-specific features:
+// - Cloudflare: Uses cloudflared with --url flag, exposes metrics endpoint
+// - Other providers: May or may not support this feature
+type QuickTunnelProvider interface {
+	Provider
+
+	// CreateQuickTunnelConfig creates a container configuration for a Quick Tunnel.
+	// The provider determines the container image, command, and port mappings.
+	// metricsHostPort is the host port for metrics (container port is provider-specific).
+	CreateQuickTunnelConfig(targetService string, targetPort int, metricsHostPort int) *ContainerConfig
+
+	// ExtractQuickTunnelURL extracts the public URL from a running Quick Tunnel.
+	// This typically involves querying a metrics endpoint or container logs.
+	// commandExecutor is used to exec into containers if needed (e.g., to fetch metrics).
+	// Returns the public URL (e.g., "https://xyz.trycloudflare.com") or an error.
+	ExtractQuickTunnelURL(ctx context.Context, appName string, composeContent string, appsDir string, commandExecutor CommandExecutor) (string, error)
+}
+
+// CommandExecutor is a minimal interface for executing commands (to avoid circular dependencies).
+// Providers that need to exec into containers can use this to fetch metrics/logs.
+type CommandExecutor interface {
+	ExecuteCommandInDir(dir, name string, args ...string) ([]byte, error)
+}

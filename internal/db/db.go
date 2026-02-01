@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/selfhostly/internal/config"
+	"github.com/selfhostly/internal/constants"
 	_ "modernc.org/sqlite"
 )
 
@@ -335,7 +336,7 @@ func (settings *Settings) GetProviderConfig(providerName string) (map[string]int
 	}
 
 	// Fallback to old cloudflare-specific fields for backward compatibility
-	if providerName == "cloudflare" {
+	if providerName == constants.ProviderCloudflare {
 		if settings.CloudflareAPIToken != nil && *settings.CloudflareAPIToken != "" &&
 			settings.CloudflareAccountID != nil && *settings.CloudflareAccountID != "" {
 			return map[string]interface{}{
@@ -357,10 +358,10 @@ func (settings *Settings) GetActiveProviderName() string {
 
 	// Fallback: if cloudflare credentials exist, assume cloudflare
 	if settings.CloudflareAPIToken != nil && *settings.CloudflareAPIToken != "" {
-		return "cloudflare"
+		return constants.ProviderCloudflare
 	}
 
-	return "cloudflare" // Default
+	return constants.DefaultProviderName // Default
 }
 
 // SetProviderConfig updates the configuration for a specific provider.

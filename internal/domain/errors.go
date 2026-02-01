@@ -122,10 +122,15 @@ func WrapDatabaseOperation(operation string, cause error) error {
 }
 
 // WrapValidationError wraps an error as a validation failure
+// For validation errors, we include the cause details in the message since they're safe and helpful for users
 func WrapValidationError(field string, cause error) error {
+	message := fmt.Sprintf("validation failed for %s", field)
+	if cause != nil {
+		message = fmt.Sprintf("validation failed for %s: %s", field, cause.Error())
+	}
 	return &DomainError{
 		Code:    codeValidationFailed,
-		Message: fmt.Sprintf("validation failed for %s", field),
+		Message: message,
 		Cause:   cause,
 	}
 }

@@ -70,7 +70,8 @@ func setupTestAppServiceWithMocks(t *testing.T, mockExecutor docker.CommandExecu
 	}
 
 	logger := slog.Default()
-	service := NewAppService(database, dockerManager, cfg, logger)
+	tunnelService := NewTunnelService(database, dockerManager, cfg, logger)
+	service := NewAppService(database, dockerManager, cfg, logger, tunnelService)
 
 	cleanup := func() {
 		database.Close()

@@ -6,6 +6,7 @@ import (
 
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/system"
+	"github.com/selfhostly/internal/tunnel"
 )
 
 // ============================================================================
@@ -45,6 +46,12 @@ type TunnelService interface {
 	UpdateTunnelIngress(ctx context.Context, appID string, nodeID string, req UpdateIngressRequest) error
 	CreateDNSRecord(ctx context.Context, appID string, nodeID string, req CreateDNSRequest) error
 	DeleteTunnel(ctx context.Context, appID string, nodeID string) error
+
+	// Quick Tunnel operations (provider-specific)
+	// These delegate to QuickTunnelProvider if the active provider supports it
+	ExtractQuickTunnelURL(ctx context.Context, appID string, nodeID string) (string, error)
+	CreateQuickTunnelConfig(targetService string, targetPort int, metricsHostPort int) (*tunnel.ContainerConfig, error)
+	NextFreeQuickTunnelMetricsPort() (int, error)
 
 	// Provider discovery (NEW)
 	ListProviders(ctx context.Context) ([]ProviderInfo, error)
