@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/selfhostly/internal/constants"
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/domain"
 	"github.com/selfhostly/internal/httputil"
@@ -27,7 +28,7 @@ func (s *Server) ListTunnelProviders(c *gin.Context) {
 
 	// Get active provider name
 	settings, err := s.database.GetSettings()
-	activeProvider := "cloudflare" // default
+	activeProvider := constants.DefaultProviderName // default
 	if err == nil {
 		activeProvider = settings.GetActiveProviderName()
 	}
@@ -125,7 +126,7 @@ func (s *Server) GetTunnelByAppIDGeneric(c *gin.Context) {
 	if tun.PublicURL != "" {
 		publicURL = tun.PublicURL
 	}
-	c.JSON(http.StatusOK, tunnelByAppEnvelope(appID, nodeID, "custom", publicURL, tun))
+	c.JSON(http.StatusOK, tunnelByAppEnvelope(appID, nodeID, constants.TunnelModeCustom, publicURL, tun))
 }
 
 // ListTunnelsGeneric lists all tunnels using provider abstraction

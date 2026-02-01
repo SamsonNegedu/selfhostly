@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/selfhostly/internal/apipaths"
+	"github.com/selfhostly/internal/constants"
 	"github.com/selfhostly/internal/domain"
 )
 
@@ -76,7 +77,7 @@ func (s *Server) manualCheckNode(c *gin.Context) {
 // This is called as a goroutine from startBackgroundTasks()
 func (s *Server) sendStartupHeartbeat() {
 	// Wait a bit for server to fully initialize
-	time.Sleep(2 * time.Second)
+	time.Sleep(constants.HeartbeatDelay)
 	
 	primaryURL := s.config.Node.PrimaryNodeURL
 	// Use internal API endpoint which requires node authentication

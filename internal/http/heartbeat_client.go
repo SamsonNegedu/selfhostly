@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/selfhostly/internal/apipaths"
+	"github.com/selfhostly/internal/constants"
 )
 
 // HeartbeatClient manages continuous heartbeat with exponential backoff
@@ -40,10 +41,10 @@ type Config struct {
 // NewHeartbeatClient creates a new heartbeat client
 func NewHeartbeatClient(config *Config) *HeartbeatClient {
 	if config.InitialInterval == 0 {
-		config.InitialInterval = 2 * time.Second
+		config.InitialInterval = constants.BackoffInitialInterval
 	}
 	if config.MaxInterval == 0 {
-		config.MaxInterval = 5 * time.Minute
+		config.MaxInterval = constants.BackoffMaxInterval
 	}
 	if config.MaxRetries == 0 {
 		config.MaxRetries = 10
@@ -262,8 +263,8 @@ func (s *Server) sendPeriodicHeartbeats() {
 		PrimaryURL:        s.config.Node.PrimaryNodeURL,
 		NodeID:            s.config.Node.ID,
 		NodeAPIKey:        s.config.Node.APIKey,
-		InitialInterval:   2 * time.Second,
-		MaxInterval:       5 * time.Minute,
+		InitialInterval:   constants.BackoffInitialInterval,
+		MaxInterval:       constants.BackoffMaxInterval,
 		MaxRetries:        10,
 		HeartbeatInterval: 60 * time.Second,
 		OnReconnect: func(ctx context.Context) error {

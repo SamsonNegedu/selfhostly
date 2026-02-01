@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/selfhostly/internal/cloudflare"
+	"github.com/selfhostly/internal/constants"
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/docker"
 	"github.com/selfhostly/internal/tunnel"
@@ -191,7 +192,7 @@ func (p *Provider) CleanupOrphanedTunnels(ctx context.Context) error {
 
 // Name returns the provider's unique identifier.
 func (p *Provider) Name() string {
-	return "cloudflare"
+	return constants.ProviderCloudflare
 }
 
 // DisplayName returns the provider's human-readable name.
@@ -378,7 +379,7 @@ func (p *Provider) fetchQuickTunnelMetricsFromContainer(ctx context.Context, app
 		return "", fmt.Errorf("failed to parse compose file: %w", err)
 	}
 
-	containerPort := 2000 // Default fallback
+	containerPort := constants.QuickTunnelMetricsPort // Default fallback
 	if tunnelSvc, ok := compose.Services["tunnel"]; ok {
 		if extractedPort := docker.ExtractQuickTunnelMetricsContainerPort(tunnelSvc.Command); extractedPort > 0 {
 			containerPort = extractedPort
@@ -409,7 +410,7 @@ func (p *Provider) fetchQuickTunnelMetricsFromContainer(ctx context.Context, app
 // buildQuickTunnelMetricsEndpoints returns a list of metrics endpoints to try, ordered by priority.
 // Works in both local and Docker environments by trying multiple host options.
 func (p *Provider) buildQuickTunnelMetricsEndpoints(composeContent string) []string {
-	port := 2000
+	port := constants.QuickTunnelMetricsPort
 	if hostPort, ok := docker.ExtractQuickTunnelMetricsHostPort(composeContent); ok {
 		port = hostPort
 	}
@@ -468,13 +469,14 @@ func (p *Provider) GetQuickTunnelContainerConfig(targetService string, targetPor
 // metricsHostPort is the host port for the metrics endpoint (container port is always 2000); use a unique port per app to avoid conflicts.
 func QuickTunnelContainerConfig(targetService string, targetPort int, metricsHostPort int) *tunnel.ContainerConfig {
 	targetURL := fmt.Sprintf("http://%s:%d", targetService, targetPort)
-	if metricsHostPort < 1 || metricsHostPort > 65535 {
-		metricsHostPort = 2000
+	if metricsHostPort < constants.MinPort || metricsHostPort > constants.MaxPort {
+		metricsHostPort = constants.QuickTunnelMetricsPort
 	}
+	metricsEndpoint := fmt.Sprintf(constants.QuickTunnelMetricsEndpointFormat, constants.QuickTunnelMetricsPort)
 	return &tunnel.ContainerConfig{
 		Image:   "cloudflare/cloudflared:latest",
-		Command: []string{"tunnel", "--url", targetURL, "--metrics", "0.0.0.0:2000"},
-		Ports:   []string{fmt.Sprintf("%d:2000", metricsHostPort)},
+		Command: []string{"tunnel", "--url", targetURL, "--metrics", metricsEndpoint},
+		Ports:   []string{fmt.Sprintf("%d:%d", metricsHostPort, constants.QuickTunnelMetricsPort)},
 	}
 }
 

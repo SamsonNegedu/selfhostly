@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/selfhostly/internal/constants"
 	"github.com/selfhostly/internal/db"
 )
 
@@ -48,7 +49,7 @@ func (tm *TunnelManager) CreateTunnelWithMetadata(appName string, appID string) 
 		TunnelToken:  token,
 		AccountID:    tm.ApiManager.config.AccountID,
 		IsActive:     true,
-		Status:       "active",
+		Status:       constants.TunnelStatusActive,
 		PublicURL:    "", // Set when ingress is configured
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
@@ -148,7 +149,7 @@ func (tm *TunnelManager) SyncTunnelStatus(tunnelID string) error {
 		// Tunnel may have been deleted on Cloudflare; update DB to reflect failure/unknown state
 		tunnel, dbErr := tm.database.GetCloudflareTunnelByTunnelID(tunnelID)
 		if dbErr == nil {
-			tunnel.Status = "error"
+			tunnel.Status = constants.TunnelStatusError
 			errMsg := err.Error()
 			tunnel.ErrorDetails = &errMsg
 			now := time.Now()

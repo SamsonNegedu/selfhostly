@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/selfhostly/internal/config"
+	"github.com/selfhostly/internal/constants"
 )
 
 // bootstrapSingleNode handles the initial setup for primary node creation
@@ -193,7 +193,7 @@ func assignUnassignedAppsToNode(db *sql.DB, nodeID string) error {
 
 // checkPrimaryNodeExists checks if a primary node is reachable at the given URL
 func checkPrimaryNodeExists(primaryURL, apiKey string) error {
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := &http.Client{Timeout: constants.HTTPClientTimeout}
 	req, err := http.NewRequest("GET", primaryURL+"/api/health", nil)
 	if err != nil {
 		return err

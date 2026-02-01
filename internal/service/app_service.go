@@ -55,7 +55,7 @@ func NewAppService(
 	registry := tunnel.NewRegistry()
 	
 	// Register Cloudflare provider
-	registry.Register("cloudflare", func(config map[string]interface{}) (tunnel.Provider, error) {
+	registry.Register(constants.ProviderCloudflare, func(config map[string]interface{}) (tunnel.Provider, error) {
 		config["database"] = database
 		config["logger"] = logger
 		return cloudflareProvider.NewProvider(config)
@@ -132,9 +132,9 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 	providerName := settings.GetActiveProviderName()
 	providerConfig, providerConfigErr := settings.GetProviderConfig(providerName)
 
-	if req.TunnelMode == "quick" {
+	if req.TunnelMode == constants.TunnelModeQuick {
 		// Quick Tunnel: delegate to tunnel service for provider-agnostic handling
-		tunnelMode = "quick"
+		tunnelMode = constants.TunnelModeQuick
 		tempApp := db.NewApp(req.Name, req.Description, req.ComposeContent)
 		createdTunnelAppID = tempApp.ID
 
@@ -347,10 +347,8 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 
 			// Quick Tunnel: extract URL from metrics endpoint and update app
 			if app.TunnelMode == constants.TunnelModeQuick {
-				// Give cloudflared a moment to start and establish the tunnel
-				time.Sleep(constants.QuickTunnelStartupDelay)
-				
 				// Delegate URL extraction to tunnel service (which uses QuickTunnelProvider)
+				// The extractor has built-in retry logic to handle startup delays
 				quickURL, err := s.tunnelService.ExtractQuickTunnelURL(ctx, app.ID, s.config.Node.ID)
 				if err != nil {
 					s.logger.WarnContext(ctx, "failed to extract Quick Tunnel URL, app may need manual refresh", "app", app.Name, "error", err)
@@ -367,7 +365,7 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 			}
 
 			// Restart tunnel container to pick up ingress configuration if app was auto-started (custom tunnel only)
-			if len(req.IngressRules) > 0 && createdTunnelAppID != "" && tunnelMode == "custom" {
+			if len(req.IngressRules) > 0 && createdTunnelAppID != "" && tunnelMode == constants.TunnelModeCustom {
 				s.logger.InfoContext(ctx, "restarting tunnel container after auto-start", "app", req.Name)
 				if err := s.dockerManager.RestartTunnelService(app.Name); err != nil {
 					s.logger.WarnContext(ctx, "failed to restart tunnel container, ingress rules updated but container restart may be required", "app", req.Name, "appID", app.ID, "error", err)
@@ -466,7 +464,7 @@ func (s *appService) UpdateApp(ctx context.Context, appID string, nodeID string,
 		if targetService, targetPort, ok := docker.ExtractQuickTunnelTargetFromCompose(app.ComposeContent); ok {
 			compose, err := docker.ParseCompose([]byte(composeContent))
 			if err == nil {
-				metricsPort := 2000
+				metricsPort := constants.QuickTunnelMetricsPort
 				if p, ok := docker.ExtractQuickTunnelMetricsHostPort(app.ComposeContent); ok {
 					metricsPort = p
 				}
@@ -609,14 +607,14 @@ func (s *appService) StartApp(ctx context.Context, appID string, nodeID string) 
 		return nil, domain.WrapAppNotFound(appID, err)
 	}
 	if err := s.dockerManager.StartApp(app.Name); err != nil {
-		app.Status = "error"
+		app.Status = constants.AppStatusError
 		em := err.Error()
 		app.ErrorMessage = &em
 		app.UpdatedAt = time.Now()
 		_ = s.database.UpdateApp(app)
 		return nil, domain.WrapContainerOperationFailed("start app", err)
 	}
-	app.Status = "running"
+	app.Status = constants.AppStatusRunning
 	app.ErrorMessage = nil
 	app.UpdatedAt = time.Now()
 	if err := s.database.UpdateApp(app); err != nil {
@@ -658,13 +656,13 @@ func (s *appService) UpdateAppContainers(ctx context.Context, appID string, node
 	if err != nil {
 		return nil, domain.WrapAppNotFound(appID, err)
 	}
-	app.Status = "updating"
+	app.Status = constants.AppStatusUpdating
 	app.UpdatedAt = time.Now()
 	if err := s.database.UpdateApp(app); err != nil {
 		return nil, domain.WrapDatabaseOperation("update app status", err)
 	}
 	if err := s.dockerManager.WriteComposeFile(app.Name, app.ComposeContent); err != nil {
-		app.Status = "error"
+		app.Status = constants.AppStatusError
 		em := err.Error()
 		app.ErrorMessage = &em
 		app.UpdatedAt = time.Now()
@@ -672,7 +670,7 @@ func (s *appService) UpdateAppContainers(ctx context.Context, appID string, node
 		return nil, domain.WrapContainerOperationFailed("write compose file", err)
 	}
 	if err := s.dockerManager.UpdateApp(app.Name); err != nil {
-		app.Status = "error"
+		app.Status = constants.AppStatusError
 		em := err.Error()
 		app.ErrorMessage = &em
 		app.UpdatedAt = time.Now()
@@ -682,7 +680,7 @@ func (s *appService) UpdateAppContainers(ctx context.Context, appID string, node
 	if err := s.dockerManager.ForceRecreateTunnel(app.Name); err != nil {
 		s.logger.WarnContext(ctx, "could not force-recreate tunnel (app may have no tunnel)", "app", app.Name, "appID", appID, "error", err)
 	}
-	app.Status = "running"
+	app.Status = constants.AppStatusRunning
 	app.ErrorMessage = nil
 	app.UpdatedAt = time.Now()
 	if err := s.database.UpdateApp(app); err != nil {
@@ -823,7 +821,7 @@ func (s *appService) CreateQuickTunnelForApp(ctx context.Context, appID string, 
 	if err != nil {
 		return nil, domain.WrapAppNotFound(appID, err)
 	}
-	if app.TunnelMode == "custom" || app.TunnelToken != "" {
+	if app.TunnelMode == constants.TunnelModeCustom || app.TunnelToken != "" {
 		return nil, domain.WrapValidationError("tunnel", fmt.Errorf("this app uses a custom domain tunnel; delete the tunnel from the Cloudflare tab first if you want a temporary Quick Tunnel URL instead"))
 	}
 
@@ -893,24 +891,22 @@ func (s *appService) CreateQuickTunnelForApp(ctx context.Context, appID string, 
 
 	if err := s.dockerManager.StartApp(app.Name); err != nil {
 		s.logger.ErrorContext(ctx, "failed to start app for Quick Tunnel", "app", app.Name, "error", err)
-		app.Status = "error"
+		app.Status = constants.AppStatusError
 		em := err.Error()
 		app.ErrorMessage = &em
 		app.UpdatedAt = time.Now()
 		_ = s.database.UpdateApp(app)
 		return nil, domain.WrapContainerOperationFailed("start app", err)
 	}
-	app.Status = "running"
+	app.Status = constants.AppStatusRunning
 	app.ErrorMessage = nil
 	app.UpdatedAt = time.Now()
 	if err := s.database.UpdateApp(app); err != nil {
 		s.logger.WarnContext(ctx, "failed to update app status after start", "app", app.Name, "error", err)
 	}
 
-	// Give cloudflared a moment to start and establish the tunnel
-	time.Sleep(3 * time.Second)
-	
 	// Delegate URL extraction to tunnel service (which uses QuickTunnelProvider)
+	// The extractor has built-in retry logic to handle startup delays
 	quickURL, err := s.tunnelService.ExtractQuickTunnelURL(ctx, appID, nodeID)
 	if err != nil {
 		s.logger.WarnContext(ctx, "failed to extract Quick Tunnel URL, app may need manual refresh", "app", app.Name, "error", err)

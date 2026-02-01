@@ -13,6 +13,7 @@ import (
 	"github.com/go-pkgz/auth/avatar"
 	"github.com/go-pkgz/auth/token"
 	"github.com/selfhostly/internal/config"
+	"github.com/selfhostly/internal/constants"
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/docker"
 	"github.com/selfhostly/internal/domain"
@@ -244,10 +245,13 @@ func (r *redirectRewriter) WriteHeader(code int) {
 }
 
 const (
-	maxBodySize  = 10 << 20          // 10MB max request body
-	readTimeout  = 30 * time.Second  // 30s for reading request
-	writeTimeout = 120 * time.Second // 2 minutes for long operations (app creation, tunnel setup)
-	idleTimeout  = 120 * time.Second // 2 minutes idle
+	maxBodySize = 10 << 20 // 10MB max request body
+)
+
+var (
+	readTimeout  = constants.ServerReadTimeout  // 30s for reading request
+	writeTimeout = constants.ServerWriteTimeout // 2 minutes for long operations (app creation, tunnel setup)
+	idleTimeout  = constants.ServerIdleTimeout  // 2 minutes idle
 )
 
 // Run starts the HTTP server and background tasks
@@ -328,8 +332,7 @@ func (s *Server) runPeriodicHealthChecks() {
 		slog.Warn("initial health check failed", "error", err)
 	}
 
-	// Then run every 30 seconds
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(constants.HealthCheckInterval)
 	defer ticker.Stop()
 
 	for {

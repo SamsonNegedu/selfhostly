@@ -35,8 +35,8 @@ func (m *Manager) GetAppStats(name string) (*AppStats, error) {
 	appPath := filepath.Join(m.appsDir, name)
 
 	// Get list of container IDs for this app
-	output, err := m.commandExecutor.ExecuteCommandInDir(appPath,
-		"docker", "compose", "-f", "docker-compose.yml", "ps", "-q")
+	cmd := ComposePsQuietCommand()
+	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, cmd[0], cmd[1:]...)
 	if err != nil {
 		// If docker compose ps fails (app stopped, no compose file, etc.), return empty stats
 		// This is not an error condition - just means no containers are running

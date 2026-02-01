@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/selfhostly/internal/constants"
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/docker"
 	"github.com/selfhostly/internal/domain"
@@ -209,7 +210,7 @@ func TestComposeService_GetVersion(t *testing.T) {
 	}
 
 	// Create compose version
-	reason := "Initial version"
+	reason := constants.ComposeVersionReasonInitial
 	version := db.NewComposeVersion(app.ID, 1, "version: '3'\nservices:\n  web:\n    image: nginx:latest", &reason, nil)
 	if err := database.CreateComposeVersion(version); err != nil {
 		t.Fatalf("Failed to create version: %v", err)
@@ -290,7 +291,7 @@ func TestComposeService_RollbackToVersion(t *testing.T) {
 	}
 
 	// Create initial version
-	reason1 := "Initial version"
+	reason1 := constants.ComposeVersionReasonInitial
 	version1 := db.NewComposeVersion(app.ID, 1, "version: '3'\nservices:\n  web:\n    image: nginx:latest", &reason1, nil)
 	if err := database.CreateComposeVersion(version1); err != nil {
 		t.Fatalf("Failed to create version 1: %v", err)

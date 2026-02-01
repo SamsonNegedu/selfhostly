@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/selfhostly/internal/config"
+	"github.com/selfhostly/internal/constants"
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/domain"
 	"github.com/selfhostly/internal/node"
@@ -287,10 +288,10 @@ func (s *nodeService) shouldCheckNode(node *db.Node, now time.Time) bool {
 		return true
 	case node.ConsecutiveFailures <= 5:
 		// Multiple failures - check every 2 minutes
-		return timeSinceLastCheck >= 2*time.Minute
+		return timeSinceLastCheck >= constants.NodeHealthCheckIntervalMedium
 	case node.ConsecutiveFailures <= 9:
 		// Many failures - check every 5 minutes
-		return timeSinceLastCheck >= 5*time.Minute
+		return timeSinceLastCheck >= constants.NodeHealthCheckIntervalLong
 	default:
 		// Persistent failures - check every 15 minutes
 		return timeSinceLastCheck >= 15*time.Minute

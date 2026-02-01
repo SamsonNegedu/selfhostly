@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/selfhostly/internal/constants"
 )
 
 // Manager handles Docker operations
@@ -79,7 +81,8 @@ func (m *Manager) StartApp(name string) error {
 
 	slog.Info("starting app", "app", name, "appPath", appPath, "command", "docker compose up -d")
 
-	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, "docker", "compose", "-f", "docker-compose.yml", "up", "-d")
+	cmd := ComposeUpCommand()
+	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, cmd[0], cmd[1:]...)
 	if err != nil {
 		slog.Error("failed to start app", "app", name, "error", err, "output", string(output))
 		return fmt.Errorf("failed to start app: %w\nOutput: %s", err, string(output))
@@ -94,11 +97,11 @@ func (m *Manager) StartApp(name string) error {
 // to remove a service so that the old container is stopped and removed.
 func (m *Manager) ReconcileApp(name string) error {
 	appPath := filepath.Join(m.appsDir, name)
-	composeFile := "docker-compose.yml"
 
 	slog.Info("reconciling app", "app", name, "appPath", appPath, "command", "docker compose up -d --remove-orphans")
 
-	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, "docker", "compose", "-f", composeFile, "up", "-d", "--remove-orphans")
+	cmd := ComposeUpWithRemoveOrphansCommand()
+	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, cmd[0], cmd[1:]...)
 	if err != nil {
 		slog.Error("failed to reconcile app", "app", name, "error", err, "output", string(output))
 		return fmt.Errorf("failed to reconcile app: %w\nOutput: %s", err, string(output))
@@ -114,7 +117,8 @@ func (m *Manager) StopApp(name string) error {
 	
 	slog.Info("stopping app", "app", name, "appPath", appPath, "command", "docker compose down")
 	
-	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, "docker", "compose", "-f", "docker-compose.yml", "down")
+	cmd := ComposeDownCommand()
+	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, cmd[0], cmd[1:]...)
 	if err != nil {
 		slog.Error("failed to stop app", "app", name, "error", err, "output", string(output))
 		return fmt.Errorf("failed to stop app: %w\nOutput: %s", err, string(output))
@@ -140,7 +144,8 @@ func (m *Manager) UpdateApp(name string) error {
 
 	// Step 1: Pull latest images (ignoring services with build configurations)
 	slog.Info("pulling latest images", "app", name, "command", "docker compose pull --ignore-buildable")
-	pullOutput, pullErr := m.commandExecutor.ExecuteCommandInDir(appPath, "docker", "compose", "-f", composeFile, "pull", "--ignore-buildable")
+	pullCmd := ComposePullCommand()
+	pullOutput, pullErr := m.commandExecutor.ExecuteCommandInDir(appPath, pullCmd[0], pullCmd[1:]...)
 	if pullErr != nil {
 		// If pull fails (e.g., older docker compose version, or all services use build),
 		// log but continue - the 'up' command will handle building if needed
@@ -155,7 +160,8 @@ func (m *Manager) UpdateApp(name string) error {
 
 	// Step 2: Update app services with --build flag
 	slog.Info("updating app services", "app", name, "command", "docker compose up -d --build")
-	upOutput, upErr := m.commandExecutor.ExecuteCommandInDir(appPath, "docker", "compose", "-f", composeFile, "up", "-d", "--build")
+	upCmd := ComposeUpWithBuildCommand()
+	upOutput, upErr := m.commandExecutor.ExecuteCommandInDir(appPath, upCmd[0], upCmd[1:]...)
 	if upErr != nil {
 		slog.Error("failed to update app services", 
 			"app", name, 
@@ -173,11 +179,11 @@ func (m *Manager) UpdateApp(name string) error {
 // The injected tunnel service is named "tunnel". If the app has no tunnel service, the command may fail; callers should log and ignore.
 func (m *Manager) ForceRecreateTunnel(name string) error {
 	appPath := filepath.Join(m.appsDir, name)
-	composeFile := "docker-compose.yml"
 
 	slog.Info("force-recreating tunnel service", "app", name, "appPath", appPath, "command", "docker compose up -d --force-recreate tunnel")
 
-	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, "docker", "compose", "-f", composeFile, "up", "-d", "--force-recreate", "tunnel")
+	cmd := ComposeForceRecreateServiceCommand(ServiceTunnel)
+	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, cmd[0], cmd[1:]...)
 	if err != nil {
 		slog.Warn("force-recreate tunnel failed (app may have no tunnel service)", "app", name, "error", err, "output", string(output))
 		return fmt.Errorf("force-recreate tunnel: %w\nOutput: %s", err, string(output))
@@ -193,7 +199,8 @@ func (m *Manager) GetAppStatus(name string) (string, error) {
 	
 	slog.Debug("getting app status", "app", name, "appPath", appPath)
 	
-	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, "docker", "compose", "-f", "docker-compose.yml", "ps")
+	cmd := ComposePsCommand()
+	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, cmd[0], cmd[1:]...)
 	if err != nil {
 		slog.Error("failed to get app status", "app", name, "error", err, "output", string(output))
 		return "unknown", fmt.Errorf("failed to get status: %w\nOutput: %s", err, string(output))
@@ -202,11 +209,11 @@ func (m *Manager) GetAppStatus(name string) (string, error) {
 	// Simple status detection (in production, parse the output properly)
 	statusStr := string(output)
 	if len(statusStr) > 0 {
-		slog.Debug("app status retrieved", "app", name, "status", "running")
-		return "running", nil
+		slog.Debug("app status retrieved", "app", name, "status", constants.AppStatusRunning)
+		return constants.AppStatusRunning, nil
 	}
-	slog.Debug("app status retrieved", "app", name, "status", "stopped")
-	return "stopped", nil
+	slog.Debug("app status retrieved", "app", name, "status", constants.AppStatusStopped)
+	return constants.AppStatusStopped, nil
 }
 
 // GetAppLogs fetches logs from the app
@@ -215,7 +222,8 @@ func (m *Manager) GetAppLogs(name string) ([]byte, error) {
 	
 	slog.Debug("fetching app logs", "app", name, "appPath", appPath, "command", "docker compose logs --tail=100")
 	
-	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, "docker", "compose", "-f", "docker-compose.yml", "logs", "--tail=100")
+	cmd := ComposeLogsCommand(100)
+	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, cmd[0], cmd[1:]...)
 	if err != nil {
 		slog.Error("failed to get app logs", "app", name, "error", err, "output", string(output))
 		return nil, fmt.Errorf("failed to get logs: %w\nOutput: %s", err, string(output))
@@ -260,11 +268,11 @@ func (m *Manager) DeleteAppDirectory(name string) error {
 // RestartCloudflared restarts the cloudflared service to pick up new ingress configuration
 func (m *Manager) RestartCloudflared(name string) error {
 	appPath := filepath.Join(m.appsDir, name)
-	composeFile := "docker-compose.yml"
 
 	slog.Info("restarting cloudflared service", "app", name, "appPath", appPath, "command", "docker compose restart cloudflared")
 
-	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, "docker", "compose", "-f", composeFile, "restart", "cloudflared")
+	cmd := ComposeRestartServiceCommand(ServiceCloudflared)
+	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, cmd[0], cmd[1:]...)
 	if err != nil {
 		slog.Error("failed to restart cloudflared", "app", name, "error", err, "output", string(output))
 		return fmt.Errorf("failed to restart cloudflared: %w\nOutput: %s", err, string(output))
@@ -277,11 +285,11 @@ func (m *Manager) RestartCloudflared(name string) error {
 // RestartTunnelService restarts the generic tunnel service
 func (m *Manager) RestartTunnelService(name string) error {
 	appPath := filepath.Join(m.appsDir, name)
-	composeFile := "docker-compose.yml"
 
 	slog.Info("restarting tunnel service", "app", name, "appPath", appPath, "command", "docker compose restart tunnel")
 
-	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, "docker", "compose", "-f", composeFile, "restart", "tunnel")
+	cmd := ComposeRestartServiceCommand(ServiceTunnel)
+	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, cmd[0], cmd[1:]...)
 	if err != nil {
 		slog.Error("failed to restart tunnel service", "app", name, "error", err, "output", string(output))
 		return fmt.Errorf("failed to restart tunnel service: %w\nOutput: %s", err, string(output))
@@ -295,7 +303,8 @@ func (m *Manager) RestartTunnelService(name string) error {
 func (m *Manager) RestartContainer(containerID string) error {
 	slog.Info("restarting container", "containerID", containerID)
 
-	output, err := m.commandExecutor.ExecuteCommand("docker", "restart", containerID)
+	cmd := DockerRestartCommand(containerID)
+	output, err := m.commandExecutor.ExecuteCommand(cmd[0], cmd[1:]...)
 	if err != nil {
 		slog.Error("failed to restart container", "containerID", containerID, "error", err, "output", string(output))
 		return fmt.Errorf("failed to restart container: %w\nOutput: %s", err, string(output))
@@ -309,7 +318,8 @@ func (m *Manager) RestartContainer(containerID string) error {
 func (m *Manager) StopContainer(containerID string) error {
 	slog.Info("stopping container", "containerID", containerID)
 
-	output, err := m.commandExecutor.ExecuteCommand("docker", "stop", containerID)
+	cmd := DockerStopCommand(containerID)
+	output, err := m.commandExecutor.ExecuteCommand(cmd[0], cmd[1:]...)
 	if err != nil {
 		slog.Error("failed to stop container", "containerID", containerID, "error", err, "output", string(output))
 		return fmt.Errorf("failed to stop container: %w\nOutput: %s", err, string(output))
@@ -323,7 +333,8 @@ func (m *Manager) StopContainer(containerID string) error {
 func (m *Manager) DeleteContainer(containerID string) error {
 	slog.Info("deleting container", "containerID", containerID)
 
-	output, err := m.commandExecutor.ExecuteCommand("docker", "rm", "-f", containerID)
+	cmd := DockerRmCommand(containerID)
+	output, err := m.commandExecutor.ExecuteCommand(cmd[0], cmd[1:]...)
 	if err != nil {
 		slog.Error("failed to delete container", "containerID", containerID, "error", err, "output", string(output))
 		return fmt.Errorf("failed to delete container: %w\nOutput: %s", err, string(output))

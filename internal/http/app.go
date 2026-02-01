@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/selfhostly/internal/constants"
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/domain"
 	"github.com/selfhostly/internal/httputil"
@@ -72,13 +73,13 @@ func (s *Server) createApp(c *gin.Context) {
 		req.NodeID = nodeID
 	}
 	// Validate Quick Tunnel params when tunnel_mode is "quick"
-	if req.TunnelMode == "quick" {
+	if req.TunnelMode == constants.TunnelModeQuick {
 		if strings.TrimSpace(req.QuickTunnelService) == "" {
 			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "quick_tunnel_service is required for Quick Tunnel mode"})
 			return
 		}
-		if req.QuickTunnelPort < 1 || req.QuickTunnelPort > 65535 {
-			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "quick_tunnel_port must be between 1 and 65535"})
+		if req.QuickTunnelPort < constants.MinPort || req.QuickTunnelPort > constants.MaxPort {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: fmt.Sprintf("quick_tunnel_port must be between %d and %d", constants.MinPort, constants.MaxPort)})
 			return
 		}
 	}
@@ -340,7 +341,7 @@ func (s *Server) createQuickTunnelForApp(c *gin.Context) {
 	var req createQuickTunnelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		slog.WarnContext(c.Request.Context(), "invalid create quick tunnel request", "error", err)
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request", Details: "service (required) and port (1-65535) are required"})
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid request", Details: fmt.Sprintf("service (required) and port (%d-%d) are required", constants.MinPort, constants.MaxPort)})
 		return
 	}
 	if strings.TrimSpace(req.Service) == "" {

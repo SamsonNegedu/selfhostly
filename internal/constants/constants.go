@@ -53,6 +53,10 @@ const (
 	
 	// MinPort is the minimum valid port number
 	MinPort = 1
+	
+	// QuickTunnelMetricsEndpointFormat is the format string for metrics endpoint address
+	// Use fmt.Sprintf(QuickTunnelMetricsEndpointFormat, port) to build endpoint (e.g., "0.0.0.0:2000")
+	QuickTunnelMetricsEndpointFormat = "0.0.0.0:%d"
 )
 
 // Timeout and interval constants

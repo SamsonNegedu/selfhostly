@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/selfhostly/internal/constants"
 	"github.com/selfhostly/internal/tunnel"
 	"gopkg.in/yaml.v3"
 )
@@ -301,7 +302,7 @@ func ExtractQuickTunnelMetricsHostPort(composeContent string) (hostPort int, ok 
 		// Extract container port from command first to be more robust
 		containerPort := ExtractQuickTunnelMetricsContainerPort(svc.Command)
 		if containerPort == 0 {
-			containerPort = 2000 // Default fallback
+			containerPort = constants.QuickTunnelMetricsPort // Default fallback
 		}
 		
 		// Port format is "hostPort:containerPort"
@@ -315,7 +316,7 @@ func ExtractQuickTunnelMetricsHostPort(composeContent string) (hostPort int, ok 
 				continue
 			}
 			hp, err := strconv.Atoi(strings.TrimSpace(parts[0]))
-			if err != nil || hp < 1 || hp > 65535 {
+			if err != nil || hp < constants.MinPort || hp > constants.MaxPort {
 				continue
 			}
 			return hp, true
@@ -336,7 +337,7 @@ func ExtractQuickTunnelMetricsContainerPort(command string) int {
 	matches := re.FindStringSubmatch(command)
 	if len(matches) >= 2 {
 		port, err := strconv.Atoi(matches[1])
-		if err == nil && port >= 1 && port <= 65535 {
+		if err == nil && port >= constants.MinPort && port <= constants.MaxPort {
 			return port
 		}
 	}

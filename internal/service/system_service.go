@@ -7,6 +7,7 @@ import (
 	"log/slog"
 
 	"github.com/selfhostly/internal/config"
+	"github.com/selfhostly/internal/constants"
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/docker"
 	"github.com/selfhostly/internal/domain"
@@ -114,7 +115,7 @@ func (s *systemService) GetAppStats(ctx context.Context, appID string, nodeID st
 	if err != nil {
 		return nil, domain.WrapAppNotFound(appID, err)
 	}
-	if app.Status != "running" {
+	if app.Status != constants.AppStatusRunning {
 		return &domain.AppStats{
 			AppName:          app.Name,
 			TotalCPUPercent:  0,

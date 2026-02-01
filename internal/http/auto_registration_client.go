@@ -9,13 +9,14 @@ import (
 	"time"
 
 	"github.com/selfhostly/internal/apipaths"
+	"github.com/selfhostly/internal/constants"
 )
 
 // attemptAutoRegistration tries to auto-register this secondary node with the primary
 // Includes retry logic with exponential backoff
 func (s *Server) attemptAutoRegistration() {
 	// Wait a bit for server to fully initialize
-	time.Sleep(2 * time.Second)
+	time.Sleep(constants.AutoRegistrationDelay)
 
 	// Check if we have a registration token
 	if s.config.Node.RegistrationToken == "" {
@@ -27,8 +28,8 @@ func (s *Server) attemptAutoRegistration() {
 	slog.Info("attempting auto-registration with primary", "primary_url", s.config.Node.PrimaryNodeURL)
 
 	// Retry configuration
-	maxRetries := 5
-	retryDelay := 5 * time.Second
+	maxRetries := constants.AutoRegistrationMaxRetries
+	retryDelay := constants.AutoRegistrationRetryDelay
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		slog.Info("auto-registration attempt", "attempt", attempt, "max", maxRetries)

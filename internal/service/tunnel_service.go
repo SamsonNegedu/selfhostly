@@ -10,6 +10,7 @@ import (
 
 	"github.com/selfhostly/internal/cloudflare"
 	"github.com/selfhostly/internal/config"
+	"github.com/selfhostly/internal/constants"
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/docker"
 	"github.com/selfhostly/internal/domain"
@@ -180,7 +181,7 @@ func (a *cloudflareManagerAdapter) CleanupOrphanedTunnels(ctx context.Context) e
 }
 
 func (a *cloudflareManagerAdapter) Name() string {
-	return "cloudflare"
+	return constants.ProviderCloudflare
 }
 
 func (a *cloudflareManagerAdapter) DisplayName() string {
@@ -450,7 +451,7 @@ func (s *tunnelService) ListProviders(ctx context.Context) ([]domain.ProviderInf
 		isConfigured := settings.CloudflareAPIToken != nil && *settings.CloudflareAPIToken != ""
 		return []domain.ProviderInfo{
 			{
-				Name:         "cloudflare",
+				Name:         constants.ProviderCloudflare,
 				DisplayName:  "Cloudflare Tunnel",
 				IsConfigured: isConfigured,
 			},
@@ -554,7 +555,7 @@ func (s *tunnelService) ExtractQuickTunnelURL(ctx context.Context, appID string,
 	if err != nil {
 		return "", domain.WrapAppNotFound(appID, err)
 	}
-	if app.TunnelMode != "quick" {
+	if app.TunnelMode != constants.TunnelModeQuick {
 		return "", fmt.Errorf("app is not in Quick Tunnel mode (tunnel_mode=%q)", app.TunnelMode)
 	}
 

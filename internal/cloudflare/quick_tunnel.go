@@ -6,8 +6,11 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/selfhostly/internal/constants"
 )
 
 // ExtractQuickTunnelURL fetches the cloudflared metrics endpoint and parses it
@@ -16,17 +19,17 @@ import (
 // If the endpoint uses localhost and fails, it will try alternative hosts (host.docker.internal, 172.17.0.1).
 func ExtractQuickTunnelURL(metricsEndpoint string, maxRetries int, interval time.Duration) (string, error) {
 	if maxRetries <= 0 {
-		maxRetries = 30
+		maxRetries = constants.QuickTunnelURLMaxRetries
 	}
 	if interval <= 0 {
-		interval = 2 * time.Second
+		interval = constants.QuickTunnelURLRetryInterval
 	}
 	
 	// If endpoint uses localhost, prepare alternative hosts to try (for Docker environments)
 	var alternativeEndpoints []string
 	if strings.Contains(metricsEndpoint, "localhost") || strings.Contains(metricsEndpoint, "127.0.0.1") {
 		// Extract port from endpoint (format: http://host:port/metrics)
-		port := "2000"
+		port := strconv.Itoa(constants.QuickTunnelMetricsPort)
 		if strings.Contains(metricsEndpoint, ":") {
 			parts := strings.Split(metricsEndpoint, ":")
 			if len(parts) >= 3 {
@@ -35,8 +38,8 @@ func ExtractQuickTunnelURL(metricsEndpoint string, maxRetries int, interval time
 		}
 		// Try host.docker.internal (Mac/Windows Docker) and Docker bridge gateway (Linux)
 		alternativeEndpoints = []string{
-			fmt.Sprintf("http://host.docker.internal:%s/metrics", port),
-			fmt.Sprintf("http://172.17.0.1:%s/metrics", port),
+			fmt.Sprintf("http://%s:%s/metrics", constants.DockerHostInternal, port),
+			fmt.Sprintf("http://%s:%s/metrics", constants.DockerBridgeGateway, port),
 		}
 	}
 	
@@ -66,7 +69,7 @@ func ExtractQuickTunnelURL(metricsEndpoint string, maxRetries int, interval time
 // fetchMetricsAndParse GETs the metrics endpoint and extracts the trycloudflare.com hostname.
 func fetchMetricsAndParse(endpoint string) (string, error) {
 	client := &http.Client{
-		Timeout: 5 * time.Second,
+		Timeout: constants.HTTPClientTimeout,
 	}
 	resp, err := client.Get(endpoint)
 	if err != nil {
