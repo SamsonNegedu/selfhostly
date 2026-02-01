@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+
+	"github.com/selfhostly/internal/constants"
 )
 
 // Router resolves the target node base URL for a request
@@ -47,7 +49,15 @@ func (r *Router) Target(req *http.Request) (baseURL string, ok bool) {
 		}
 		base := r.registry.Get(nodeID)
 		if base == "" {
-			r.logger.Warn("router: node not found", "node_id", nodeID, "path", path)
+			// Check if node exists but is offline/unreachable
+			if entry := r.registry.GetEntry(nodeID); entry != nil {
+				r.logger.Warn("router: node is offline/unreachable",
+					"node_id", nodeID,
+					"status", entry.Status,
+					"path", path)
+			} else {
+				r.logger.Warn("router: node not found", "node_id", nodeID, "path", path)
+			}
 			return "", false
 		}
 		r.logger.Debug("router: resolved by node_id", "node_id", nodeID, "target", base)
@@ -63,6 +73,12 @@ func (r *Router) Target(req *http.Request) (baseURL string, ok bool) {
 		}
 		base := r.registry.Get(nodeID)
 		if base == "" {
+			// If target node is offline, fallback to primary
+			if entry := r.registry.GetEntry(nodeID); entry != nil && (entry.Status == constants.NodeStatusOffline || entry.Status == constants.NodeStatusUnreachable) {
+				r.logger.Warn("router: target node is offline, falling back to primary",
+					"node_id", nodeID,
+					"status", entry.Status)
+			}
 			return r.registry.PrimaryBaseURL(), true
 		}
 		return base, true
@@ -77,6 +93,7 @@ func (r *Router) isPrimaryOnly(path, method string) bool {
 		return true
 	case strings.HasPrefix(path, "/avatar/"):
 		return true
+	// Note: /api/health is handled directly by the proxy, not routed
 	case path == "/api/health":
 		return true
 	case path == "/api/nodes" || strings.HasPrefix(path, "/api/nodes/"):

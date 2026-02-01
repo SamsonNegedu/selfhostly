@@ -991,16 +991,22 @@ func (db *DB) CreateNode(node *Node) error {
 func (db *DB) GetNode(id string) (*Node, error) {
 	node := &Node{}
 	var lastSeen sql.NullTime
+	var lastHealthCheck sql.NullTime
 	err := db.QueryRow(
-		`SELECT id, name, api_endpoint, api_key, is_primary, status, last_seen, created_at, updated_at 
+		`SELECT id, name, api_endpoint, api_key, is_primary, status, last_seen, consecutive_failures, last_health_check, created_at, updated_at 
 		 FROM nodes WHERE id = ?`,
 		id,
 	).Scan(&node.ID, &node.Name, &node.APIEndpoint, &node.APIKey,
-		&node.IsPrimary, &node.Status, &lastSeen,
+		&node.IsPrimary, &node.Status, &lastSeen, &node.ConsecutiveFailures, &lastHealthCheck,
 		&node.CreatedAt, &node.UpdatedAt)
 
-	if err == nil && lastSeen.Valid {
-		node.LastSeen = &lastSeen.Time
+	if err == nil {
+		if lastSeen.Valid {
+			node.LastSeen = &lastSeen.Time
+		}
+		if lastHealthCheck.Valid {
+			node.LastHealthCheck = &lastHealthCheck.Time
+		}
 	}
 
 	return node, err
@@ -1009,7 +1015,7 @@ func (db *DB) GetNode(id string) (*Node, error) {
 // GetAllNodes retrieves all nodes
 func (db *DB) GetAllNodes() ([]*Node, error) {
 	rows, err := db.Query(
-		`SELECT id, name, api_endpoint, api_key, is_primary, status, last_seen, created_at, updated_at 
+		`SELECT id, name, api_endpoint, api_key, is_primary, status, last_seen, consecutive_failures, last_health_check, created_at, updated_at 
 		 FROM nodes ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -1021,8 +1027,9 @@ func (db *DB) GetAllNodes() ([]*Node, error) {
 	for rows.Next() {
 		node := &Node{}
 		var lastSeen sql.NullTime
+		var lastHealthCheck sql.NullTime
 		err := rows.Scan(&node.ID, &node.Name, &node.APIEndpoint, &node.APIKey,
-			&node.IsPrimary, &node.Status, &lastSeen,
+			&node.IsPrimary, &node.Status, &lastSeen, &node.ConsecutiveFailures, &lastHealthCheck,
 			&node.CreatedAt, &node.UpdatedAt)
 		if err != nil {
 			return nil, err
@@ -1030,6 +1037,9 @@ func (db *DB) GetAllNodes() ([]*Node, error) {
 
 		if lastSeen.Valid {
 			node.LastSeen = &lastSeen.Time
+		}
+		if lastHealthCheck.Valid {
+			node.LastHealthCheck = &lastHealthCheck.Time
 		}
 
 		nodes = append(nodes, node)
@@ -1042,15 +1052,21 @@ func (db *DB) GetAllNodes() ([]*Node, error) {
 func (db *DB) GetPrimaryNode() (*Node, error) {
 	node := &Node{}
 	var lastSeen sql.NullTime
+	var lastHealthCheck sql.NullTime
 	err := db.QueryRow(
-		`SELECT id, name, api_endpoint, api_key, is_primary, status, last_seen, created_at, updated_at 
+		`SELECT id, name, api_endpoint, api_key, is_primary, status, last_seen, consecutive_failures, last_health_check, created_at, updated_at 
 		 FROM nodes WHERE is_primary = 1 LIMIT 1`,
 	).Scan(&node.ID, &node.Name, &node.APIEndpoint, &node.APIKey,
-		&node.IsPrimary, &node.Status, &lastSeen,
+		&node.IsPrimary, &node.Status, &lastSeen, &node.ConsecutiveFailures, &lastHealthCheck,
 		&node.CreatedAt, &node.UpdatedAt)
 
-	if err == nil && lastSeen.Valid {
-		node.LastSeen = &lastSeen.Time
+	if err == nil {
+		if lastSeen.Valid {
+			node.LastSeen = &lastSeen.Time
+		}
+		if lastHealthCheck.Valid {
+			node.LastHealthCheck = &lastHealthCheck.Time
+		}
 	}
 
 	return node, err
@@ -1059,10 +1075,10 @@ func (db *DB) GetPrimaryNode() (*Node, error) {
 // UpdateNode updates a node
 func (db *DB) UpdateNode(node *Node) error {
 	_, err := db.Exec(
-		`UPDATE nodes SET name = ?, api_endpoint = ?, api_key = ?, is_primary = ?, status = ?, last_seen = ?, updated_at = ? 
+		`UPDATE nodes SET name = ?, api_endpoint = ?, api_key = ?, is_primary = ?, status = ?, last_seen = ?, consecutive_failures = ?, last_health_check = ?, updated_at = ? 
 		 WHERE id = ?`,
 		node.Name, node.APIEndpoint, node.APIKey, node.IsPrimary,
-		node.Status, node.LastSeen, time.Now(), node.ID,
+		node.Status, node.LastSeen, node.ConsecutiveFailures, node.LastHealthCheck, time.Now(), node.ID,
 	)
 	return err
 }
@@ -1077,16 +1093,22 @@ func (db *DB) DeleteNode(id string) error {
 func (db *DB) GetNodeByName(name string) (*Node, error) {
 	node := &Node{}
 	var lastSeen sql.NullTime
+	var lastHealthCheck sql.NullTime
 	err := db.QueryRow(
-		`SELECT id, name, api_endpoint, api_key, is_primary, status, last_seen, created_at, updated_at 
+		`SELECT id, name, api_endpoint, api_key, is_primary, status, last_seen, consecutive_failures, last_health_check, created_at, updated_at 
 		 FROM nodes WHERE name = ?`,
 		name,
 	).Scan(&node.ID, &node.Name, &node.APIEndpoint, &node.APIKey,
-		&node.IsPrimary, &node.Status, &lastSeen,
+		&node.IsPrimary, &node.Status, &lastSeen, &node.ConsecutiveFailures, &lastHealthCheck,
 		&node.CreatedAt, &node.UpdatedAt)
 
-	if err == nil && lastSeen.Valid {
-		node.LastSeen = &lastSeen.Time
+	if err == nil {
+		if lastSeen.Valid {
+			node.LastSeen = &lastSeen.Time
+		}
+		if lastHealthCheck.Valid {
+			node.LastHealthCheck = &lastHealthCheck.Time
+		}
 	}
 
 	return node, err

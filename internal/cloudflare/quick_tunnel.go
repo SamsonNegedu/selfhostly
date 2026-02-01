@@ -1,6 +1,7 @@
 package cloudflare
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,14 +18,15 @@ import (
 // to find the generated trycloudflare.com URL. Retries until the URL appears or maxRetries is reached.
 // metricsEndpoint should be the full URL, e.g. "http://localhost:2000/metrics".
 // If the endpoint uses localhost and fails, it will try alternative hosts (host.docker.internal, 172.17.0.1).
-func ExtractQuickTunnelURL(metricsEndpoint string, maxRetries int, interval time.Duration) (string, error) {
+// The context is used to cancel the operation and respect deadlines.
+func ExtractQuickTunnelURL(ctx context.Context, metricsEndpoint string, maxRetries int, interval time.Duration) (string, error) {
 	if maxRetries <= 0 {
 		maxRetries = constants.QuickTunnelURLMaxRetries
 	}
 	if interval <= 0 {
 		interval = constants.QuickTunnelURLRetryInterval
 	}
-	
+
 	// If endpoint uses localhost, prepare alternative hosts to try (for Docker environments)
 	var alternativeEndpoints []string
 	if strings.Contains(metricsEndpoint, "localhost") || strings.Contains(metricsEndpoint, "127.0.0.1") {
@@ -42,47 +44,88 @@ func ExtractQuickTunnelURL(metricsEndpoint string, maxRetries int, interval time
 			fmt.Sprintf("http://%s:%s/metrics", constants.DockerBridgeGateway, port),
 		}
 	}
-	
+
 	var lastErr error
 	endpointsToTry := []string{metricsEndpoint}
 	endpointsToTry = append(endpointsToTry, alternativeEndpoints...)
-	
+
 	for i := 0; i < maxRetries; i++ {
+		// Check if context is cancelled or deadline exceeded
+		if ctx.Err() != nil {
+			return "", fmt.Errorf("context cancelled or deadline exceeded: %w", ctx.Err())
+		}
+
 		// Try each endpoint in order
 		for _, endpoint := range endpointsToTry {
-			url, err := fetchMetricsAndParse(endpoint)
+			url, err := fetchMetricsAndParse(ctx, endpoint)
 			if err == nil && url != "" {
 				return url, nil
 			}
-			// Only log error for the primary endpoint to avoid spam
+			// Track error for the primary endpoint
 			if endpoint == metricsEndpoint {
 				lastErr = err
 			}
+			// Log errors at debug level to avoid spam, but log first attempt at info level
+			if i == 0 && endpoint == metricsEndpoint {
+				slog.Debug("failed to fetch metrics endpoint", "endpoint", endpoint, "error", err, "retry", i+1, "max_retries", maxRetries)
+			}
 		}
+
+		// Check context again before sleeping
+		if ctx.Err() != nil {
+			return "", fmt.Errorf("context cancelled or deadline exceeded: %w", ctx.Err())
+		}
+
 		if i < maxRetries-1 {
-			time.Sleep(interval)
+			// Use context-aware sleep
+			select {
+			case <-ctx.Done():
+				return "", fmt.Errorf("context cancelled or deadline exceeded: %w", ctx.Err())
+			case <-time.After(interval):
+				// Continue to next iteration
+			}
 		}
 	}
 	return "", fmt.Errorf("failed to extract Quick Tunnel URL after %d retries: %w", maxRetries, lastErr)
 }
 
 // fetchMetricsAndParse GETs the metrics endpoint and extracts the trycloudflare.com hostname.
-func fetchMetricsAndParse(endpoint string) (string, error) {
+// The context is used to cancel the HTTP request.
+func fetchMetricsAndParse(ctx context.Context, endpoint string) (string, error) {
+	// Create HTTP client with timeout that respects context
+	// Use a shorter timeout to fail fast if endpoint is unreachable
 	client := &http.Client{
 		Timeout: constants.HTTPClientTimeout,
 	}
-	resp, err := client.Get(endpoint)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to fetch metrics endpoint: %w", err)
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		// Check if error is due to context cancellation
+		if ctx.Err() != nil {
+			return "", fmt.Errorf("request cancelled: %w", ctx.Err())
+		}
+		return "", fmt.Errorf("failed to fetch metrics endpoint %s: %w", endpoint, err)
 	}
 	defer resp.Body.Close()
+
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("metrics endpoint returned status %d", resp.StatusCode)
+		return "", fmt.Errorf("metrics endpoint returned status %d for %s", resp.StatusCode, endpoint)
 	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("failed to read metrics response: %w", err)
 	}
+
+	if len(body) == 0 {
+		return "", fmt.Errorf("metrics endpoint returned empty response from %s", endpoint)
+	}
+
 	return ParseQuickTunnelURLFromMetrics(string(body))
 }
 

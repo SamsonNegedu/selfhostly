@@ -68,7 +68,8 @@ const (
 	QuickTunnelURLMaxRetries = 30
 	
 	// QuickTunnelStartupDelay is the delay after starting Quick Tunnel before extracting URL
-	QuickTunnelStartupDelay = 3 * time.Second
+	// Cloudflared needs time to establish connection and expose metrics endpoint
+	QuickTunnelStartupDelay = 10 * time.Second
 	
 	// HTTPClientTimeout is the timeout for HTTP client requests
 	HTTPClientTimeout = 5 * time.Second

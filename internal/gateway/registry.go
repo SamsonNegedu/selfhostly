@@ -7,16 +7,19 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/selfhostly/internal/constants"
 )
 
-// NodeEntry is a node known to the gateway (id, endpoint, is_primary)
+// NodeEntry is a node known to the gateway (id, endpoint, is_primary, status)
 type NodeEntry struct {
 	ID          string `json:"id"`
 	APIEndpoint string `json:"api_endpoint"`
 	IsPrimary   bool   `json:"is_primary"`
+	Status      string `json:"status"`
 }
 
-// NodeRegistry caches node list from primary and refreshes periodically
+// 	NodeRegistry caches node list from primary and refreshes periodically
 type NodeRegistry struct {
 	primaryBackendURL string
 	gatewayAPIKey     string
@@ -25,8 +28,8 @@ type NodeRegistry struct {
 	ttl               time.Duration
 
 	mu      sync.RWMutex
-	nodes   map[string]string // nodeID -> api_endpoint
-	primary string            // primary node ID for "global" routes
+	nodes   map[string]NodeEntry // nodeID -> NodeEntry (includes endpoint and status)
+	primary string               // primary node ID for "global" routes
 }
 
 // NewNodeRegistry creates a registry that fetches from primary
@@ -39,7 +42,7 @@ func NewNodeRegistry(primaryBackendURL, gatewayAPIKey string, ttl time.Duration,
 		},
 		logger: logger,
 		ttl:    ttl,
-		nodes:  make(map[string]string),
+		nodes:  make(map[string]NodeEntry),
 	}
 }
 
@@ -85,9 +88,9 @@ func (r *NodeRegistry) refresh() error {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.nodes = make(map[string]string)
+	r.nodes = make(map[string]NodeEntry)
 	for _, n := range list {
-		r.nodes[n.ID] = n.APIEndpoint
+		r.nodes[n.ID] = n
 		if n.IsPrimary {
 			r.primary = n.ID
 		}
@@ -95,6 +98,7 @@ func (r *NodeRegistry) refresh() error {
 			"id", n.ID,
 			"endpoint", n.APIEndpoint,
 			"is_primary", n.IsPrimary,
+			"status", n.Status,
 		)
 	}
 	if r.primary == "" && len(list) > 0 {
@@ -107,11 +111,34 @@ func (r *NodeRegistry) refresh() error {
 	return nil
 }
 
-// Get returns the API endpoint for the node, or empty if not found
+// Get returns the API endpoint for the node, or empty if not found or offline/unreachable
 func (r *NodeRegistry) Get(nodeID string) string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.nodes[nodeID]
+	entry, ok := r.nodes[nodeID]
+	if !ok {
+		return ""
+	}
+	// Don't route to offline or unreachable nodes
+	if entry.Status == constants.NodeStatusOffline || entry.Status == constants.NodeStatusUnreachable {
+		r.logger.Debug("node registry: skipping offline/unreachable node",
+			"node_id", nodeID,
+			"status", entry.Status,
+		)
+		return ""
+	}
+	return entry.APIEndpoint
+}
+
+// GetEntry returns the full node entry, or nil if not found
+func (r *NodeRegistry) GetEntry(nodeID string) *NodeEntry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	entry, ok := r.nodes[nodeID]
+	if !ok {
+		return nil
+	}
+	return &entry
 }
 
 // PrimaryID returns the primary node ID

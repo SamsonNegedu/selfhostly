@@ -34,6 +34,14 @@ func NewProxy(router *Router, registry *NodeRegistry, cfg *Config, logger *slog.
 
 // ServeHTTP validates auth, resolves target, and forwards the request
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	// Handle gateway health check directly (don't route to primary)
+	if req.Method == http.MethodGet && req.URL.Path == "/api/health" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"healthy","service":"gateway"}`))
+		return
+	}
+
 	hasReqCookie := req.Header.Get("Cookie") != ""
 	p.logger.InfoContext(req.Context(), "gateway: incoming request",
 		"method", req.Method,

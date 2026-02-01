@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"sync"
 
+	"github.com/selfhostly/internal/constants"
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/domain"
 	"github.com/selfhostly/internal/node"
@@ -31,25 +32,48 @@ func NewNodeRouter(database *db.DB, nodeClient *node.Client, localNodeID string,
 // DetermineTargetNodes resolves which nodes to query based on nodeIDs parameter
 // If nodeIDs is empty or contains "all", returns all nodes
 // Otherwise returns only the specified nodes
+// Filters out offline and unreachable nodes to avoid unnecessary request attempts
 func (r *NodeRouter) DetermineTargetNodes(ctx context.Context, nodeIDs []string) ([]*db.Node, error) {
+	var allNodes []*db.Node
+	var err error
+
 	if len(nodeIDs) == 0 || (len(nodeIDs) == 1 && nodeIDs[0] == "all") {
 		// Fetch from all nodes
-		allNodes, err := r.database.GetAllNodes()
+		allNodes, err = r.database.GetAllNodes()
 		if err != nil {
 			r.logger.ErrorContext(ctx, "failed to get nodes", "error", err)
 			return nil, domain.WrapDatabaseOperation("get nodes", err)
 		}
-		return allNodes, nil
+	} else {
+		// Fetch from specific nodes
+		for _, nodeID := range nodeIDs {
+			node, getErr := r.database.GetNode(nodeID)
+			if getErr != nil {
+				r.logger.WarnContext(ctx, "node not found", "nodeID", nodeID, "error", getErr)
+				continue
+			}
+			allNodes = append(allNodes, node)
+		}
 	}
 
-	// Fetch from specific nodes
+	// Filter out offline and unreachable nodes (but always include local node)
 	var targetNodes []*db.Node
-	for _, nodeID := range nodeIDs {
-		node, err := r.database.GetNode(nodeID)
-		if err != nil {
-			r.logger.WarnContext(ctx, "node not found", "nodeID", nodeID, "error", err)
+	for _, node := range allNodes {
+		// Always include local node regardless of status
+		if node.ID == r.localNodeID {
+			targetNodes = append(targetNodes, node)
 			continue
 		}
+
+		// Skip offline and unreachable nodes for remote requests
+		if node.Status == constants.NodeStatusOffline || node.Status == constants.NodeStatusUnreachable {
+			r.logger.DebugContext(ctx, "skipping offline/unreachable node for request forwarding",
+				"nodeID", node.ID,
+				"nodeName", node.Name,
+				"status", node.Status)
+			continue
+		}
+
 		targetNodes = append(targetNodes, node)
 	}
 

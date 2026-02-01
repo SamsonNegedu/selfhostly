@@ -48,6 +48,8 @@ services:
     image: ghcr.io/samsonnegedu/selfhostly-primary:latest
     container_name: selfhostly-primary
     user: 1000:984
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Enables accessing host's published ports
     environment:
       # Server Configuration
       SERVER_ADDRESS: ":8082"

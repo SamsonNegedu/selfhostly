@@ -1,6 +1,7 @@
 package cloudflare
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -64,7 +65,8 @@ func TestFetchMetricsAndParse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	url, err := fetchMetricsAndParse(server.URL + "/metrics")
+	ctx := context.Background()
+	url, err := fetchMetricsAndParse(ctx, server.URL+"/metrics")
 	if err != nil {
 		t.Fatalf("fetchMetricsAndParse() error = %v", err)
 	}
@@ -80,7 +82,8 @@ func TestExtractQuickTunnelURL(t *testing.T) {
 	}))
 	defer server.Close()
 
-	url, err := ExtractQuickTunnelURL(server.URL+"/metrics", 3, 50*time.Millisecond)
+	ctx := context.Background()
+	url, err := ExtractQuickTunnelURL(ctx, server.URL+"/metrics", 3, 50*time.Millisecond)
 	if err != nil {
 		t.Fatalf("ExtractQuickTunnelURL() error = %v", err)
 	}

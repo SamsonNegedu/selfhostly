@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -341,101 +341,117 @@ func (p *Provider) CreateQuickTunnelConfig(targetService string, targetPort int,
 // ExtractQuickTunnelURL implements QuickTunnelProvider interface.
 // Extracts the public URL from a running Quick Tunnel by querying the metrics endpoint.
 func (p *Provider) ExtractQuickTunnelURL(ctx context.Context, appName string, composeContent string, appsDir string, commandExecutor tunnel.CommandExecutor) (string, error) {
-	// Method 1: Try exec into tunnel container (most reliable)
-	metricsBody, execErr := p.fetchQuickTunnelMetricsFromContainer(ctx, appName, composeContent, appsDir, commandExecutor)
-	if execErr == nil && metricsBody != "" {
-		url, err := cloudflare.ParseQuickTunnelURLFromMetrics(metricsBody)
-		if err == nil && url != "" {
-			p.logger.InfoContext(ctx, "Quick Tunnel URL extracted via exec method", "app", appName, "public_url", url)
-			return url, nil
-		}
+	// Wait a bit for tunnel to start and metrics endpoint to be ready
+	// This helps avoid immediate failures when tunnel container was just started
+	p.logger.DebugContext(ctx, "waiting for tunnel to be ready before extracting URL", "app", appName, "delay", constants.QuickTunnelStartupDelay)
+	select {
+	case <-ctx.Done():
+		return "", fmt.Errorf("context cancelled during startup delay: %w", ctx.Err())
+	case <-time.After(constants.QuickTunnelStartupDelay):
+		// Continue
 	}
-
-	// Method 2: Fall back to HTTP if exec failed
+	
+	// Extract URL via HTTP method (accessing metrics endpoint via network)
+	// Note: Exec method is not available because cloudflared containers don't include curl/wget
 	// Build list of endpoints to try, prioritizing based on environment
 	endpoints := p.buildQuickTunnelMetricsEndpoints(composeContent)
 	p.logger.InfoContext(ctx, "extracting Quick Tunnel URL from metrics (HTTP method)", "app", appName, "endpoints", endpoints)
 	
-	// Try each endpoint with retries
-	for _, endpoint := range endpoints {
-		url, err := cloudflare.ExtractQuickTunnelURL(endpoint, 10, 1*time.Second) // Fewer retries per endpoint since we try multiple
+	// Try each endpoint with retries (fewer retries per endpoint since we try multiple)
+	// Use shorter retry interval and fewer retries to avoid long waits
+	for i, endpoint := range endpoints {
+		p.logger.InfoContext(ctx, "trying endpoint to extract Quick Tunnel URL", "app", appName, "endpoint", endpoint, "attempt", i+1, "total_endpoints", len(endpoints))
+		url, err := cloudflare.ExtractQuickTunnelURL(ctx, endpoint, 5, 1*time.Second)
 		if err == nil && url != "" {
 			p.logger.InfoContext(ctx, "Quick Tunnel URL extracted via HTTP method", "app", appName, "public_url", url, "endpoint", endpoint)
 			return url, nil
 		}
-		p.logger.DebugContext(ctx, "failed to extract URL from endpoint, trying next", "app", appName, "endpoint", endpoint, "error", err)
+		// Check if context was cancelled - don't try next endpoint if so
+		if ctx.Err() != nil {
+			p.logger.WarnContext(ctx, "context cancelled while extracting URL", "app", appName, "error", ctx.Err())
+			return "", fmt.Errorf("context cancelled while extracting URL: %w", ctx.Err())
+		}
+		p.logger.WarnContext(ctx, "failed to extract URL from endpoint, trying next", "app", appName, "endpoint", endpoint, "error", err)
 	}
 	
-	return "", fmt.Errorf("failed to extract Quick Tunnel URL from any endpoint (exec_error: %v, tried_endpoints: %v)", execErr, endpoints)
-}
-
-// fetchQuickTunnelMetricsFromContainer execs into the tunnel container and fetches metrics directly.
-// This is more reliable than accessing via host ports, especially when backend is in Docker.
-func (p *Provider) fetchQuickTunnelMetricsFromContainer(ctx context.Context, appName string, composeContent string, appsDir string, commandExecutor tunnel.CommandExecutor) (string, error) {
-	_ = ctx // Reserved for future use (e.g., command cancellation)
-	// Extract container metrics port from compose file
-	compose, err := docker.ParseCompose([]byte(composeContent))
-	if err != nil {
-		return "", fmt.Errorf("failed to parse compose file: %w", err)
-	}
-
-	containerPort := constants.QuickTunnelMetricsPort // Default fallback
-	if tunnelSvc, ok := compose.Services["tunnel"]; ok {
-		if extractedPort := docker.ExtractQuickTunnelMetricsContainerPort(tunnelSvc.Command); extractedPort > 0 {
-			containerPort = extractedPort
-		}
-	}
-
-	appPath := filepath.Join(appsDir, appName)
-
-	// Try curl first, then wget as fallback
-	metricsURL := fmt.Sprintf("http://localhost:%d/metrics", containerPort)
-	commands := [][]string{
-		{"docker", "compose", "-f", "docker-compose.yml", "exec", "-T", "tunnel", "curl", "-s", metricsURL},
-		{"docker", "compose", "-f", "docker-compose.yml", "exec", "-T", "tunnel", "wget", "-qO-", metricsURL},
-	}
-
-	var lastErr error
-	for _, cmd := range commands {
-		output, err := commandExecutor.ExecuteCommandInDir(appPath, cmd[0], cmd[1:]...)
-		if err == nil {
-			return string(output), nil
-		}
-		lastErr = err
-	}
-
-	return "", fmt.Errorf("failed to fetch metrics from tunnel container (port %d): %w", containerPort, lastErr)
+	return "", fmt.Errorf("failed to extract Quick Tunnel URL from any endpoint (tried_endpoints: %v)", endpoints)
 }
 
 // buildQuickTunnelMetricsEndpoints returns a list of metrics endpoints to try, ordered by priority.
 // Works in both local and Docker environments by trying multiple host options.
 func (p *Provider) buildQuickTunnelMetricsEndpoints(composeContent string) []string {
-	port := constants.QuickTunnelMetricsPort
-	if hostPort, ok := docker.ExtractQuickTunnelMetricsHostPort(composeContent); ok {
-		port = hostPort
+	// Parse compose to extract container name and ports
+	compose, err := docker.ParseCompose([]byte(composeContent))
+	if err != nil {
+		// Fallback to defaults if parsing fails
+		return p.buildDefaultEndpoints(constants.QuickTunnelMetricsPort)
+	}
+
+	// Find tunnel service and extract the host port (for published ports)
+	var hostPort int = constants.QuickTunnelMetricsPort
+
+	for _, svc := range compose.Services {
+		if strings.Contains(svc.Image, "cloudflared") {
+			// Extract host port from port mapping
+			if extractedHostPort, ok := docker.ExtractQuickTunnelMetricsHostPort(composeContent); ok {
+				hostPort = extractedHostPort
+			}
+			break
+		}
 	}
 
 	var endpoints []string
 	isInDocker := p.isRunningInDocker()
 
 	if isInDocker {
-		// Backend is running in Docker - try multiple options:
-		// 1. host.docker.internal (works on Mac/Windows Docker Desktop)
-		// 2. 172.17.0.1 (Linux Docker bridge gateway - default bridge network)
-		// 3. localhost (fallback - might work if ports are exposed)
-		endpoints = []string{
-			fmt.Sprintf("http://host.docker.internal:%d/metrics", port),
-			fmt.Sprintf("http://172.17.0.1:%d/metrics", port),
-			fmt.Sprintf("http://localhost:%d/metrics", port),
+		// Backend is running in Docker, tunnel is on a different network with published ports.
+		// We need to access the tunnel via the Docker HOST's published port, not the container IP.
+		// Priority order:
+		// 1. host.docker.internal (Docker Desktop on Mac/Windows)
+		// 2. Default Docker bridge gateway (172.17.0.1) - routes to host on Linux
+		// 3. Network gateway (might work in some setups)
+		// 4. Other common gateway IPs
+		// Note: Container name/IP won't work across different Docker networks
+		
+		endpoints = append(endpoints,
+			fmt.Sprintf("http://host.docker.internal:%d/metrics", hostPort),
+			fmt.Sprintf("http://172.17.0.1:%d/metrics", hostPort), // Default Docker bridge - often routes to host
+		)
+		
+		// Try current network gateway (might work for published ports)
+		if gatewayIP := p.getNetworkGatewayIP(); gatewayIP != "" && gatewayIP != "172.17.0.1" {
+			endpoints = append(endpoints, fmt.Sprintf("http://%s:%d/metrics", gatewayIP, hostPort))
 		}
+		
+		endpoints = append(endpoints,
+			fmt.Sprintf("http://172.18.0.1:%d/metrics", hostPort), // Common Docker Compose network gateway
+			fmt.Sprintf("http://172.19.0.1:%d/metrics", hostPort), // Another common gateway
+			fmt.Sprintf("http://172.20.0.1:%d/metrics", hostPort), // Yet another gateway
+			fmt.Sprintf("http://localhost:%d/metrics", hostPort),  // Fallback (usually doesn't work in containers)
+		)
 	} else {
-		// Backend is running locally - localhost should work
+		// Backend is running locally - use host port
 		endpoints = []string{
-			fmt.Sprintf("http://localhost:%d/metrics", port),
+			fmt.Sprintf("http://localhost:%d/metrics", hostPort),
 		}
 	}
 
 	return endpoints
+}
+
+// buildDefaultEndpoints builds default endpoints when compose parsing fails
+func (p *Provider) buildDefaultEndpoints(port int) []string {
+	isInDocker := p.isRunningInDocker()
+	if isInDocker {
+		return []string{
+			fmt.Sprintf("http://host.docker.internal:%d/metrics", port),
+			fmt.Sprintf("http://172.17.0.1:%d/metrics", port),
+			fmt.Sprintf("http://localhost:%d/metrics", port),
+		}
+	}
+	return []string{
+		fmt.Sprintf("http://localhost:%d/metrics", port),
+	}
 }
 
 // isRunningInDocker checks if the current process is running inside a Docker container.
@@ -454,6 +470,59 @@ func (p *Provider) isRunningInDocker() bool {
 	}
 	
 	return false
+}
+
+// getNetworkGatewayIP gets the default gateway IP for the Docker network.
+// Reads from /proc/net/route to find the gateway IP.
+func (p *Provider) getNetworkGatewayIP() string {
+	// Read /proc/net/route to find default gateway
+	routeFile := "/proc/net/route"
+	data, err := os.ReadFile(routeFile)
+	if err != nil {
+		return ""
+	}
+	
+	// Parse route file to find default gateway (destination 00000000)
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "Iface") {
+			continue // Skip header
+		}
+		fields := strings.Fields(line)
+		if len(fields) >= 3 {
+			// Check if this is the default route (destination is 00000000)
+			if fields[1] == "00000000" && fields[2] != "00000000" {
+				// Gateway is in hex format, convert to IP
+				gatewayHex := fields[2]
+				if len(gatewayHex) == 8 {
+					// Convert hex to IP (little-endian)
+					ip := p.hexToIP(gatewayHex)
+					if ip != "" {
+						return ip
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// hexToIP converts a hex string (little-endian) to IP address string.
+func (p *Provider) hexToIP(hexStr string) string {
+	if len(hexStr) != 8 {
+		return ""
+	}
+	// Parse hex bytes in reverse order (little-endian)
+	var bytes [4]int
+	for i := 0; i < 4; i++ {
+		byteStr := hexStr[i*2:(i+1)*2]
+		val, err := strconv.ParseInt(byteStr, 16, 64)
+		if err != nil {
+			return ""
+		}
+		bytes[3-i] = int(val) // Reverse for little-endian
+	}
+	return fmt.Sprintf("%d.%d.%d.%d", bytes[0], bytes[1], bytes[2], bytes[3])
 }
 
 // GetQuickTunnelContainerConfig returns the Docker container configuration for a Quick Tunnel
