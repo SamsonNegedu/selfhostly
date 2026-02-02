@@ -14,7 +14,7 @@ func (c *Config) ValidateRequest(req *http.Request) bool {
 	if !c.AuthEnabled {
 		return true
 	}
-	if c.pathSkipsAuth(req.URL.Path, req.Method) {
+	if c.pathSkipsAuth(req.URL.Path) {
 		return true
 	}
 	tokenStr := c.extractToken(req)
@@ -27,18 +27,23 @@ func (c *Config) ValidateRequest(req *http.Request) bool {
 	return err == nil
 }
 
-func (c *Config) pathSkipsAuth(path, method string) bool {
+func (c *Config) pathSkipsAuth(path string) bool {
+	// Auth endpoints - no auth needed (these handle authentication)
 	if strings.HasPrefix(path, "/auth/") {
 		return true
 	}
+
+	// Health check - no auth needed
 	if path == "/api/health" {
 		return true
 	}
+
 	// /api/me must be accessible to unauthenticated users to determine auth status
 	// It will return 401 if not authenticated, but shouldn't be blocked by gateway
 	if path == "/api/me" {
 		return true
 	}
+
 	return false
 }
 

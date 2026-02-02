@@ -9,9 +9,11 @@ import (
 
 // UpdateSettingsRequest represents an update settings request
 type UpdateSettingsRequest struct {
-	CloudflareAPIToken  string `json:"cloudflare_api_token"`
-	CloudflareAccountID string `json:"cloudflare_account_id"`
-	AutoStartApps       bool   `json:"auto_start_apps"`
+	CloudflareAPIToken    string `json:"cloudflare_api_token"`
+	CloudflareAccountID   string `json:"cloudflare_account_id"`
+	AutoStartApps         bool   `json:"auto_start_apps"`
+	ActiveTunnelProvider  string `json:"active_tunnel_provider"`
+	TunnelProviderConfig  string `json:"tunnel_provider_config"`
 }
 
 // getSettingsDispatch returns settings: when node auth (request_scope=local) calls getSettingsForNode, else getSettings
@@ -41,12 +43,22 @@ func (s *Server) getSettings(c *gin.Context) {
 	if settings.CloudflareAccountID != nil {
 		accountIDValue = *settings.CloudflareAccountID
 	}
+	activeTunnelProvider := ""
+	if settings.ActiveTunnelProvider != nil {
+		activeTunnelProvider = *settings.ActiveTunnelProvider
+	}
+	tunnelProviderConfig := ""
+	if settings.TunnelProviderConfig != nil {
+		tunnelProviderConfig = *settings.TunnelProviderConfig
+	}
 	response := gin.H{
-		"id":                    settings.ID,
-		"cloudflare_api_token":  maskToken(tokenValue),
-		"cloudflare_account_id": accountIDValue,
-		"auto_start_apps":       settings.AutoStartApps,
-		"updated_at":            settings.UpdatedAt,
+		"id":                      settings.ID,
+		"cloudflare_api_token":    maskToken(tokenValue),
+		"cloudflare_account_id":   accountIDValue,
+		"auto_start_apps":         settings.AutoStartApps,
+		"active_tunnel_provider":  activeTunnelProvider,
+		"tunnel_provider_config":  tunnelProviderConfig,
+		"updated_at":              settings.UpdatedAt,
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -77,6 +89,14 @@ func (s *Server) updateSettings(c *gin.Context) {
 		settings.CloudflareAccountID = &req.CloudflareAccountID
 	}
 	settings.AutoStartApps = req.AutoStartApps
+	
+	// Update new provider fields
+	if req.ActiveTunnelProvider != "" {
+		settings.ActiveTunnelProvider = &req.ActiveTunnelProvider
+	}
+	if req.TunnelProviderConfig != "" {
+		settings.TunnelProviderConfig = &req.TunnelProviderConfig
+	}
 
 	if err := s.database.UpdateSettings(settings); err != nil {
 		slog.ErrorContext(c.Request.Context(), "failed to update settings", "error", err)
@@ -95,12 +115,22 @@ func (s *Server) updateSettings(c *gin.Context) {
 	if settings.CloudflareAccountID != nil {
 		accountIDValue = *settings.CloudflareAccountID
 	}
+	activeTunnelProvider := ""
+	if settings.ActiveTunnelProvider != nil {
+		activeTunnelProvider = *settings.ActiveTunnelProvider
+	}
+	tunnelProviderConfig := ""
+	if settings.TunnelProviderConfig != nil {
+		tunnelProviderConfig = *settings.TunnelProviderConfig
+	}
 	response := gin.H{
-		"id":                    settings.ID,
-		"cloudflare_api_token":  maskToken(tokenValue),
-		"cloudflare_account_id": accountIDValue,
-		"auto_start_apps":       settings.AutoStartApps,
-		"updated_at":            settings.UpdatedAt,
+		"id":                      settings.ID,
+		"cloudflare_api_token":    maskToken(tokenValue),
+		"cloudflare_account_id":   accountIDValue,
+		"auto_start_apps":         settings.AutoStartApps,
+		"active_tunnel_provider":  activeTunnelProvider,
+		"tunnel_provider_config":  tunnelProviderConfig,
+		"updated_at":              settings.UpdatedAt,
 	}
 
 	c.JSON(http.StatusOK, response)

@@ -536,7 +536,7 @@ func (db *DB) GetSettings() (*Settings, error) {
 
 // UpdateSettings updates the settings
 func (db *DB) UpdateSettings(settings *Settings) error {
-	var apiToken, accountID interface{}
+	var apiToken, accountID, activeTunnelProvider, tunnelProviderConfig interface{}
 	if settings.CloudflareAPIToken != nil {
 		apiToken = *settings.CloudflareAPIToken
 	} else {
@@ -547,9 +547,19 @@ func (db *DB) UpdateSettings(settings *Settings) error {
 	} else {
 		accountID = nil
 	}
+	if settings.ActiveTunnelProvider != nil {
+		activeTunnelProvider = *settings.ActiveTunnelProvider
+	} else {
+		activeTunnelProvider = nil
+	}
+	if settings.TunnelProviderConfig != nil {
+		tunnelProviderConfig = *settings.TunnelProviderConfig
+	} else {
+		tunnelProviderConfig = nil
+	}
 	_, err := db.Exec(
-		"UPDATE settings SET cloudflare_api_token = ?, cloudflare_account_id = ?, auto_start_apps = ?, updated_at = ? WHERE id = ?",
-		apiToken, accountID, settings.AutoStartApps, time.Now(), settings.ID,
+		"UPDATE settings SET cloudflare_api_token = ?, cloudflare_account_id = ?, auto_start_apps = ?, active_tunnel_provider = ?, tunnel_provider_config = ?, updated_at = ? WHERE id = ?",
+		apiToken, accountID, settings.AutoStartApps, activeTunnelProvider, tunnelProviderConfig, time.Now(), settings.ID,
 	)
 	return err
 }

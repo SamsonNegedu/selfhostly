@@ -45,6 +45,7 @@ func setupTestRouter(t *testing.T) (*Router, *NodeRegistry) {
 		},
 	}
 	registry.primary = "primary-node"
+	registry.initialized = true
 	registry.mu.Unlock()
 
 	router := NewRouter(registry, logger)

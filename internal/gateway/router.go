@@ -19,10 +19,13 @@ type Router struct {
 
 // NewRouter creates a router that uses the node registry
 func NewRouter(registry *NodeRegistry, logger *slog.Logger) *Router {
-	return &Router{registry: registry, logger: logger}
+	return &Router{
+		registry: registry,
+		logger:   logger,
+	}
 }
 
-// Target returns the base URL (e.g. http://primary:8080) for the request and whether it was resolved
+// Target returns the base URL (e.g. http://primary:8082) for the request and whether it was resolved
 func (r *Router) Target(req *http.Request) (baseURL string, ok bool) {
 	path := req.URL.Path
 	query := req.URL.Query()

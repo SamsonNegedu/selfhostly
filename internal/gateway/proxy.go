@@ -35,7 +35,8 @@ func NewProxy(router *Router, registry *NodeRegistry, cfg *Config, logger *slog.
 // ServeHTTP validates auth, resolves target, and forwards the request
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// Handle gateway health check directly (don't route to primary)
-	if req.Method == http.MethodGet && req.URL.Path == "/api/health" {
+	// Support both GET and HEAD methods (Docker healthcheck uses HEAD)
+	if (req.Method == http.MethodGet || req.Method == http.MethodHead) && req.URL.Path == "/api/health" {
 		w.Header().Set("Content-Type", "application/json")
 		// Check if registry is ready (has successfully connected to primary at least once)
 		if !p.registry.IsReady() {

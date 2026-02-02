@@ -1,5 +1,16 @@
 # =============================================================================
-# Selfhostly Gateway - Lean Routing Service
+# Selfhostly Gateway - API Routing Only
+# =============================================================================
+# This handles intelligent routing of API requests:
+#   - Routes /api/* and /auth/* to appropriate backend nodes
+#   - JWT authentication validation
+#   - Node registry management (discovers available backends)
+#   - Health checks
+#
+# Does NOT handle:
+#   - Frontend static files (use Dockerfile.frontend)
+#   - Direct database access (proxies to backend)
+#   - Container orchestration (backends handle this)
 # =============================================================================
 
 # Build Stage

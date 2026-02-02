@@ -15,13 +15,13 @@ func TestConfig_ValidateRequest(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		authEnabled  bool
-		jwtSecret    string
-		path         string
-		method       string
-		cookieValue  string
-		headerValue  string
-		want         bool
+		authEnabled bool
+		jwtSecret   string
+		path        string
+		method      string
+		cookieValue string
+		headerValue string
+		want        bool
 	}{
 		{
 			name:        "auth disabled allows all",
@@ -165,7 +165,7 @@ func TestConfig_pathSkipsAuth(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := cfg.pathSkipsAuth(tt.path, tt.method)
+			got := cfg.pathSkipsAuth(tt.path)
 			if got != tt.want {
 				t.Errorf("pathSkipsAuth(%q, %q) = %v, want %v", tt.path, tt.method, got, tt.want)
 			}

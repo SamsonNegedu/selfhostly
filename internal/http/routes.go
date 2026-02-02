@@ -25,12 +25,15 @@ func (s *Server) setupRoutes() {
 	}
 
 	// Health check endpoint (no auth required)
-	s.engine.GET("/api/health", func(c *gin.Context) {
+	// Support both GET and HEAD for Docker healthcheck
+	healthHandler := func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"status":  "healthy",
 			"service": "selfhostly",
 		})
-	})
+	}
+	s.engine.GET("/api/health", healthHandler)
+	s.engine.HEAD("/api/health", healthHandler)
 
 	// Node auto-registration: no pre-auth (node doesn't exist yet). Handler validates REGISTRATION_TOKEN in body.
 	s.engine.POST("/api/nodes/register", s.autoRegisterNode)
@@ -54,30 +57,19 @@ func (s *Server) setupRoutes() {
 		// Node management routes
 		s.setupNodeRoutes(api)
 
-	// Node-only routes (require node auth)
-	api.POST("/nodes/:id/heartbeat", s.requireNodeAuthMiddleware(), s.sendNodeHeartbeat)
+		// Node-only routes (require node auth)
+		api.POST("/nodes/:id/heartbeat", s.requireNodeAuthMiddleware(), s.sendNodeHeartbeat)
 
-	// User info endpoint (only when auth is enabled)
-	if s.authService != nil {
-		api.GET("/me", s.getCurrentUser)
-	}
-}
-
-	// Serve frontend static files
-	s.engine.Static("/assets", "./web/dist/assets")
-
-	// Serve favicon explicitly before NoRoute catches it
-	s.engine.StaticFile("/favicon.svg", "./web/dist/favicon.svg")
-
-	s.engine.NoRoute(func(c *gin.Context) {
-		path := c.Request.URL.Path
-		// Return 404 for unmatched API/auth routes instead of serving HTML
-		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/auth/") {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Not found"})
-			return
+		// User info endpoint (only when auth is enabled)
+		if s.authService != nil {
+			api.GET("/me", s.getCurrentUser)
 		}
-		// Serve frontend for all other routes (SPA routing)
-		c.File("./web/dist/index.html")
+	}
+
+	// API-only mode: Return 404 for all unmatched routes
+	// Frontend is served separately via dedicated frontend container
+	s.engine.NoRoute(func(c *gin.Context) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Not found"})
 	})
 }
 

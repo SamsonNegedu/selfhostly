@@ -1,14 +1,27 @@
-# Selfhostly Production Deployment with Gateway Architecture
+# =============================================================================
+# Selfhostly Production - Separated Architecture
+# =============================================================================
+# Domain Separation:
+#   1. Frontend (Node.js):  Static files only - no backend logic
+#   2. Gateway (Go):        API routing only - no static files
+#   3. Backend (Go):        API logic only - no static files
+#
+# Traffic Flow:
+#   Internet → Cloudflared ┬→ Frontend (port 80) → Static HTML/JS/CSS
+#                           └→ Gateway (port 8080) → Backend (port 8082) → API logic
+#
 # Usage:
 #   1. Copy .env.prod.example to .env
-#   2. Customize paths and credentials in .env
+#   2. Configure Cloudflare Tunnel ingress rules (see docs)
 #   3. docker compose -f docker-compose.prod.yml up -d
-#
-# Architecture:
-#   Internet → Cloudflared → Gateway (port 8080) → Primary Backend (port 8082)
-#
+# =============================================================================
+
 services:
-  # Gateway - Single entry point that routes to backend nodes
+  # =============================================================================
+  # Gateway - API Request Router
+  # =============================================================================
+  # Routes /api/* and /auth/* to appropriate backend nodes
+  # Validates JWT tokens, manages node registry
   gateway:
     image: ghcr.io/samsonnegedu/selfhostly-gateway:latest
     container_name: selfhostly-gateway
@@ -41,11 +54,48 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 20s # Give gateway time to start server and connect to primary
+      start_period: 40s # Give gateway time to start server and connect to primary
 
-  # Primary Backend - Main application server (not publicly exposed)
+  # =============================================================================
+  # Frontend - Static File Server (Node.js + serve)
+  # =============================================================================
+  # Serves web UI only - uses relative URLs for API calls
+  # Cloudflare routes requests from same domain:
+  #   - / → frontend:80 (static files)
+  #   - /api/* → gateway:8080 (API)
+  # No authentication, no database, no backend logic
+  # Built from: web/Dockerfile
+  frontend:
+    image: ghcr.io/samsonnegedu/selfhostly-frontend:latest
+    container_name: selfhostly-frontend
+    networks:
+      - selfhostly-network
+    restart: unless-stopped
+    expose:
+      - "80" # Internal port only (accessed via Cloudflared)
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:80/",
+        ]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # =============================================================================
+  # Primary Backend - API Server
+  # =============================================================================
+  # Same image as secondary, but configured as primary via NODE_IS_PRIMARY=true
+  # Handles API logic, authentication, database, container orchestration
+  # Not publicly exposed - accessed only via gateway
   primary:
-    image: ghcr.io/samsonnegedu/selfhostly-primary:latest
+    image: ghcr.io/samsonnegedu/selfhostly-backend:latest
     container_name: selfhostly-primary
     user: 1000:984
     environment:
@@ -102,7 +152,12 @@ services:
       retries: 3
       start_period: 10s
 
-  # Optional: Cloudflare Tunnel for public access (connects to gateway)
+  # =============================================================================
+  # Cloudflare Tunnel - Public Internet Access
+  # =============================================================================
+  # Configure ingress rules to route:
+  #   - Frontend routes (/, /login, etc.) → frontend:3000
+  #   - API routes (/api/*, /auth/*) → gateway:8080
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: selfhostly-cloudflared

@@ -365,15 +365,15 @@ go build -o bin/server cmd/server/main.go
 go build -o bin/gateway cmd/gateway/main.go
 
 # Or build Docker images
-docker build -t selfhostly-primary -f Dockerfile.primary .
+docker build -t selfhostly-backend -f Dockerfile.backend .
 docker build -t selfhostly-gateway -f Dockerfile.gateway .
-docker build -t selfhostly-backend -f Dockerfile.backend .  # Backend only (no frontend)
+docker build -t selfhostly-frontend -f web/Dockerfile ./web
 ```
 
 **Available Dockerfiles:**
-- `Dockerfile.primary` - Primary backend with embedded frontend (used in production)
+- `Dockerfile.backend` - API server (universal for primary and secondary nodes)
 - `Dockerfile.gateway` - API gateway for routing requests
-- `Dockerfile.backend` - Backend-only image without frontend
+- `web/Dockerfile` - Frontend static file server
 - `Dockerfile.dev` - Development environment with live reload
 
 ### Project Structure

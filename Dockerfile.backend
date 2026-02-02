@@ -1,5 +1,20 @@
 # =============================================================================
-# Selfhostly Backend - Secondary Node (No Frontend)
+# Selfhostly Backend - API Server
+# =============================================================================
+# Universal backend image for both primary and secondary nodes.
+#
+# Handles:
+#   - API endpoints (/api/*)
+#   - Authentication (/auth/*) - primary only
+#   - Database operations - primary only
+#   - Container orchestration
+#
+# Primary vs Secondary is configured via NODE_IS_PRIMARY environment variable:
+#   - Primary (NODE_IS_PRIMARY=true): Runs database, handles auth, is source of truth
+#   - Secondary (NODE_IS_PRIMARY=false): No database, no auth, proxies to primary
+#
+# Frontend is served separately via Dockerfile.frontend
+# API routing is handled separately via Dockerfile.gateway
 # =============================================================================
 
 # Build Stage

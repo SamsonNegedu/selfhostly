@@ -71,7 +71,7 @@ func TestProxy_HealthCheck_NoAuthRequired(t *testing.T) {
 func TestProxy_HealthCheck_OnlyGET(t *testing.T) {
 	proxy, _, _ := setupTestProxy(t)
 
-	// Only GET requests are handled directly by the gateway
+	// GET and HEAD requests are handled directly by the gateway
 	// Other methods will be routed to primary (which may fail, but that's expected)
 	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
 	w := httptest.NewRecorder()
@@ -85,5 +85,25 @@ func TestProxy_HealthCheck_OnlyGET(t *testing.T) {
 	expectedBody := `{"status":"healthy","service":"gateway"}`
 	if w.Body.String() != expectedBody {
 		t.Errorf("expected body %q, got %q", expectedBody, w.Body.String())
+	}
+}
+
+func TestProxy_HealthCheck_HEAD(t *testing.T) {
+	proxy, _, _ := setupTestProxy(t)
+
+	// Docker healthcheck uses HEAD requests
+	req := httptest.NewRequest(http.MethodHead, "/api/health", nil)
+	w := httptest.NewRecorder()
+
+	proxy.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	// HEAD requests should still set proper headers
+	contentType := w.Header().Get("Content-Type")
+	if contentType != "application/json" {
+		t.Errorf("expected Content-Type application/json, got %q", contentType)
 	}
 }
