@@ -25,6 +25,14 @@ type AppService interface {
 	UpdateAppContainers(ctx context.Context, appID string, nodeID string) (*db.App, error)
 	RestartCloudflared(ctx context.Context, appID string, nodeID string) error
 
+	// Async job-based operations (return job instead of waiting for completion)
+	UpdateAppContainersAsync(ctx context.Context, appID string) (*db.Job, error)
+	CreateAppAsync(ctx context.Context, req CreateAppRequest) (*db.Job, error)
+	CreateTunnelForAppAsync(ctx context.Context, appID string, ingressRules []db.IngressRule) (*db.Job, error)
+	CreateQuickTunnelForAppAsync(ctx context.Context, appID string, service string, port int) (*db.Job, error)
+	SwitchAppToCustomTunnelAsync(ctx context.Context, appID string, ingressRules []db.IngressRule) (*db.Job, error)
+	DeleteTunnelAsync(ctx context.Context, appID string) (*db.Job, error)
+
 	// CreateTunnelForApp creates a named (custom domain) tunnel for an app that has none. When nodeID is remote, the request is forwarded to that node (all-or-nothing).
 	// Returns (app, handledLocally, error). handledLocally is true when the work was done on this node so the HTTP layer may apply optional ingress_rules.
 	CreateTunnelForApp(ctx context.Context, appID string, nodeID string, body interface{}) (*db.App, bool, error)

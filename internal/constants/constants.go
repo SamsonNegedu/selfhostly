@@ -8,6 +8,24 @@ const (
 	AppStatusStopped  = "stopped"
 	AppStatusUpdating = "updating"
 	AppStatusError    = "error"
+	AppStatusPending  = "pending" // Used when app creation is queued
+)
+
+// Job status values
+const (
+	JobStatusPending   = "pending"
+	JobStatusRunning   = "running"
+	JobStatusCompleted = "completed"
+	JobStatusFailed    = "failed"
+)
+
+// Job type values
+const (
+	JobTypeAppCreate     = "app_create"
+	JobTypeAppUpdate     = "app_update"
+	JobTypeTunnelCreate  = "tunnel_create"
+	JobTypeTunnelDelete  = "tunnel_delete"
+	JobTypeQuickTunnel   = "quick_tunnel"
 )
 
 // Tunnel mode values
@@ -165,6 +183,24 @@ const (
 
 	// BackoffMaxInterval is the maximum interval for exponential backoff
 	BackoffMaxInterval = 5 * time.Minute
+)
+
+// Job processing constants
+const (
+	// JobWorkerPollInterval is how often the worker checks for pending jobs
+	JobWorkerPollInterval = 2 * time.Second
+
+	// JobStaleThreshold is how long a job can be in "running" state before considered stale
+	JobStaleThreshold = 30 * time.Minute
+
+	// JobGracefulShutdownTimeout is how long to wait for current job during shutdown
+	JobGracefulShutdownTimeout = 5 * time.Minute
+
+	// JobHistoryKeepCount is how many completed/failed jobs to keep per app
+	JobHistoryKeepCount = 20
+
+	// JobHistoryCleanupInterval is how often to clean up old job records
+	JobHistoryCleanupInterval = 1 * time.Hour
 )
 
 // Default provider name (for backward compatibility)

@@ -228,7 +228,7 @@ func InjectTunnelContainer(compose *ComposeFile, appName string, containerConfig
 	if len(networks) == 0 {
 		networks = []string{network}
 	}
-	
+
 	// Ensure core API network is added (for cross-network access from primary backend)
 	hasCoreAPINetwork := false
 	for _, n := range networks {
@@ -339,7 +339,7 @@ func ExtractQuickTunnelMetricsHostPort(composeContent string) (hostPort int, ok 
 		if containerPort == 0 {
 			containerPort = constants.QuickTunnelMetricsPort // Default fallback
 		}
-		
+
 		// Port format is "hostPort:containerPort"
 		for _, p := range svc.Ports {
 			parts := strings.Split(p, ":")

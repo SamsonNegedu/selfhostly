@@ -3,8 +3,11 @@ package service
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -31,12 +34,10 @@ type appService struct {
 	logger           *slog.Logger
 	router           *routing.NodeRouter
 	appsAgg          *routing.AppsAggregator
-	settingsManager  *cloudflare.SettingsManager  // DEPRECATED: for backward compatibility
-	providerRegistry *tunnel.Registry             // NEW: for multi-provider support
-	tunnelService    domain.TunnelService          // NEW: for Quick Tunnel operations
+	settingsManager  *cloudflare.SettingsManager // DEPRECATED: for backward compatibility
+	providerRegistry *tunnel.Registry            // NEW: for multi-provider support
+	tunnelService    domain.TunnelService        // NEW: for Quick Tunnel operations
 }
-
-
 
 // NewAppService creates a new app service
 func NewAppService(
@@ -50,19 +51,19 @@ func NewAppService(
 	router := routing.NewNodeRouter(database, nodeClient, cfg.Node.ID, logger)
 	appsAgg := routing.NewAppsAggregator(router, logger)
 	settingsManager := cloudflare.NewSettingsManager(database, logger)
-	
+
 	// Initialize provider registry
 	registry := tunnel.NewRegistry()
-	
+
 	// Register Cloudflare provider
 	registry.Register(constants.ProviderCloudflare, func(config map[string]interface{}) (tunnel.Provider, error) {
 		config["database"] = database
 		config["logger"] = logger
 		return cloudflareProvider.NewProvider(config)
 	})
-	
+
 	// Future providers can be registered here
-	
+
 	return &appService{
 		database:         database,
 		dockerManager:    dockerManager,
@@ -147,7 +148,7 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 			s.logger.ErrorContext(ctx, "failed to create Quick Tunnel config", "app", req.Name, "error", err)
 			return nil, fmt.Errorf("failed to create Quick Tunnel config: %w", err)
 		}
-		
+
 		networks := docker.ExtractNetworks(compose)
 		network := ""
 		if len(networks) > 0 {
@@ -305,7 +306,7 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 						// Don't fail app creation if ingress update fails
 					} else {
 						s.logger.InfoContext(ctx, "ingress rules applied successfully", "provider", providerName, "app", req.Name)
-						
+
 						// Reload app from database to get updated tunnel_domain and public_url
 						// UpdateIngress may have updated these fields via the tunnel provider
 						if refreshedApp, err := s.database.GetApp(app.ID); err == nil {
@@ -322,56 +323,42 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 		}
 	}
 
-	// Auto-start app if configured
+	// Auto-start app if configured - but do it ASYNC to avoid blocking API
 	if settings.AutoStartApps {
-		s.logger.InfoContext(ctx, "auto-starting app", "app", req.Name, "appID", app.ID)
-		if err := s.dockerManager.StartApp(app.Name); err != nil {
-			s.logger.ErrorContext(ctx, "failed to auto-start app", "app", app.Name, "appID", app.ID, "error", err)
+		s.logger.InfoContext(ctx, "queueing auto-start job", "app", req.Name, "appID", app.ID)
 
-			// Transition to error state but continue with app creation
-			app.Status = "error"
-			errorMessage := err.Error()
-			app.ErrorMessage = &errorMessage
-			app.UpdatedAt = time.Now()
-			if err := s.database.UpdateApp(app); err != nil {
-				s.logger.ErrorContext(ctx, "failed to update app status to error", "app", app.Name, "error", err)
-			}
+		// Keep app in "pending" status - background job will start it
+		app.Status = constants.AppStatusPending
+		app.UpdatedAt = time.Now()
+		if err := s.database.UpdateApp(app); err != nil {
+			s.logger.WarnContext(ctx, "failed to update app status to pending", "app", app.Name, "error", err)
+		}
+
+		// Prepare payload for background job
+		payload := struct {
+			Name               string           `json:"name"`
+			TunnelMode         string           `json:"tunnel_mode,omitempty"`
+			IngressRules       []db.IngressRule `json:"ingress_rules,omitempty"`
+			CreatedTunnelAppID string           `json:"created_tunnel_app_id,omitempty"`
+		}{
+			Name:               req.Name,
+			TunnelMode:         tunnelMode,
+			IngressRules:       req.IngressRules,
+			CreatedTunnelAppID: createdTunnelAppID,
+		}
+
+		payloadJSON, err := json.Marshal(payload)
+		if err != nil {
+			s.logger.ErrorContext(ctx, "failed to marshal app start payload", "app", req.Name, "error", err)
+			// Continue without job - app will be in pending state
 		} else {
-			// Update status in database
-			app.Status = "running"
-			app.ErrorMessage = nil
-			app.UpdatedAt = time.Now()
-			if err := s.database.UpdateApp(app); err != nil {
-				s.logger.ErrorContext(ctx, "failed to update app status after auto-start", "app", app.Name, "error", err)
-			}
-
-			// Quick Tunnel: extract URL from metrics endpoint and update app
-			if app.TunnelMode == constants.TunnelModeQuick {
-				// Delegate URL extraction to tunnel service (which uses QuickTunnelProvider)
-				// The extractor has built-in retry logic to handle startup delays
-				quickURL, err := s.tunnelService.ExtractQuickTunnelURL(ctx, app.ID, s.config.Node.ID)
-				if err != nil {
-					s.logger.WarnContext(ctx, "failed to extract Quick Tunnel URL, app may need manual refresh", "app", app.Name, "error", err)
-				} else if quickURL != "" {
-					app.PublicURL = quickURL
-					app.TunnelDomain = strings.TrimPrefix(quickURL, "https://")
-					app.UpdatedAt = time.Now()
-					if err := s.database.UpdateApp(app); err != nil {
-						s.logger.WarnContext(ctx, "failed to save Quick Tunnel URL to app", "app", app.Name, "error", err)
-					} else {
-						s.logger.InfoContext(ctx, "Quick Tunnel URL captured", "app", app.Name, "public_url", quickURL)
-					}
-				}
-			}
-
-			// Restart tunnel container to pick up ingress configuration if app was auto-started (custom tunnel only)
-			if len(req.IngressRules) > 0 && createdTunnelAppID != "" && tunnelMode == constants.TunnelModeCustom {
-				s.logger.InfoContext(ctx, "restarting tunnel container after auto-start", "app", req.Name)
-				if err := s.dockerManager.RestartTunnelService(app.Name); err != nil {
-					s.logger.WarnContext(ctx, "failed to restart tunnel container, ingress rules updated but container restart may be required", "app", req.Name, "appID", app.ID, "error", err)
-				} else {
-					s.logger.InfoContext(ctx, "tunnel container restarted successfully after ingress update", "app", req.Name, "appID", app.ID)
-				}
+			payloadStr := string(payloadJSON)
+			job := db.NewJob(constants.JobTypeAppCreate, app.ID, &payloadStr)
+			if err := s.database.CreateJob(job); err != nil {
+				s.logger.ErrorContext(ctx, "failed to create auto-start job", "app", req.Name, "error", err)
+				// Continue without job - app will be in pending state
+			} else {
+				s.logger.InfoContext(ctx, "auto-start job created", "app", req.Name, "jobID", job.ID)
 			}
 		}
 	}
@@ -656,6 +643,21 @@ func (s *appService) UpdateAppContainers(ctx context.Context, appID string, node
 	if err != nil {
 		return nil, domain.WrapAppNotFound(appID, err)
 	}
+
+	// RECOVERY: If app directory doesn't exist, recreate it from database
+	appPath := filepath.Join(s.config.AppsDir, app.Name)
+	if _, err := os.Stat(appPath); os.IsNotExist(err) {
+		s.logger.WarnContext(ctx, "app directory missing, recreating from database",
+			"app", app.Name, "appPath", appPath)
+
+		// Recreate directory with compose file from database
+		if err := s.dockerManager.CreateAppDirectory(app.Name, app.ComposeContent); err != nil {
+			return nil, fmt.Errorf("failed to recover app directory: %w", err)
+		}
+
+		s.logger.InfoContext(ctx, "app directory recovered successfully", "app", app.Name)
+	}
+
 	app.Status = constants.AppStatusUpdating
 	app.UpdatedAt = time.Now()
 	if err := s.database.UpdateApp(app); err != nil {
@@ -790,6 +792,12 @@ func (s *appService) createTunnelForAppLocal(ctx context.Context, appID string, 
 	if err != nil {
 		s.logger.WarnContext(ctx, "tunnel created but UpdateAppContainers failed", "appID", appID, "nodeID", nodeID, "error", err)
 	}
+
+	// Force recreate tunnel container to ensure it picks up new tunnel token and configuration
+	if err := s.dockerManager.ForceRecreateTunnel(app.Name); err != nil {
+		s.logger.WarnContext(ctx, "could not force-recreate tunnel container", "app", app.Name, "error", err)
+	}
+
 	return app, nil
 }
 
@@ -823,12 +831,12 @@ func (s *appService) CreateQuickTunnelForApp(ctx context.Context, appID string, 
 	if err != nil {
 		return nil, domain.WrapAppNotFound(appID, err)
 	}
-	
+
 	// Allow recreating if already in Quick Tunnel mode, but prevent if using custom tunnel
 	if app.TunnelMode == constants.TunnelModeCustom || (app.TunnelToken != "" && app.TunnelMode != constants.TunnelModeQuick) {
 		return nil, domain.WrapValidationError("tunnel", fmt.Errorf("this app uses a custom domain tunnel; delete the existing tunnel first if you want to use a Quick Tunnel instead"))
 	}
-	
+
 	// Check if we're recreating an existing quick tunnel
 	if app.TunnelMode == constants.TunnelModeQuick {
 		isRecreating = true
@@ -861,14 +869,14 @@ func (s *appService) CreateQuickTunnelForApp(ctx context.Context, appID string, 
 			s.logger.WarnContext(ctx, "failed to allocate Quick Tunnel metrics port, using fallback", "appID", appID, "error", err)
 		}
 	}
-	
+
 	// Remove existing tunnel service if recreating
 	if isRecreating {
 		if removed := docker.RemoveTunnelService(compose); removed {
 			s.logger.InfoContext(ctx, "removed existing tunnel service before recreating", "app", app.Name)
 		}
 	}
-	
+
 	containerConfig, err := s.tunnelService.CreateQuickTunnelConfig(strings.TrimSpace(service), port, metricsPort)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Quick Tunnel config: %w", err)
@@ -992,7 +1000,7 @@ func (s *appService) GetQuickTunnelURL(ctx context.Context, appID string, nodeID
 	if app.TunnelMode != constants.TunnelModeQuick {
 		return "", fmt.Errorf("app is not in Quick Tunnel mode (tunnel_mode=%q)", app.TunnelMode)
 	}
-	
+
 	// Delegate to tunnel service (which uses QuickTunnelProvider)
 	return s.tunnelService.ExtractQuickTunnelURL(ctx, appID, nodeID)
 }
@@ -1013,4 +1021,317 @@ func (s *appService) RestartCloudflared(ctx context.Context, appID string, nodeI
 
 	s.logger.InfoContext(ctx, "cloudflared container restarted successfully", "app", app.Name, "appID", appID)
 	return nil
+}
+
+// ============================================================================
+// Async Job Operations
+// ============================================================================
+
+// UpdateAppContainersAsync creates a background job for app update (instead of running synchronously)
+func (s *appService) UpdateAppContainersAsync(ctx context.Context, appID string) (*db.Job, error) {
+	s.logger.InfoContext(ctx, "creating async job for app update", "appID", appID)
+
+	// Verify app exists
+	app, err := s.database.GetApp(appID)
+	if err != nil {
+		return nil, domain.WrapAppNotFound(appID, err)
+	}
+
+	// RECOVERY: If app directory doesn't exist, recreate it from database
+	appPath := filepath.Join(s.config.AppsDir, app.Name)
+	if _, err := os.Stat(appPath); os.IsNotExist(err) {
+		s.logger.WarnContext(ctx, "app directory missing, recreating from database",
+			"app", app.Name, "appPath", appPath)
+
+		// Recreate directory with compose file from database
+		if err := s.dockerManager.CreateAppDirectory(app.Name, app.ComposeContent); err != nil {
+			return nil, fmt.Errorf("failed to recover app directory: %w", err)
+		}
+
+		s.logger.InfoContext(ctx, "app directory recovered", "app", app.Name)
+	}
+
+	// Check for existing pending/running job for this app (concurrency control)
+	existingJob, err := s.database.GetActiveJobForApp(appID)
+	if err != nil {
+		s.logger.WarnContext(ctx, "failed to check for existing job", "appID", appID, "error", err)
+	}
+
+	if existingJob != nil {
+		s.logger.InfoContext(ctx, "returning existing active job", "appID", appID, "jobID", existingJob.ID, "status", existingJob.Status)
+		return existingJob, nil // Return existing job instead of creating duplicate
+	}
+
+	// Update app status to "updating"
+	app.Status = constants.AppStatusUpdating
+	if err := s.database.UpdateApp(app); err != nil {
+		s.logger.WarnContext(ctx, "failed to update app status to updating", "appID", appID, "error", err)
+	}
+
+	// Create new job
+	job := db.NewJob(constants.JobTypeAppUpdate, appID, nil)
+	if err := s.database.CreateJob(job); err != nil {
+		return nil, fmt.Errorf("failed to create job: %w", err)
+	}
+
+	s.logger.InfoContext(ctx, "created app update job", "appID", appID, "jobID", job.ID)
+	return job, nil
+}
+
+// CreateAppAsync creates a background job for app creation (instead of running synchronously)
+func (s *appService) CreateAppAsync(ctx context.Context, req domain.CreateAppRequest) (*db.Job, error) {
+	s.logger.InfoContext(ctx, "creating async job for app creation", "name", req.Name)
+
+	// Validate app name
+	if err := validation.ValidateAppName(req.Name); err != nil {
+		s.logger.WarnContext(ctx, "invalid app name", "name", req.Name, "error", err)
+		return nil, domain.WrapValidationError("app name", err)
+	}
+
+	// Validate compose content
+	if err := validation.ValidateComposeContent(req.ComposeContent); err != nil {
+		s.logger.WarnContext(ctx, "invalid compose content", "error", err)
+		return nil, domain.WrapValidationError("compose content", err)
+	}
+
+	// Determine node ID (use current node if not specified)
+	nodeID := req.NodeID
+	if nodeID == "" {
+		nodeID = s.config.Node.ID
+	}
+
+	// Create app record with "pending" status
+	app := db.NewApp(req.Name, req.Description, req.ComposeContent)
+	app.Status = constants.AppStatusPending
+	app.NodeID = nodeID
+	app.TunnelMode = req.TunnelMode
+
+	if err := s.database.CreateApp(app); err != nil {
+		return nil, fmt.Errorf("failed to create app: %w", err)
+	}
+
+	// Prepare payload
+	payload := struct {
+		Name               string `json:"name"`
+		Description        string `json:"description"`
+		ComposeContent     string `json:"compose_content"`
+		TunnelMode         string `json:"tunnel_mode,omitempty"`
+		QuickTunnelService string `json:"quick_tunnel_service,omitempty"`
+		QuickTunnelPort    int    `json:"quick_tunnel_port,omitempty"`
+		AutoStart          bool   `json:"auto_start"`
+	}{
+		Name:               req.Name,
+		Description:        req.Description,
+		ComposeContent:     req.ComposeContent,
+		TunnelMode:         req.TunnelMode,
+		QuickTunnelService: req.QuickTunnelService,
+		QuickTunnelPort:    req.QuickTunnelPort,
+		AutoStart:          true, // Default to auto-start
+	}
+
+	// Marshal payload to JSON
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal payload: %w", err)
+	}
+	payloadStr := string(payloadJSON)
+
+	// Create job
+	job := db.NewJob(constants.JobTypeAppCreate, app.ID, &payloadStr)
+	if err := s.database.CreateJob(job); err != nil {
+		return nil, fmt.Errorf("failed to create job: %w", err)
+	}
+
+	s.logger.InfoContext(ctx, "created app creation job", "appID", app.ID, "jobID", job.ID, "name", req.Name)
+	return job, nil
+}
+
+// CreateTunnelForAppAsync creates a background job for tunnel creation (instead of running synchronously)
+func (s *appService) CreateTunnelForAppAsync(ctx context.Context, appID string, ingressRules []db.IngressRule) (*db.Job, error) {
+	s.logger.InfoContext(ctx, "creating async job for tunnel creation", "appID", appID, "hasIngressRules", len(ingressRules) > 0)
+
+	// Verify app exists
+	_, err := s.database.GetApp(appID)
+	if err != nil {
+		return nil, domain.WrapAppNotFound(appID, err)
+	}
+
+	// Check if app already has tunnel
+	_, err = s.database.GetCloudflareTunnelByAppID(appID)
+	if err == nil {
+		return nil, fmt.Errorf("app already has a tunnel")
+	}
+	if err != sql.ErrNoRows {
+		return nil, domain.WrapDatabaseOperation("check existing tunnel", err)
+	}
+
+	// Check for existing pending/running job
+	existingJob, err := s.database.GetActiveJobForApp(appID)
+	if err != nil {
+		s.logger.WarnContext(ctx, "failed to check for existing job", "appID", appID, "error", err)
+	}
+	if existingJob != nil {
+		s.logger.InfoContext(ctx, "returning existing active job", "appID", appID, "jobID", existingJob.ID, "status", existingJob.Status)
+		return existingJob, nil
+	}
+
+	// Create payload with ingress rules if provided
+	var payloadStr *string
+	if len(ingressRules) > 0 {
+		payload := map[string]interface{}{
+			"ingress_rules": ingressRules,
+		}
+		payloadBytes, err := json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal payload: %w", err)
+		}
+		str := string(payloadBytes)
+		payloadStr = &str
+	}
+
+	// Create job
+	job := db.NewJob(constants.JobTypeTunnelCreate, appID, payloadStr)
+	if err := s.database.CreateJob(job); err != nil {
+		return nil, fmt.Errorf("failed to create job: %w", err)
+	}
+
+	s.logger.InfoContext(ctx, "created tunnel creation job", "appID", appID, "jobID", job.ID)
+	return job, nil
+}
+
+// DeleteTunnelAsync creates a background job for tunnel deletion (instead of running synchronously)
+func (s *appService) DeleteTunnelAsync(ctx context.Context, appID string) (*db.Job, error) {
+	s.logger.InfoContext(ctx, "creating async job for tunnel deletion", "appID", appID)
+
+	// Verify app exists
+	app, err := s.database.GetApp(appID)
+	if err != nil {
+		return nil, domain.WrapAppNotFound(appID, err)
+	}
+
+	// Check if app has a tunnel to delete
+	if app.TunnelID == "" && app.TunnelMode == "" {
+		return nil, fmt.Errorf("app does not have a tunnel to delete")
+	}
+
+	// Check for existing pending/running job
+	existingJob, err := s.database.GetActiveJobForApp(appID)
+	if err != nil {
+		s.logger.WarnContext(ctx, "failed to check for existing job", "appID", appID, "error", err)
+	}
+	if existingJob != nil {
+		s.logger.InfoContext(ctx, "returning existing active job", "appID", appID, "jobID", existingJob.ID, "status", existingJob.Status)
+		return existingJob, nil
+	}
+
+	// Create job (no payload needed for deletion)
+	job := db.NewJob(constants.JobTypeTunnelDelete, appID, nil)
+	if err := s.database.CreateJob(job); err != nil {
+		return nil, fmt.Errorf("failed to create job: %w", err)
+	}
+
+	s.logger.InfoContext(ctx, "created tunnel deletion job", "appID", appID, "jobID", job.ID)
+	return job, nil
+}
+
+// CreateQuickTunnelForAppAsync creates a background job for Quick Tunnel creation
+func (s *appService) CreateQuickTunnelForAppAsync(ctx context.Context, appID string, service string, port int) (*db.Job, error) {
+	s.logger.InfoContext(ctx, "creating async job for Quick Tunnel creation", "appID", appID, "service", service, "port", port)
+
+	// Validate inputs
+	if strings.TrimSpace(service) == "" {
+		return nil, domain.WrapValidationError("service", fmt.Errorf("service is required for Quick Tunnel"))
+	}
+	if port < constants.MinPort || port > constants.MaxPort {
+		return nil, domain.WrapValidationError("port", fmt.Errorf("port must be between %d and %d", constants.MinPort, constants.MaxPort))
+	}
+
+	// Verify app exists
+	app, err := s.database.GetApp(appID)
+	if err != nil {
+		return nil, domain.WrapAppNotFound(appID, err)
+	}
+
+	// Allow recreating if already in Quick Tunnel mode, but prevent if using custom tunnel
+	if app.TunnelMode == constants.TunnelModeCustom || (app.TunnelToken != "" && app.TunnelMode != constants.TunnelModeQuick) {
+		return nil, domain.WrapValidationError("tunnel", fmt.Errorf("this app uses a custom domain tunnel; delete the existing tunnel first if you want to use a Quick Tunnel instead"))
+	}
+
+	// Check for existing pending/running job
+	existingJob, err := s.database.GetActiveJobForApp(appID)
+	if err != nil {
+		s.logger.WarnContext(ctx, "failed to check for existing job", "appID", appID, "error", err)
+	}
+	if existingJob != nil {
+		s.logger.InfoContext(ctx, "returning existing active job", "appID", appID, "jobID", existingJob.ID, "status", existingJob.Status)
+		return existingJob, nil
+	}
+
+	// Create payload
+	payload := map[string]interface{}{
+		"service": service,
+		"port":    port,
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal payload: %w", err)
+	}
+	payloadStr := string(payloadBytes)
+
+	// Create job
+	job := db.NewJob(constants.JobTypeQuickTunnel, appID, &payloadStr)
+	if err := s.database.CreateJob(job); err != nil {
+		return nil, fmt.Errorf("failed to create job: %w", err)
+	}
+
+	s.logger.InfoContext(ctx, "created Quick Tunnel job", "appID", appID, "jobID", job.ID)
+	return job, nil
+}
+
+// SwitchAppToCustomTunnelAsync creates a background job to switch from Quick Tunnel to custom domain tunnel
+func (s *appService) SwitchAppToCustomTunnelAsync(ctx context.Context, appID string, ingressRules []db.IngressRule) (*db.Job, error) {
+	s.logger.InfoContext(ctx, "creating async job to switch to custom tunnel", "appID", appID, "hasIngressRules", len(ingressRules) > 0)
+
+	// Verify app exists and is using Quick Tunnel
+	app, err := s.database.GetApp(appID)
+	if err != nil {
+		return nil, domain.WrapAppNotFound(appID, err)
+	}
+	
+	if app.TunnelMode != constants.TunnelModeQuick {
+		return nil, fmt.Errorf("app is not using Quick Tunnel (tunnel_mode=%q)", app.TunnelMode)
+	}
+
+	// Check for existing pending/running job
+	existingJob, err := s.database.GetActiveJobForApp(appID)
+	if err != nil {
+		s.logger.WarnContext(ctx, "failed to check for existing job", "appID", appID, "error", err)
+	}
+	if existingJob != nil {
+		s.logger.InfoContext(ctx, "returning existing active job", "appID", appID, "jobID", existingJob.ID, "status", existingJob.Status)
+		return existingJob, nil
+	}
+
+	// Create payload with ingress rules if provided
+	var payloadStr *string
+	if len(ingressRules) > 0 {
+		payload := map[string]interface{}{
+			"ingress_rules": ingressRules,
+		}
+		payloadBytes, err := json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal payload: %w", err)
+		}
+		str := string(payloadBytes)
+		payloadStr = &str
+	}
+
+	// Create tunnel_create job (switching is just creating a custom tunnel)
+	job := db.NewJob(constants.JobTypeTunnelCreate, appID, payloadStr)
+	if err := s.database.CreateJob(job); err != nil {
+		return nil, fmt.Errorf("failed to create job: %w", err)
+	}
+
+	s.logger.InfoContext(ctx, "created switch to custom tunnel job", "appID", appID, "jobID", job.ID)
+	return job, nil
 }

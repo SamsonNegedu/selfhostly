@@ -1,14 +1,19 @@
 package docker
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/selfhostly/internal/constants"
 )
+
+// ProgressCallback is a function that receives progress updates during long operations
+type ProgressCallback func(progress int, message string)
 
 // Manager handles Docker operations
 type Manager struct {
@@ -35,6 +40,12 @@ func NewManagerWithExecutor(appsDir string, executor CommandExecutor) *Manager {
 // GetCommandExecutor returns the command executor (for debugging purposes)
 func (m *Manager) GetCommandExecutor() CommandExecutor {
 	return m.commandExecutor
+}
+
+// directoryExists checks if a directory exists
+func (m *Manager) directoryExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 // CreateAppDirectory creates an app directory and writes compose file
@@ -79,6 +90,12 @@ func (m *Manager) WriteComposeFile(name, content string) error {
 func (m *Manager) StartApp(name string) error {
 	appPath := filepath.Join(m.appsDir, name)
 
+	// Directory must exist for start operation
+	if !m.directoryExists(appPath) {
+		slog.Error("app directory does not exist", "app", name, "appPath", appPath)
+		return fmt.Errorf("app directory not found: %s", appPath)
+	}
+
 	slog.Info("starting app", "app", name, "appPath", appPath, "command", "docker compose up -d")
 
 	cmd := ComposeUpCommand()
@@ -98,6 +115,12 @@ func (m *Manager) StartApp(name string) error {
 func (m *Manager) ReconcileApp(name string) error {
 	appPath := filepath.Join(m.appsDir, name)
 
+	// Directory must exist for reconcile operation
+	if !m.directoryExists(appPath) {
+		slog.Error("app directory does not exist", "app", name, "appPath", appPath)
+		return fmt.Errorf("app directory not found: %s", appPath)
+	}
+
 	slog.Info("reconciling app", "app", name, "appPath", appPath, "command", "docker compose up -d --remove-orphans")
 
 	cmd := ComposeUpWithRemoveOrphansCommand()
@@ -114,6 +137,12 @@ func (m *Manager) ReconcileApp(name string) error {
 // StopApp stops the app using docker compose
 func (m *Manager) StopApp(name string) error {
 	appPath := filepath.Join(m.appsDir, name)
+
+	// Check if directory exists first
+	if !m.directoryExists(appPath) {
+		slog.Info("app directory does not exist, nothing to stop", "app", name, "appPath", appPath)
+		return nil // Not an error - just nothing to stop
+	}
 
 	slog.Info("stopping app", "app", name, "appPath", appPath, "command", "docker compose down")
 
@@ -133,6 +162,12 @@ func (m *Manager) UpdateApp(name string) error {
 	appPath := filepath.Join(m.appsDir, name)
 	composeFile := "docker-compose.yml"
 	composePath := filepath.Join(appPath, composeFile)
+
+	// Directory must exist for update operation
+	if !m.directoryExists(appPath) {
+		slog.Error("app directory does not exist", "app", name, "appPath", appPath)
+		return fmt.Errorf("app directory not found: %s (needs recovery from database)", appPath)
+	}
 
 	slog.Info("starting app update", "app", name, "appPath", appPath, "composeFile", composePath)
 
@@ -172,6 +207,101 @@ func (m *Manager) UpdateApp(name string) error {
 	}
 
 	slog.Info("app updated successfully", "app", name, "output", string(upOutput))
+	return nil
+}
+
+// UpdateAppWithProgress performs zero-downtime update with progress callbacks
+func (m *Manager) UpdateAppWithProgress(ctx context.Context, name string, progressCb ProgressCallback) error {
+	appPath := filepath.Join(m.appsDir, name)
+	composeFile := "docker-compose.yml"
+	composePath := filepath.Join(appPath, composeFile)
+
+	// Directory must exist for update operation
+	if !m.directoryExists(appPath) {
+		slog.Error("app directory does not exist", "app", name, "appPath", appPath)
+		return fmt.Errorf("app directory not found: %s (needs recovery from database)", appPath)
+	}
+
+	if progressCb != nil {
+		progressCb(5, "Verifying compose file...")
+	}
+
+	// Verify compose file exists
+	if _, err := os.Stat(composePath); err != nil {
+		slog.Error("compose file not found", "app", name, "composePath", composePath, "error", err)
+		return fmt.Errorf("compose file not found at %s: %w", composePath, err)
+	}
+
+	// Step 1: Pull latest images (this is the slow part)
+	if progressCb != nil {
+		progressCb(10, "Pulling latest images...")
+	}
+
+	slog.Info("pulling latest images", "app", name, "command", "docker compose pull --ignore-buildable")
+	pullCmd := ComposePullCommand()
+	pullOutput, pullErr := m.commandExecutor.ExecuteCommandInDir(appPath, pullCmd[0], pullCmd[1:]...)
+	if pullErr != nil {
+		// If pull fails, log but continue
+		slog.Warn("failed to pull images, continuing with update",
+			"app", name,
+			"error", pullErr,
+			"output", string(pullOutput))
+	} else {
+		slog.Info("images pulled successfully", "app", name)
+	}
+
+	if progressCb != nil {
+		progressCb(50, "Building services...")
+	}
+
+	// Step 2: Update app services with --build flag
+	slog.Info("updating app services", "app", name, "command", "docker compose up -d --build")
+	upCmd := ComposeUpWithBuildCommand()
+	upOutput, upErr := m.commandExecutor.ExecuteCommandInDir(appPath, upCmd[0], upCmd[1:]...)
+	if upErr != nil {
+		slog.Error("failed to update app services",
+			"app", name,
+			"error", upErr,
+			"output", string(upOutput))
+		return fmt.Errorf("failed to update app: %w\nOutput: %s", upErr, string(upOutput))
+	}
+
+	if progressCb != nil {
+		progressCb(90, "Waiting for containers to be healthy...")
+	}
+
+	// Give containers a moment to stabilize
+	time.Sleep(2 * time.Second)
+
+	if progressCb != nil {
+		progressCb(100, "Update complete")
+	}
+
+	slog.Info("app updated successfully", "app", name)
+	return nil
+}
+
+// StartAppWithProgress starts the app with progress callbacks
+func (m *Manager) StartAppWithProgress(ctx context.Context, name string, progressCb ProgressCallback) error {
+	if progressCb != nil {
+		progressCb(20, "Starting containers...")
+	}
+
+	if err := m.StartApp(name); err != nil {
+		return err
+	}
+
+	if progressCb != nil {
+		progressCb(90, "Waiting for containers...")
+	}
+
+	// Give containers a moment to start
+	time.Sleep(2 * time.Second)
+
+	if progressCb != nil {
+		progressCb(100, "Containers started")
+	}
+
 	return nil
 }
 
@@ -254,6 +384,12 @@ func (m *Manager) GetAppLogs(name string) ([]byte, error) {
 func (m *Manager) DeleteAppDirectory(name string) error {
 	appPath := filepath.Join(m.appsDir, name)
 
+	// Check if directory exists first
+	if !m.directoryExists(appPath) {
+		slog.Info("app directory does not exist, nothing to delete", "app", name, "appPath", appPath)
+		return nil // Not an error - already gone
+	}
+
 	slog.Info("deleting app directory", "app", name, "appPath", appPath)
 
 	if err := os.RemoveAll(appPath); err != nil {
@@ -296,6 +432,55 @@ func (m *Manager) RestartTunnelService(name string) error {
 	}
 
 	slog.Info("tunnel service restarted successfully", "app", name, "output", string(output))
+	return nil
+}
+
+// StopTunnelService stops the generic tunnel service
+func (m *Manager) StopTunnelService(name string) error {
+	appPath := filepath.Join(m.appsDir, name)
+
+	// Check if directory exists first
+	if !m.directoryExists(appPath) {
+		slog.Debug("app directory does not exist, nothing to stop", "app", name, "appPath", appPath)
+		return nil // Not an error - just nothing to stop
+	}
+
+	slog.Info("stopping tunnel service", "app", name, "appPath", appPath, "command", "docker compose stop tunnel")
+
+	cmd := ComposeStopServiceCommand(ServiceTunnel)
+	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, cmd[0], cmd[1:]...)
+	if err != nil {
+		// If service doesn't exist, that's okay - it's already stopped
+		slog.Debug("failed to stop tunnel service (may not exist)", "app", name, "error", err, "output", string(output))
+		return nil // Don't fail if service doesn't exist
+	}
+
+	slog.Info("tunnel service stopped successfully", "app", name, "output", string(output))
+	return nil
+}
+
+// RemoveTunnelService removes the generic tunnel service container
+// This is more aggressive than just stopping - it actually removes the container
+func (m *Manager) RemoveTunnelService(name string) error {
+	appPath := filepath.Join(m.appsDir, name)
+
+	// Check if directory exists first
+	if !m.directoryExists(appPath) {
+		slog.Debug("app directory does not exist, nothing to remove", "app", name, "appPath", appPath)
+		return nil // Not an error - just nothing to remove
+	}
+
+	slog.Info("removing tunnel service container", "app", name, "appPath", appPath, "command", "docker compose rm -f -s tunnel")
+
+	cmd := ComposeRemoveServiceCommand(ServiceTunnel)
+	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, cmd[0], cmd[1:]...)
+	if err != nil {
+		// If service doesn't exist, that's okay - it's already removed
+		slog.Debug("failed to remove tunnel service (may not exist)", "app", name, "error", err, "output", string(output))
+		return nil // Don't fail if service doesn't exist
+	}
+
+	slog.Info("tunnel service container removed successfully", "app", name, "output", string(output))
 	return nil
 }
 

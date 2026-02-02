@@ -63,7 +63,8 @@ function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
     const confirmDelete = () => {
         deleteTunnel.mutate({ appId, nodeId }, {
             onSuccess: () => {
-                toast.success('Tunnel Deleted', 'Cloudflare tunnel has been removed')
+                // Don't show success toast here - let AppActions show job progress
+                // The job completion handler will show success/error toast
                 setShowDeleteDialog(false)
             },
             onError: (error) => {
@@ -314,8 +315,13 @@ function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
                                                         {
                                                             onSuccess: () => {
                                                                 setShowSwitchDialog(false)
-                                                                toast.success('Switched to custom domain', 'Ingress rules applied. Your app is available at your custom hostname.')
-                                                                refetch()
+                                                                const hasIngressRules = valid.length > 0
+                                                                if (hasIngressRules) {
+                                                                    toast.info('Switching to custom tunnel...', 'Creating tunnel and applying your custom domain rules.')
+                                                                } else {
+                                                                    toast.info('Switching to custom tunnel...', 'Creating custom tunnel in the background.')
+                                                                }
+                                                                // App will refresh automatically when job completes via AppActions
                                                             },
                                                             onError: (e) => setSwitchFormError(e.message),
                                                         }
@@ -380,8 +386,8 @@ function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
                                                         {
                                                             onSuccess: () => {
                                                                 setShowQuickTunnelDialog(false)
-                                                                toast.success('Quick Tunnel recreated', 'Your app is available at the new temporary URL.')
-                                                                refetch()
+                                                                toast.info('Quick Tunnel creation started', 'Setting up your temporary URL in the background...')
+                                                                // App will refresh automatically when job completes via AppActions
                                                             },
                                                             onError: (e: Error) => setQuickTunnelFormError(e.message),
                                                         }
@@ -478,8 +484,8 @@ function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
                                                         {
                                                             onSuccess: () => {
                                                                 setShowQuickTunnelDialog(false)
-                                                                toast.success('Quick Tunnel created', 'Your app is available at the temporary URL.')
-                                                                refetch()
+                                                                toast.info('Quick Tunnel creation started', 'Setting up your temporary URL in the background...')
+                                                                // App will refresh automatically when job completes via AppActions
                                                             },
                                                             onError: (e: Error) => setQuickTunnelFormError(e.message),
                                                         }
@@ -580,8 +586,8 @@ function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
                                                         {
                                                             onSuccess: () => {
                                                                 setShowCreateDialog(false)
-                                                                toast.success('Tunnel created', 'Ingress rules applied. Your app is available at your custom hostname.')
-                                                                refetch()
+                                                                toast.info('Tunnel creation started', 'Setting up your custom domain tunnel in the background...')
+                                                                // App will refresh automatically when job completes via AppActions
                                                             },
                                                             onError: (e) => setCreateFormError(e.message),
                                                         }

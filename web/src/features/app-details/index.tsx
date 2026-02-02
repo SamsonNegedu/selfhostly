@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { useApp, useStartApp, useStopApp, useUpdateAppContainers, useDeleteApp, useApps } from '@/shared/services/api'
 import { useAppStore } from '@/shared/stores/app-store'
@@ -47,6 +47,24 @@ function AppDetails() {
     }, [nodeIdFromUrl, cachedApp?.node_id, appsList, appId])
 
     const { data: app, isLoading: isLoadingApp, refetch, isFetching } = useApp(appId!, nodeId || '')
+
+    // Track if nodeId was previously undefined (query was disabled)
+    const prevNodeIdRef = React.useRef<string | undefined>(undefined)
+    
+    // Refetch app data when nodeId becomes available for the first time
+    // This ensures we get fresh data from the backend, not stale cached data
+    useEffect(() => {
+        const wasDisabled = prevNodeIdRef.current === undefined || prevNodeIdRef.current === ''
+        const isNowEnabled = !!nodeId && nodeId !== ''
+        
+        if (wasDisabled && isNowEnabled && appId) {
+            // Query was just enabled - ensure we refetch to get deterministic backend state
+            // This handles the case where app was created and we navigated here before nodeId was resolved
+            refetch()
+        }
+        
+        prevNodeIdRef.current = nodeId
+    }, [appId, nodeId, refetch])
 
     // Combined loading state: wait for apps list if we need it to find nodeId
     const isLoading = isLoadingApp || (shouldFetchApps && isLoadingApps)
@@ -194,6 +212,8 @@ function AppDetails() {
                                 </div>
                             </div>
                             <AppActions
+                                appId={app.id}
+                                nodeId={app.node_id}
                                 appStatus={app.status}
                                 isStartPending={startApp.isPending}
                                 isStopPending={stopApp.isPending}
@@ -221,7 +241,7 @@ function AppDetails() {
                                 })}
                                 onUpdate={() => updateApp.mutate({ id: app.id, nodeId: app.node_id }, {
                                     onSuccess: () => {
-                                        toast.success('Update started', `${app.name} update process has begun`)
+                                        toast.info('Update started', `${app.name} update is running in background`)
                                         refetch()
                                     },
                                     onError: (error) => {
@@ -253,7 +273,16 @@ function AppDetails() {
                         </div>
                     </div>
                 </CardHeader>
-                <CardContent className="pt-4 sm:pt-6 p-4 sm:p-6">
+                <CardContent className="pt-4 sm:pt-6 p-4 sm:p-6 relative">
+                    {/* Refresh Loading Overlay */}
+                    {isFetching && (
+                        <div className="absolute inset-0 bg-background/60 backdrop-blur-[2px] z-10 flex items-center justify-center rounded-b-lg">
+                            <div className="flex flex-col items-center gap-3">
+                                <div className="h-10 w-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+                                <p className="text-sm text-muted-foreground font-medium">Refreshing...</p>
+                            </div>
+                        </div>
+                    )}
                     {app.description && (
                         <p className="text-xs sm:text-sm text-muted-foreground mb-3 sm:mb-4">
                             {app.description}

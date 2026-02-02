@@ -18,6 +18,8 @@ const (
 	ComposeSubcommandDown    = "down"
 	ComposeSubcommandPull    = "pull"
 	ComposeSubcommandRestart = "restart"
+	ComposeSubcommandStop    = "stop"
+	ComposeSubcommandRm      = "rm"
 	ComposeSubcommandPs      = "ps"
 	ComposeSubcommandLogs    = "logs"
 )
@@ -141,6 +143,24 @@ func ComposeLogsCommand(tailLines int) []string {
 // ComposeRestartServiceCommand returns command for "docker compose -f docker-compose.yml restart <service>"
 func ComposeRestartServiceCommand(service string) []string {
 	return NewComposeCommand(ComposeSubcommandRestart).
+		WithService(service).
+		Build()
+}
+
+// ComposeStopServiceCommand returns command for "docker compose -f docker-compose.yml stop <service>"
+func ComposeStopServiceCommand(service string) []string {
+	return NewComposeCommand(ComposeSubcommandStop).
+		WithService(service).
+		Build()
+}
+
+// ComposeRemoveServiceCommand returns command for "docker compose -f docker-compose.yml rm -f -s <service>"
+// -f: Don't ask for confirmation
+// -s: Stop the container if it's running before removing
+func ComposeRemoveServiceCommand(service string) []string {
+	return NewComposeCommand(ComposeSubcommandRm).
+		WithFlag("-f").
+		WithFlag("-s").
 		WithService(service).
 		Build()
 }

@@ -199,6 +199,41 @@ type ComposeVersion struct {
 	RolledBackFrom *int       `json:"rolled_back_from" db:"rolled_back_from"` // Version number this was rolled back from (if applicable)
 }
 
+// Job represents a background job/task for async operations
+type Job struct {
+	ID              string     `json:"id" db:"id"`
+	Type            string     `json:"type" db:"type"`                                   // app_create, app_update, tunnel_create, etc.
+	AppID           string     `json:"app_id" db:"app_id"`                               // Associated app (or entity ID)
+	Status          string     `json:"status" db:"status"`                               // pending, running, completed, failed
+	Payload         *string    `json:"payload,omitempty" db:"payload"`                   // JSON payload with job-specific data
+	Progress        int        `json:"progress" db:"progress"`                           // 0-100 percentage
+	ProgressMessage *string    `json:"progress_message,omitempty" db:"progress_message"` // Human-readable progress
+	Result          *string    `json:"result,omitempty" db:"result"`                     // JSON result data
+	ErrorMessage    *string    `json:"error_message,omitempty" db:"error_message"`       // Error details if failed
+	StartedAt       *time.Time `json:"started_at,omitempty" db:"started_at"`
+	CompletedAt     *time.Time `json:"completed_at,omitempty" db:"completed_at"`
+	CreatedAt       time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at" db:"updated_at"`
+	
+	// Worker tracking for multi-worker support
+	ClaimedBy *string    `json:"claimed_by,omitempty" db:"claimed_by"`
+	ClaimedAt *time.Time `json:"claimed_at,omitempty" db:"claimed_at"`
+	
+	// Retry support
+	RetryCount int        `json:"retry_count" db:"retry_count"`
+	MaxRetries int        `json:"max_retries" db:"max_retries"`
+	RetryAfter *time.Time `json:"retry_after,omitempty" db:"retry_after"`
+	
+	// Cancellation support
+	CancelledAt *time.Time `json:"cancelled_at,omitempty" db:"cancelled_at"`
+	
+	// Timeout in seconds
+	TimeoutSeconds *int `json:"timeout_seconds,omitempty" db:"timeout_seconds"`
+	
+	// Deduplication hash
+	JobHash *string `json:"job_hash,omitempty" db:"job_hash"`
+}
+
 // NewComposeVersion creates a new ComposeVersion with a generated UUID
 func NewComposeVersion(appID string, version int, composeContent string, changeReason *string, changedBy *string) *ComposeVersion {
 	return &ComposeVersion{
@@ -210,5 +245,20 @@ func NewComposeVersion(appID string, version int, composeContent string, changeR
 		ChangedBy:      changedBy,
 		IsCurrent:      true,
 		CreatedAt:      time.Now(),
+	}
+}
+
+// NewJob creates a new Job with a generated UUID
+func NewJob(jobType, appID string, payload *string) *Job {
+	now := time.Now()
+	return &Job{
+		ID:        uuid.New().String(),
+		Type:      jobType,
+		AppID:     appID,
+		Status:    constants.JobStatusPending,
+		Payload:   payload,
+		Progress:  0,
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
 }

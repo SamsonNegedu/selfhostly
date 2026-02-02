@@ -84,7 +84,12 @@ func tunnelByAppEnvelope(appID, nodeID, tunnelMode, publicURL string, tun *db.Cl
 			"created_at":     tun.CreatedAt,
 			"updated_at":     tun.UpdatedAt,
 			"last_synced_at": tun.LastSyncedAt,
-			"error_details":  func() string { if tun.ErrorDetails != nil { return *tun.ErrorDetails }; return "" }(),
+			"error_details": func() string {
+				if tun.ErrorDetails != nil {
+					return *tun.ErrorDetails
+				}
+				return ""
+			}(),
 		}
 	}
 	return env
@@ -233,7 +238,7 @@ func (s *Server) UpdateTunnelIngressGeneric(c *gin.Context) {
 		s.handleServiceError(c, "update tunnel ingress", err)
 		return
 	}
-	
+
 	// Restart tunnel container if needed (best effort)
 	if err := s.appService.RestartCloudflared(ctx, appID, nodeID); err != nil {
 		slog.WarnContext(ctx, "failed to restart tunnel container", "appID", appID, "error", err)
@@ -318,13 +323,19 @@ func (s *Server) DeleteTunnelGeneric(c *gin.Context) {
 
 	slog.InfoContext(ctx, "deleting tunnel", "appID", appID, "nodeID", nodeID)
 
-	if err := s.tunnelService.DeleteTunnel(ctx, appID, nodeID); err != nil {
-		slog.ErrorContext(ctx, "failed to delete tunnel", "appID", appID, "error", err)
-		s.handleServiceError(c, "delete tunnel", err)
+	// Create background job for tunnel deletion (async operation)
+	job, err := s.appService.DeleteTunnelAsync(ctx, appID)
+	if err != nil {
+		s.handleServiceError(c, "delete tunnel job", err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "tunnel deleted successfully", "app_id": appID})
+	c.JSON(http.StatusAccepted, gin.H{
+		"job_id":  job.ID,
+		"app_id":  job.AppID,
+		"status":  job.Status,
+		"message": "Tunnel deletion started in background",
+	})
 }
 
 // CreateTunnelForAppGeneric creates a named (custom domain) tunnel for an app that has none.
@@ -342,24 +353,19 @@ func (s *Server) CreateTunnelForAppGeneric(c *gin.Context) {
 	}
 	_ = c.ShouldBindJSON(&body)
 
-	app, handledLocally, err := s.appService.CreateTunnelForApp(ctx, appID, nodeID, &body)
+	// Create background job for tunnel creation (async operation)
+	job, err := s.appService.CreateTunnelForAppAsync(ctx, appID, body.IngressRules)
 	if err != nil {
-		s.handleServiceError(c, "create tunnel for app", err)
+		s.handleServiceError(c, "create tunnel job", err)
 		return
 	}
-	if handledLocally && len(body.IngressRules) > 0 {
-		ingressReq := domain.UpdateIngressRequest{IngressRules: body.IngressRules}
-		if err := s.tunnelService.UpdateTunnelIngress(ctx, appID, nodeID, ingressReq); err != nil {
-			if _, ok := err.(*tunnel.FeatureNotSupportedError); !ok {
-				slog.WarnContext(ctx, "failed to apply ingress rules after create tunnel", "appID", appID, "error", err)
-			}
-		} else {
-			if app, err = s.appService.GetApp(ctx, appID, nodeID); err == nil {
-				// Return app with updated public_url from first hostname
-			}
-		}
-	}
-	c.JSON(http.StatusOK, app)
+
+	c.JSON(http.StatusAccepted, gin.H{
+		"job_id":  job.ID,
+		"app_id":  job.AppID,
+		"status":  job.Status,
+		"message": "Tunnel creation started in background",
+	})
 }
 
 // SwitchAppToCustomTunnelGeneric switches an app from Quick Tunnel to a named (custom domain) tunnel.
@@ -378,23 +384,17 @@ func (s *Server) SwitchAppToCustomTunnelGeneric(c *gin.Context) {
 	}
 	_ = c.ShouldBindJSON(&body)
 
-	app, err := s.appService.SwitchAppToCustomTunnel(ctx, appID, nodeID, &body)
+	// Create background job for switching to custom tunnel (async operation)
+	job, err := s.appService.SwitchAppToCustomTunnelAsync(ctx, appID, body.IngressRules)
 	if err != nil {
-		s.handleServiceError(c, "switch to custom tunnel", err)
+		s.handleServiceError(c, "switch to custom tunnel job", err)
 		return
 	}
-	if len(body.IngressRules) > 0 {
-		ingressReq := domain.UpdateIngressRequest{IngressRules: body.IngressRules}
-		if err := s.tunnelService.UpdateTunnelIngress(ctx, appID, nodeID, ingressReq); err != nil {
-			if _, ok := err.(*tunnel.FeatureNotSupportedError); !ok {
-				slog.WarnContext(ctx, "failed to apply ingress rules after switch to custom", "appID", appID, "error", err)
-			}
-		} else {
-			if app, err = s.appService.GetApp(ctx, appID, nodeID); err == nil {
-				c.JSON(http.StatusOK, app)
-				return
-			}
-		}
-	}
-	c.JSON(http.StatusOK, app)
+
+	c.JSON(http.StatusAccepted, gin.H{
+		"job_id":  job.ID,
+		"app_id":  job.AppID,
+		"status":  job.Status,
+		"message": "Switching to custom tunnel started in background",
+	})
 }

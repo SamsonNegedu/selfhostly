@@ -8,7 +8,7 @@ import (
 type CommandExecutor interface {
 	// ExecuteCommand executes a command and returns the combined output
 	ExecuteCommand(name string, args ...string) ([]byte, error)
-	
+
 	// ExecuteCommandInDir executes a command in a specific directory
 	ExecuteCommandInDir(dir, name string, args ...string) ([]byte, error)
 }

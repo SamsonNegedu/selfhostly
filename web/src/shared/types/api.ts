@@ -19,13 +19,35 @@ export interface App {
   tunnel_id: string;
   tunnel_domain: string;
   public_url: string;
-  status: 'running' | 'stopped' | 'updating' | 'error';
+  status: 'running' | 'stopped' | 'updating' | 'error' | 'pending';
   error_message: string;
   node_id: string;
   node_name?: string; // For display purposes (added by backend)
   tunnel_mode?: '' | 'custom' | 'quick'; // '' = none, custom = named tunnel, quick = trycloudflare.com
   created_at: string;
   updated_at: string;
+}
+
+export interface Job {
+  id: string;
+  type: 'app_create' | 'app_update' | 'tunnel_create' | 'tunnel_delete' | 'quick_tunnel';
+  app_id: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  payload?: string;
+  progress: number;
+  progress_message?: string;
+  result?: string;
+  error_message?: string;
+  started_at?: string;
+  completed_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JobResponse {
+  job_id: string;
+  status: 'pending';
+  message: string;
 }
 
 export interface CreateAppRequest {
@@ -60,12 +82,8 @@ export interface UpdateAppRequest {
 
 export interface Settings {
   id: string;
-  // Deprecated: use tunnel_provider_config instead
-  cloudflare_api_token?: string;
-  cloudflare_account_id?: string;
-  // New multi-provider support
   active_tunnel_provider?: string;
-  tunnel_provider_config?: string; // JSON string
+  tunnel_provider_config?: string; // JSON string with masked tokens
   auto_start_apps: boolean;
   updated_at: string;
 }
@@ -78,8 +96,6 @@ export interface IngressRule {
 }
 
 export interface UpdateSettingsRequest {
-  cloudflare_api_token?: string;
-  cloudflare_account_id?: string;
   active_tunnel_provider?: string;
   tunnel_provider_config?: string;
   auto_start_apps?: boolean;

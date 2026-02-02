@@ -1,19 +1,19 @@
 package http
 
 import (
+	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
 // UpdateSettingsRequest represents an update settings request
 type UpdateSettingsRequest struct {
-	CloudflareAPIToken    string `json:"cloudflare_api_token"`
-	CloudflareAccountID   string `json:"cloudflare_account_id"`
-	AutoStartApps         bool   `json:"auto_start_apps"`
-	ActiveTunnelProvider  string `json:"active_tunnel_provider"`
-	TunnelProviderConfig  string `json:"tunnel_provider_config"`
+	AutoStartApps        bool   `json:"auto_start_apps"`
+	ActiveTunnelProvider string `json:"active_tunnel_provider"`
+	TunnelProviderConfig string `json:"tunnel_provider_config"`
 }
 
 // getSettingsDispatch returns settings: when node auth (request_scope=local) calls getSettingsForNode, else getSettings
@@ -34,31 +34,21 @@ func (s *Server) getSettings(c *gin.Context) {
 		return
 	}
 
-	// Don't expose sensitive data
-	tokenValue := ""
-	if settings.CloudflareAPIToken != nil {
-		tokenValue = *settings.CloudflareAPIToken
-	}
-	accountIDValue := ""
-	if settings.CloudflareAccountID != nil {
-		accountIDValue = *settings.CloudflareAccountID
-	}
+	// Don't expose sensitive data - mask tokens in tunnel_provider_config
 	activeTunnelProvider := ""
 	if settings.ActiveTunnelProvider != nil {
 		activeTunnelProvider = *settings.ActiveTunnelProvider
 	}
 	tunnelProviderConfig := ""
 	if settings.TunnelProviderConfig != nil {
-		tunnelProviderConfig = *settings.TunnelProviderConfig
+		tunnelProviderConfig = maskTokensInProviderConfig(*settings.TunnelProviderConfig)
 	}
 	response := gin.H{
-		"id":                      settings.ID,
-		"cloudflare_api_token":    maskToken(tokenValue),
-		"cloudflare_account_id":   accountIDValue,
-		"auto_start_apps":         settings.AutoStartApps,
-		"active_tunnel_provider":  activeTunnelProvider,
-		"tunnel_provider_config":  tunnelProviderConfig,
-		"updated_at":              settings.UpdatedAt,
+		"id":                     settings.ID,
+		"auto_start_apps":        settings.AutoStartApps,
+		"active_tunnel_provider": activeTunnelProvider,
+		"tunnel_provider_config": tunnelProviderConfig,
+		"updated_at":             settings.UpdatedAt,
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -81,15 +71,9 @@ func (s *Server) updateSettings(c *gin.Context) {
 		return
 	}
 
-	// Update only provided fields
-	if req.CloudflareAPIToken != "" {
-		settings.CloudflareAPIToken = &req.CloudflareAPIToken
-	}
-	if req.CloudflareAccountID != "" {
-		settings.CloudflareAccountID = &req.CloudflareAccountID
-	}
+	// Update only provided fields - only use tunnel_provider_config, no legacy fields
 	settings.AutoStartApps = req.AutoStartApps
-	
+
 	// Update new provider fields
 	if req.ActiveTunnelProvider != "" {
 		settings.ActiveTunnelProvider = &req.ActiveTunnelProvider
@@ -106,31 +90,21 @@ func (s *Server) updateSettings(c *gin.Context) {
 
 	slog.InfoContext(c.Request.Context(), "settings updated successfully")
 
-	// Return updated settings (masked token)
-	tokenValue := ""
-	if settings.CloudflareAPIToken != nil {
-		tokenValue = *settings.CloudflareAPIToken
-	}
-	accountIDValue := ""
-	if settings.CloudflareAccountID != nil {
-		accountIDValue = *settings.CloudflareAccountID
-	}
+	// Return updated settings with masked tokens
 	activeTunnelProvider := ""
 	if settings.ActiveTunnelProvider != nil {
 		activeTunnelProvider = *settings.ActiveTunnelProvider
 	}
 	tunnelProviderConfig := ""
 	if settings.TunnelProviderConfig != nil {
-		tunnelProviderConfig = *settings.TunnelProviderConfig
+		tunnelProviderConfig = maskTokensInProviderConfig(*settings.TunnelProviderConfig)
 	}
 	response := gin.H{
-		"id":                      settings.ID,
-		"cloudflare_api_token":    maskToken(tokenValue),
-		"cloudflare_account_id":   accountIDValue,
-		"auto_start_apps":         settings.AutoStartApps,
-		"active_tunnel_provider":  activeTunnelProvider,
-		"tunnel_provider_config":  tunnelProviderConfig,
-		"updated_at":              settings.UpdatedAt,
+		"id":                     settings.ID,
+		"auto_start_apps":        settings.AutoStartApps,
+		"active_tunnel_provider": activeTunnelProvider,
+		"tunnel_provider_config": tunnelProviderConfig,
+		"updated_at":             settings.UpdatedAt,
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -145,4 +119,39 @@ func maskToken(token string) string {
 		return "********"
 	}
 	return token[:4] + "****" + token[len(token)-4:]
+}
+
+// maskTokensInProviderConfig masks all api_token fields in the provider config JSON
+func maskTokensInProviderConfig(configJSON string) string {
+	if configJSON == "" {
+		return configJSON
+	}
+
+	var providerConfigs map[string]interface{}
+	if err := json.Unmarshal([]byte(configJSON), &providerConfigs); err != nil {
+		// If parsing fails, return as-is (shouldn't happen, but be safe)
+		return configJSON
+	}
+
+	// Mask tokens in all providers
+	for providerName, providerConfig := range providerConfigs {
+		if configMap, ok := providerConfig.(map[string]interface{}); ok {
+			if apiToken, ok := configMap["api_token"].(string); ok && apiToken != "" {
+				// Only mask if not already masked
+				if !strings.Contains(apiToken, "****") {
+					configMap["api_token"] = maskToken(apiToken)
+					providerConfigs[providerName] = configMap
+				}
+			}
+		}
+	}
+
+	// Re-marshal back to JSON
+	maskedJSON, err := json.Marshal(providerConfigs)
+	if err != nil {
+		// If marshaling fails, return original
+		return configJSON
+	}
+
+	return string(maskedJSON)
 }

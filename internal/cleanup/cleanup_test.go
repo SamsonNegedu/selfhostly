@@ -43,7 +43,7 @@ func setupTestCleanupManager(t *testing.T, mockExecutor docker.CommandExecutor, 
 	apiToken := "test-api-token"
 	accountID := "test-account-id"
 	settings := &db.Settings{
-		CloudflareAPIToken: &apiToken,
+		CloudflareAPIToken:  &apiToken,
 		CloudflareAccountID: &accountID,
 	}
 

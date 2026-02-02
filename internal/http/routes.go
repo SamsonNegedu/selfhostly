@@ -57,6 +57,9 @@ func (s *Server) setupRoutes() {
 		// Node management routes
 		s.setupNodeRoutes(api)
 
+		// Job routes (require node_id from query for routing)
+		s.setupJobRoutes(api)
+
 		// Node-only routes (require node auth)
 		api.POST("/nodes/:id/heartbeat", s.requireNodeAuthMiddleware(), s.sendNodeHeartbeat)
 
@@ -98,7 +101,18 @@ func (s *Server) setupAppRoutes(api *gin.RouterGroup) {
 			appSpecific.GET("/compose/versions", s.getComposeVersions)
 			appSpecific.GET("/compose/versions/:version", s.getComposeVersion)
 			appSpecific.POST("/compose/rollback/:version", s.rollbackToVersion)
+
+			// Job routes for this app
+			appSpecific.GET("/jobs", s.getAppJobs)
 		}
+	}
+}
+
+func (s *Server) setupJobRoutes(api *gin.RouterGroup) {
+	jobs := api.Group("/jobs")
+	{
+		// Job-specific operations require node_id (from query when user auth)
+		jobs.GET("/:id", s.resolveNodeMiddleware(), s.getJob)
 	}
 }
 

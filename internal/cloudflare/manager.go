@@ -93,24 +93,40 @@ func (tm *TunnelManager) UpdateTunnelStatus(tunnelID string, status string, erro
 
 // DeleteTunnelByAppID deletes a tunnel by app ID: removes it from the Cloudflare API, deletes the tunnel record, and clears the app's tunnel-related fields so public_url etc. are not stale.
 func (tm *TunnelManager) DeleteTunnelByAppID(appID string) error {
-	tunnel, err := tm.database.GetCloudflareTunnelByAppID(appID)
-	if err != nil {
-		return fmt.Errorf("failed to get tunnel: %w", err)
-	}
-
-	if err := tm.ApiManager.DeleteTunnel(tunnel.TunnelID); err != nil {
-		slog.Warn("failed to delete tunnel from API", "tunnel_id", tunnel.TunnelID, "error", err)
-	}
-
-	if err := tm.database.DeleteCloudflareTunnel(appID); err != nil {
-		return fmt.Errorf("failed to delete tunnel record: %w", err)
-	}
-
+	// Get app first to check if TunnelID is set (in case tunnel record was deleted but app still has TunnelID)
 	app, err := tm.database.GetApp(appID)
 	if err != nil {
-		slog.Warn("failed to get app when clearing tunnel fields after delete", "app_id", appID, "error", err)
-		return nil
+		return fmt.Errorf("failed to get app: %w", err)
 	}
+
+	// Try to get tunnel record from database first
+	tunnel, err := tm.database.GetCloudflareTunnelByAppID(appID)
+	var tunnelID string
+	if err != nil {
+		// Tunnel record doesn't exist in database - check if app still has TunnelID set
+		if app.TunnelID == "" {
+			return fmt.Errorf("failed to get tunnel and app has no TunnelID: %w", err)
+		}
+		// Use TunnelID from app as fallback (orphaned tunnel case)
+		tunnelID = app.TunnelID
+		slog.Warn("tunnel record not found in database, using TunnelID from app", "app_id", appID, "tunnel_id", tunnelID)
+	} else {
+		tunnelID = tunnel.TunnelID
+	}
+
+	// Delete from Cloudflare API first - this is critical and should fail the operation if it fails
+	if err := tm.ApiManager.DeleteTunnel(tunnelID); err != nil {
+		return fmt.Errorf("failed to delete tunnel from Cloudflare API: %w", err)
+	}
+
+	// Only proceed with database cleanup if Cloudflare deletion succeeded
+	// Try to delete tunnel record (might not exist if it was already deleted)
+	if err := tm.database.DeleteCloudflareTunnel(appID); err != nil {
+		slog.Warn("failed to delete tunnel record (may not exist)", "app_id", appID, "error", err)
+		// Continue with app cleanup even if tunnel record deletion fails
+	}
+
+	// Clear tunnel fields from app
 	app.TunnelID = ""
 	app.TunnelToken = ""
 	app.PublicURL = ""

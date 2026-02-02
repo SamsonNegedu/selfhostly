@@ -84,7 +84,7 @@ func (s *Server) autoRegisterNode(c *gin.Context) {
 
 	// Create new node with the provided details
 	newNode := db.NewNodeWithID(req.ID, req.Name, req.APIEndpoint, req.APIKey, false)
-	
+
 	// Perform initial health check using nodeService
 	if err := s.nodeService.HealthCheckNode(c.Request.Context(), newNode.ID); err != nil {
 		slog.Warn("health check failed for auto-registered node", "name", req.Name, "error", err)

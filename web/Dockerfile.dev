@@ -9,9 +9,6 @@ COPY package*.json ./
 # Install dependencies
 RUN npm install
 
-# Expose Vite dev server port
-EXPOSE 3000
-
 # Run Vite dev server
 # --host 0.0.0.0 allows access from outside the container
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

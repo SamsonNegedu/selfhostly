@@ -21,6 +21,8 @@ import type {
   UpdateNodeRequest,
   ProviderFeatures,
   TunnelProvidersResponse,
+  Job,
+  JobResponse,
 } from '../types/api';
 
 interface IngressRule {
@@ -243,7 +245,7 @@ export function useUpdateAppContainers() {
   
   return useMutation({
     mutationFn: ({ id, nodeId }: { id: string; nodeId: string }) => {
-      return apiClient.post<App>(`/api/apps/${id}/update?node_id=${nodeId}`);
+      return apiClient.post<JobResponse>(`/api/apps/${id}/update?node_id=${nodeId}`);
     },
     onMutate: async ({ id }) => {
       // Cancel any outgoing refetches
@@ -271,6 +273,10 @@ export function useUpdateAppContainers() {
       
       return { previousApps, previousApp };
     },
+    onSuccess: (_, { id, nodeId }) => {
+      // Invalidate jobs query so AppActions picks up the new job and shows progress
+      queryClient.invalidateQueries({ queryKey: ['jobs', 'app', id, nodeId] });
+    },
     onError: (_err, { id }, context: any) => {
       // Rollback both cache and store on error
       if (context?.previousApps) {
@@ -280,11 +286,6 @@ export function useUpdateAppContainers() {
         queryClient.setQueryData(['app', id], context.previousApp);
       }
       useAppStore.getState().updateApp(id, context?.previousApp);
-    },
-    onSuccess: () => {
-      // After successful update, refetch to get the actual status
-      queryClient.invalidateQueries({ queryKey: ['apps'] });
-      queryClient.invalidateQueries({ queryKey: ['app'] });
     },
   });
 }
@@ -430,12 +431,12 @@ export function useCreateTunnelForApp() {
   return useMutation({
     mutationFn: ({ appId, nodeId, ingressRules }: { appId: string; nodeId: string; ingressRules?: IngressRule[] }) => {
       const body = ingressRules && ingressRules.length > 0 ? { ingress_rules: ingressRules } : {};
-      return apiClient.post<App>(`/api/tunnels/apps/${appId}?node_id=${nodeId}`, body);
+      return apiClient.post<JobResponse>(`/api/tunnels/apps/${appId}?node_id=${nodeId}`, body);
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['tunnels', 'app', variables.appId] });
-      queryClient.invalidateQueries({ queryKey: ['tunnels', 'list'] });
-      queryClient.invalidateQueries({ queryKey: ['app', variables.appId] });
+      // Invalidate jobs query so AppActions picks up the new job and shows progress
+      queryClient.invalidateQueries({ queryKey: ['jobs', 'app', variables.appId, variables.nodeId] });
+      // Note: Don't invalidate app/tunnel queries here - let the job completion handler do it
     },
   });
 }
@@ -445,28 +446,28 @@ export function useCreateQuickTunnelForApp() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ appId, nodeId, service, port }: { appId: string; nodeId: string; service: string; port: number }) => {
-      return apiClient.post<App>(`/api/apps/${appId}/quick-tunnel?node_id=${nodeId}`, { service, port });
+      return apiClient.post<JobResponse>(`/api/apps/${appId}/quick-tunnel?node_id=${nodeId}`, { service, port });
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['tunnels', 'app', variables.appId] });
-      queryClient.invalidateQueries({ queryKey: ['tunnels', 'list'] });
-      queryClient.invalidateQueries({ queryKey: ['app', variables.appId] });
+      // Invalidate jobs query so AppActions picks up the new job and shows progress
+      queryClient.invalidateQueries({ queryKey: ['jobs', 'app', variables.appId, variables.nodeId] });
+      // Note: Don't invalidate app/tunnel queries here - let the job completion handler do it
     },
   });
 }
 
-// Switch app from Quick Tunnel to custom (named) tunnel. Pass optional ingressRules to set custom domain immediately.
+// Switch app from Quick Tunnel to custom (named) tunnel. Now async - ingress rules must be applied after.
 export function useSwitchAppToCustomTunnel() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ appId, nodeId, ingressRules }: { appId: string; nodeId: string; ingressRules?: IngressRule[] }) => {
       const body = ingressRules && ingressRules.length > 0 ? { ingress_rules: ingressRules } : {};
-      return apiClient.post<App>(`/api/tunnels/apps/${appId}/switch-to-custom?node_id=${nodeId}`, body);
+      return apiClient.post<JobResponse>(`/api/tunnels/apps/${appId}/switch-to-custom?node_id=${nodeId}`, body);
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['tunnels', 'app', variables.appId] });
-      queryClient.invalidateQueries({ queryKey: ['tunnels', 'list'] });
-      queryClient.invalidateQueries({ queryKey: ['app', variables.appId] });
+      // Invalidate jobs query so AppActions picks up the new job and shows progress
+      queryClient.invalidateQueries({ queryKey: ['jobs', 'app', variables.appId, variables.nodeId] });
+      // Note: Don't invalidate app/tunnel queries here - let the job completion handler do it
     },
   });
 }
@@ -540,12 +541,12 @@ export function useDeleteTunnel() {
 
   return useMutation({
     mutationFn: ({ appId, nodeId }: { appId: string; nodeId: string }) => {
-      return apiClient.delete<{ message: string }>(`/api/tunnels/apps/${appId}?node_id=${nodeId}`);
+      return apiClient.delete<JobResponse>(`/api/tunnels/apps/${appId}?node_id=${nodeId}`);
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['tunnels', 'app', variables.appId] });
-      queryClient.invalidateQueries({ queryKey: ['tunnels', 'list'] });
-      queryClient.invalidateQueries({ queryKey: ['app', variables.appId] });
+      // Invalidate jobs query so AppActions picks up the new job and shows progress
+      queryClient.invalidateQueries({ queryKey: ['jobs', 'app', variables.appId, variables.nodeId] });
+      // Note: Don't invalidate app/tunnel queries here - let the job completion handler do it
     },
   });
 }
@@ -705,5 +706,38 @@ export function useCurrentNode() {
     queryKey: ['current-node'],
     queryFn: () => apiClient.get<Node>('/api/node/info'),
     staleTime: 60000, // Cache for 1 minute
+  });
+}
+
+// ============================================================================
+// Job API
+// ============================================================================
+
+// Get a specific job by ID
+export function useJob(jobId: string | null, nodeId: string | null) {
+  return useQuery<Job>({
+    queryKey: ['job', jobId, nodeId],
+    queryFn: () => apiClient.get<Job>(`/api/jobs/${jobId}`, { node_id: nodeId! }),
+    enabled: !!jobId && !!nodeId,
+  });
+}
+
+// Get recent jobs for an app
+export function useAppJobs(appId: string, nodeId: string) {
+  return useQuery<Job[]>({
+    queryKey: ['jobs', 'app', appId, nodeId],
+    queryFn: () => apiClient.get<Job[]>(`/api/apps/${appId}/jobs`, { node_id: nodeId }),
+    enabled: !!appId && !!nodeId,
+    refetchInterval: (query) => {
+      // Check if there are any active jobs (pending or running)
+      const data = query.state.data
+      if (!data) return 5000 // Poll every 5 seconds if no data yet
+      
+      const hasActiveJob = data.some(job => job.status === 'pending' || job.status === 'running')
+      if (hasActiveJob) {
+        return 5000 // Continue polling if there's an active job
+      }
+      return false // Stop polling when no active jobs
+    },
   });
 }

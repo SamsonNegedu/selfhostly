@@ -20,8 +20,8 @@ type CommandExecution struct {
 // NewMockCommandExecutor creates a new mock command executor
 func NewMockCommandExecutor() *MockCommandExecutor {
 	return &MockCommandExecutor{
-		MockOutputs:     make(map[string][]byte),
-		MockErrors:      make(map[string]error),
+		MockOutputs:      make(map[string][]byte),
+		MockErrors:       make(map[string]error),
 		ExecutedCommands: make([]CommandExecution, 0),
 	}
 }
@@ -44,23 +44,23 @@ func (m *MockCommandExecutor) executeCommand(dir, name string, args []string) ([
 		Args: args,
 		Dir:  dir,
 	})
-	
+
 	// Create a key for looking up mocks
 	key := name
 	for _, arg := range args {
 		key += " " + arg
 	}
-	
+
 	// Return mocked error if available
 	if err, exists := m.MockErrors[key]; exists {
 		return nil, err
 	}
-	
+
 	// Return mocked output if available
 	if output, exists := m.MockOutputs[key]; exists {
 		return output, nil
 	}
-	
+
 	// Default behavior - return empty success
 	return []byte("success"), nil
 }
@@ -101,18 +101,18 @@ func (m *MockCommandExecutor) AssertCommandExecuted(command string, args []strin
 	for _, arg := range args {
 		key += " " + arg
 	}
-	
+
 	for _, execution := range m.ExecutedCommands {
 		executionKey := execution.Name
 		for _, arg := range execution.Args {
 			executionKey += " " + arg
 		}
-		
+
 		if executionKey == key {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -122,18 +122,18 @@ func (m *MockCommandExecutor) GetCommandCount(command string, args []string) int
 	for _, arg := range args {
 		key += " " + arg
 	}
-	
+
 	count := 0
 	for _, execution := range m.ExecutedCommands {
 		executionKey := execution.Name
 		for _, arg := range execution.Args {
 			executionKey += " " + arg
 		}
-		
+
 		if executionKey == key {
 			count++
 		}
 	}
-	
+
 	return count
 }

@@ -49,14 +49,14 @@ func getNodeIDFromContext(c *gin.Context) string {
 			return id
 		}
 	}
-	
+
 	// Check for node_id (from nodeAuthMiddleware)
 	if nodeID, exists := c.Get("node_id"); exists {
 		if id, ok := nodeID.(string); ok && id != "" {
 			return id
 		}
 	}
-	
+
 	return ""
 }
 
@@ -107,7 +107,7 @@ func (s *Server) getApp(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "node_id is required"})
 		return
 	}
-	
+
 	app, err := s.appService.GetApp(c.Request.Context(), id, nodeID)
 	if err != nil {
 		s.handleServiceError(c, "get app", err)
@@ -237,13 +237,19 @@ func (s *Server) updateAppContainers(c *gin.Context) {
 		return
 	}
 
-	app, err := s.appService.UpdateAppContainers(c.Request.Context(), id, nodeID)
+	// Create background job for app update (async operation)
+	job, err := s.appService.UpdateAppContainersAsync(c.Request.Context(), id)
 	if err != nil {
-		s.handleServiceError(c, "update app containers", err)
+		s.handleServiceError(c, "create update job", err)
 		return
 	}
 
-	c.JSON(http.StatusOK, app)
+	// Return 202 Accepted with job info
+	c.JSON(http.StatusAccepted, gin.H{
+		"job_id":  job.ID,
+		"status":  job.Status,
+		"message": "App update started in background",
+	})
 }
 
 // getAppLogs returns app logs
@@ -349,13 +355,19 @@ func (s *Server) createQuickTunnelForApp(c *gin.Context) {
 		return
 	}
 
-	app, err := s.appService.CreateQuickTunnelForApp(c.Request.Context(), id, nodeID, strings.TrimSpace(req.Service), req.Port)
+	// Create background job for Quick Tunnel creation (async operation)
+	job, err := s.appService.CreateQuickTunnelForAppAsync(c.Request.Context(), id, strings.TrimSpace(req.Service), req.Port)
 	if err != nil {
-		s.handleServiceError(c, "create quick tunnel", err)
+		s.handleServiceError(c, "create quick tunnel job", err)
 		return
 	}
 
-	c.JSON(http.StatusOK, app)
+	c.JSON(http.StatusAccepted, gin.H{
+		"job_id":  job.ID,
+		"app_id":  job.AppID,
+		"status":  job.Status,
+		"message": "Quick Tunnel creation started in background",
+	})
 }
 
 // listApps returns all apps
@@ -489,4 +501,3 @@ func (s *Server) rollbackToVersion(c *gin.Context) {
 		"from_version": targetVersion,
 	})
 }
-

@@ -3,6 +3,7 @@ package cloudflare
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -310,7 +311,9 @@ func (m *Manager) DeleteTunnel(tunnelID string) error {
 	}
 
 	// Then delete the tunnel itself
-	url := fmt.Sprintf("%s/accounts/%s/cfd_tunnel/%s", apiBaseURL, m.config.AccountID, tunnelID)
+	// Use cascade=true parameter to force delete even with active connections
+	// This is what the Cloudflare Zero Trust Dashboard uses (undocumented but works)
+	url := fmt.Sprintf("%s/accounts/%s/cfd_tunnel/%s?cascade=true", apiBaseURL, m.config.AccountID, tunnelID)
 
 	req, err := http.NewRequest("DELETE", url, nil)
 	if err != nil {
@@ -325,8 +328,34 @@ func (m *Manager) DeleteTunnel(tunnelID string) error {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusNotFound {
+		// Tunnel already deleted in Cloudflare - this is okay, continue
+		slog.Info("Tunnel not found in Cloudflare (already deleted)", "tunnelID", tunnelID)
+		return nil
+	}
+
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to delete tunnel, status: %d", resp.StatusCode)
+		// Try to read error details from response body
+		body, readErr := io.ReadAll(resp.Body)
+		var errorMsg string
+		if readErr == nil && len(body) > 0 {
+			// Try to parse as JSON error response
+			var errorResp struct {
+				Errors []struct {
+					Code    int    `json:"code"`
+					Message string `json:"message"`
+				} `json:"errors"`
+			}
+			if err := json.Unmarshal(body, &errorResp); err == nil && len(errorResp.Errors) > 0 {
+				errorMsg = fmt.Sprintf("failed to delete tunnel (status %d): %s", resp.StatusCode, errorResp.Errors[0].Message)
+			} else {
+				// Fallback to raw body if not JSON
+				errorMsg = fmt.Sprintf("failed to delete tunnel (status %d): %s", resp.StatusCode, string(body))
+			}
+		} else {
+			errorMsg = fmt.Sprintf("failed to delete tunnel, status: %d", resp.StatusCode)
+		}
+		return errors.New(errorMsg)
 	}
 
 	slog.Info("Tunnel deleted successfully", "tunnelID", tunnelID)

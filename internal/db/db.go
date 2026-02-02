@@ -256,55 +256,66 @@ func (db *DB) migrate() error {
 		`ALTER TABLE cloudflare_tunnels ADD COLUMN public_url TEXT`,
 		// Quick Tunnel support: app tunnel type (custom = named tunnel, quick = trycloudflare.com, empty = none)
 		`ALTER TABLE apps ADD COLUMN tunnel_mode TEXT DEFAULT ''`,
+		// Jobs table for background async operations
+		// Drop existing table if it exists (for dev environments - allows schema updates)
+		`DROP TABLE IF EXISTS jobs`,
+		`CREATE TABLE IF NOT EXISTS jobs (
+			id TEXT PRIMARY KEY,
+			type TEXT NOT NULL,
+			app_id TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'pending',
+			payload TEXT,
+			progress INTEGER NOT NULL DEFAULT 0,
+			progress_message TEXT,
+			result TEXT,
+			error_message TEXT,
+			started_at DATETIME,
+			completed_at DATETIME,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			
+			-- Worker tracking for multi-worker support
+			claimed_by TEXT,
+			claimed_at DATETIME,
+			
+			-- Retry support
+			retry_count INTEGER NOT NULL DEFAULT 0,
+			max_retries INTEGER NOT NULL DEFAULT 0,
+			retry_after DATETIME,
+			
+			-- Cancellation support
+			cancelled_at DATETIME,
+			
+			-- Timeout in seconds
+			timeout_seconds INTEGER,
+			
+			-- Deduplication hash
+			job_hash TEXT,
+			
+			FOREIGN KEY (app_id) REFERENCES apps(id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_jobs_app_id ON jobs(app_id, created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status) WHERE status IN ('pending', 'running')`,
+		`CREATE INDEX IF NOT EXISTS idx_jobs_app_status ON jobs(app_id, status) WHERE status IN ('pending', 'running')`,
+		`CREATE INDEX IF NOT EXISTS idx_jobs_hash ON jobs(job_hash, status) WHERE job_hash IS NOT NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_jobs_claimed ON jobs(claimed_by, status) WHERE claimed_by IS NOT NULL`,
 	}
 
+	// Run migrations
 	for _, migration := range migrations {
 		if _, err := db.Exec(migration); err != nil {
-			// Ignore error if column already exists
-			if !isDuplicateColumnError(err) {
-				return err
+			// Ignore duplicate column errors for ALTER TABLE ADD COLUMN statements
+			// This allows migrations to be idempotent
+			if isDuplicateColumnError(err) {
+				slog.Debug("Skipping migration - column already exists", "error", err)
+				continue
 			}
+			return err
 		}
 	}
 
-	// Migrate existing Cloudflare settings to new multi-provider structure
-	if err := migrateCloudflareSettingsToProviderConfig(db.DB); err != nil {
-		slog.Warn("Failed to migrate cloudflare settings", "error", err)
-		// Don't fail the migration - old format still works with fallback
-	}
-
-	// Check if settings exist and have proper UUIDs
-	var count int
-	if err := db.QueryRow("SELECT COUNT(*) FROM settings").Scan(&count); err != nil {
-		slog.Error("Error checking settings", "error", err)
-		return err
-	}
-
-	// If settings exist but have no UUIDs, fix them
-	if count > 0 {
-		var uuidCount int
-		if err := db.QueryRow("SELECT COUNT(*) FROM settings WHERE id IS NOT NULL").Scan(&uuidCount); err != nil {
-			slog.Error("Error checking UUIDs", "error", err)
-		} else if uuidCount == 0 {
-			// All settings have NULL IDs, need to fix them
-			settings := NewSettings()
-			if _, err := db.Exec("UPDATE settings SET id = ?, updated_at = ? WHERE id IS NULL",
-				settings.ID, time.Now()); err != nil {
-				slog.Error("Error fixing settings UUIDs", "error", err)
-			}
-		}
-	}
-
-	// Create default settings row if none exist
-	if count == 0 {
-		settings := NewSettings()
-		if _, err := db.Exec("INSERT INTO settings (id, cloudflare_api_token, cloudflare_account_id, auto_start_apps, updated_at) VALUES (?, ?, ?, ?, ?)",
-			settings.ID, settings.CloudflareAPIToken, settings.CloudflareAccountID, settings.AutoStartApps, settings.UpdatedAt); err != nil {
-			slog.Error("Error inserting default settings", "error", err)
-		}
-	}
-
-	return nil
+	// One-time migration: Check if jobs table needs to be recreated with new columns
+	return db.migrateJobsTableIfNeeded()
 }
 
 // isDuplicateColumnError checks if error is about duplicate column
@@ -314,35 +325,112 @@ func isDuplicateColumnError(err error) bool {
 	}
 	errStr := strings.ToLower(err.Error())
 	return strings.Contains(errStr, "duplicate column name") ||
+		strings.Contains(errStr, "duplicate column") ||
 		strings.Contains(errStr, "already exists")
 }
 
-// GetProviderConfig parses the tunnel_provider_config JSON and returns configuration
-// for the specified provider. Falls back to old cloudflare-specific fields if new
-// config doesn't exist (backward compatibility).
-func (settings *Settings) GetProviderConfig(providerName string) (map[string]interface{}, error) {
-	// Try new provider config first
-	if settings.TunnelProviderConfig != nil && *settings.TunnelProviderConfig != "" {
-		var providerConfigs map[string]interface{}
-		if err := json.Unmarshal([]byte(*settings.TunnelProviderConfig), &providerConfigs); err != nil {
-			return nil, fmt.Errorf("failed to parse provider config: %w", err)
-		}
-
-		if config, ok := providerConfigs[providerName]; ok {
-			if configMap, ok := config.(map[string]interface{}); ok {
-				return configMap, nil
-			}
+// migrateJobsTableIfNeeded checks if the jobs table has the new columns and recreates it if needed
+// This is a one-time migration that will only run if the table is missing the new columns
+func (db *DB) migrateJobsTableIfNeeded() error {
+	// Check if job_hash column exists (using it as a marker for the new schema)
+	var count int
+	err := db.QueryRow(`
+		SELECT COUNT(*) FROM pragma_table_info('jobs') WHERE name = 'job_hash'
+	`).Scan(&count)
+	
+	if err != nil {
+		// Table might not exist yet, which is fine - CREATE TABLE IF NOT EXISTS handles it
+		return nil
+	}
+	
+	// If column exists, migration already done
+	if count > 0 {
+		return nil
+	}
+	
+	// Table exists but missing new columns - need to recreate
+	slog.Info("Jobs table missing new columns, recreating table...")
+	
+	// Drop old table
+	if _, err := db.Exec(`DROP TABLE IF EXISTS jobs`); err != nil {
+		return fmt.Errorf("failed to drop old jobs table: %w", err)
+	}
+	
+	// Recreate with new schema
+	recreateSQL := `CREATE TABLE jobs (
+		id TEXT PRIMARY KEY,
+		type TEXT NOT NULL,
+		app_id TEXT NOT NULL,
+		status TEXT NOT NULL DEFAULT 'pending',
+		payload TEXT,
+		progress INTEGER NOT NULL DEFAULT 0,
+		progress_message TEXT,
+		result TEXT,
+		error_message TEXT,
+		started_at DATETIME,
+		completed_at DATETIME,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		
+		-- Worker tracking for multi-worker support
+		claimed_by TEXT,
+		claimed_at DATETIME,
+		
+		-- Retry support
+		retry_count INTEGER NOT NULL DEFAULT 0,
+		max_retries INTEGER NOT NULL DEFAULT 0,
+		retry_after DATETIME,
+		
+		-- Cancellation support
+		cancelled_at DATETIME,
+		
+		-- Timeout in seconds
+		timeout_seconds INTEGER,
+		
+		-- Deduplication hash
+		job_hash TEXT,
+		
+		FOREIGN KEY (app_id) REFERENCES apps(id) ON DELETE CASCADE
+	)`
+	
+	if _, err := db.Exec(recreateSQL); err != nil {
+		return fmt.Errorf("failed to recreate jobs table: %w", err)
+	}
+	
+	// Recreate indexes
+	indexes := []string{
+		`CREATE INDEX IF NOT EXISTS idx_jobs_app_id ON jobs(app_id, created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status) WHERE status IN ('pending', 'running')`,
+		`CREATE INDEX IF NOT EXISTS idx_jobs_app_status ON jobs(app_id, status) WHERE status IN ('pending', 'running')`,
+		`CREATE INDEX IF NOT EXISTS idx_jobs_hash ON jobs(job_hash, status) WHERE job_hash IS NOT NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_jobs_claimed ON jobs(claimed_by, status) WHERE claimed_by IS NOT NULL`,
+	}
+	
+	for _, indexSQL := range indexes {
+		if _, err := db.Exec(indexSQL); err != nil {
+			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
+	
+	slog.Info("Jobs table recreated successfully with new schema")
+	return nil
+}
 
-	// Fallback to old cloudflare-specific fields for backward compatibility
-	if providerName == constants.ProviderCloudflare {
-		if settings.CloudflareAPIToken != nil && *settings.CloudflareAPIToken != "" &&
-			settings.CloudflareAccountID != nil && *settings.CloudflareAccountID != "" {
-			return map[string]interface{}{
-				"api_token":  *settings.CloudflareAPIToken,
-				"account_id": *settings.CloudflareAccountID,
-			}, nil
+// GetProviderConfig parses the tunnel_provider_config JSON and returns configuration
+// for the specified provider.
+func (settings *Settings) GetProviderConfig(providerName string) (map[string]interface{}, error) {
+	if settings.TunnelProviderConfig == nil || *settings.TunnelProviderConfig == "" {
+		return nil, fmt.Errorf("provider %s not configured", providerName)
+	}
+
+	var providerConfigs map[string]interface{}
+	if err := json.Unmarshal([]byte(*settings.TunnelProviderConfig), &providerConfigs); err != nil {
+		return nil, fmt.Errorf("failed to parse provider config: %w", err)
+	}
+
+	if config, ok := providerConfigs[providerName]; ok {
+		if configMap, ok := config.(map[string]interface{}); ok {
+			return configMap, nil
 		}
 	}
 
@@ -350,15 +438,9 @@ func (settings *Settings) GetProviderConfig(providerName string) (map[string]int
 }
 
 // GetActiveProviderName returns the active tunnel provider name.
-// Falls back to "cloudflare" if not set (backward compatibility).
 func (settings *Settings) GetActiveProviderName() string {
 	if settings.ActiveTunnelProvider != nil && *settings.ActiveTunnelProvider != "" {
 		return *settings.ActiveTunnelProvider
-	}
-
-	// Fallback: if cloudflare credentials exist, assume cloudflare
-	if settings.CloudflareAPIToken != nil && *settings.CloudflareAPIToken != "" {
-		return constants.ProviderCloudflare
 	}
 
 	return constants.DefaultProviderName // Default
@@ -515,9 +597,10 @@ func (db *DB) DeleteApp(id string) error {
 // GetSettings retrieves the settings
 func (db *DB) GetSettings() (*Settings, error) {
 	settings := &Settings{}
+	var apiToken, accountID, activeTunnelProvider, tunnelProviderConfig sql.NullString
 	err := db.QueryRow(
-		"SELECT id, cloudflare_api_token, cloudflare_account_id, auto_start_apps, updated_at FROM settings LIMIT 1",
-	).Scan(&settings.ID, &settings.CloudflareAPIToken, &settings.CloudflareAccountID, &settings.AutoStartApps, &settings.UpdatedAt)
+		"SELECT id, cloudflare_api_token, cloudflare_account_id, auto_start_apps, active_tunnel_provider, tunnel_provider_config, updated_at FROM settings LIMIT 1",
+	).Scan(&settings.ID, &apiToken, &accountID, &settings.AutoStartApps, &activeTunnelProvider, &tunnelProviderConfig, &settings.UpdatedAt)
 
 	if err != nil {
 		// If no settings exist, create default settings
@@ -529,6 +612,20 @@ func (db *DB) GetSettings() (*Settings, error) {
 			return settings, nil
 		}
 		return nil, err
+	}
+
+	// Convert sql.NullString to *string
+	if apiToken.Valid {
+		settings.CloudflareAPIToken = &apiToken.String
+	}
+	if accountID.Valid {
+		settings.CloudflareAccountID = &accountID.String
+	}
+	if activeTunnelProvider.Valid {
+		settings.ActiveTunnelProvider = &activeTunnelProvider.String
+	}
+	if tunnelProviderConfig.Valid {
+		settings.TunnelProviderConfig = &tunnelProviderConfig.String
 	}
 
 	return settings, nil
@@ -1122,4 +1219,513 @@ func (db *DB) GetNodeByName(name string) (*Node, error) {
 	}
 
 	return node, err
+}
+
+// ============================================================================
+// Job Operations
+// ============================================================================
+
+// scanJob scans a job row from the database into a Job struct
+func scanJob(rows *sql.Rows) (*Job, error) {
+	job := &Job{}
+	var payload, progressMessage, result, errorMessage, claimedBy, jobHash sql.NullString
+	var startedAt, completedAt, claimedAt, retryAfter, cancelledAt sql.NullTime
+	var timeoutSeconds sql.NullInt64
+
+	var err error
+	if rows != nil {
+		err = rows.Scan(
+			&job.ID, &job.Type, &job.AppID, &job.Status, &payload, &job.Progress, &progressMessage,
+			&result, &errorMessage, &startedAt, &completedAt, &job.CreatedAt, &job.UpdatedAt,
+			&claimedBy, &claimedAt, &job.RetryCount, &job.MaxRetries, &retryAfter,
+			&cancelledAt, &timeoutSeconds, &jobHash,
+		)
+	} else {
+		return nil, fmt.Errorf("rows is nil")
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Handle nullable fields
+	if payload.Valid {
+		job.Payload = &payload.String
+	}
+	if progressMessage.Valid {
+		job.ProgressMessage = &progressMessage.String
+	}
+	if result.Valid {
+		job.Result = &result.String
+	}
+	if errorMessage.Valid {
+		job.ErrorMessage = &errorMessage.String
+	}
+	if startedAt.Valid {
+		job.StartedAt = &startedAt.Time
+	}
+	if completedAt.Valid {
+		job.CompletedAt = &completedAt.Time
+	}
+	if claimedBy.Valid {
+		job.ClaimedBy = &claimedBy.String
+	}
+	if claimedAt.Valid {
+		job.ClaimedAt = &claimedAt.Time
+	}
+	if retryAfter.Valid {
+		job.RetryAfter = &retryAfter.Time
+	}
+	if cancelledAt.Valid {
+		job.CancelledAt = &cancelledAt.Time
+	}
+	if timeoutSeconds.Valid {
+		val := int(timeoutSeconds.Int64)
+		job.TimeoutSeconds = &val
+	}
+	if jobHash.Valid {
+		job.JobHash = &jobHash.String
+	}
+
+	return job, nil
+}
+
+// scanJobFromRow scans a job from a QueryRow result
+func scanJobFromRow(row *sql.Row) (*Job, error) {
+	job := &Job{}
+	var payload, progressMessage, result, errorMessage, claimedBy, jobHash sql.NullString
+	var startedAt, completedAt, claimedAt, retryAfter, cancelledAt sql.NullTime
+	var timeoutSeconds sql.NullInt64
+
+	err := row.Scan(
+		&job.ID, &job.Type, &job.AppID, &job.Status, &payload, &job.Progress, &progressMessage,
+		&result, &errorMessage, &startedAt, &completedAt, &job.CreatedAt, &job.UpdatedAt,
+		&claimedBy, &claimedAt, &job.RetryCount, &job.MaxRetries, &retryAfter,
+		&cancelledAt, &timeoutSeconds, &jobHash,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Handle nullable fields
+	if payload.Valid {
+		job.Payload = &payload.String
+	}
+	if progressMessage.Valid {
+		job.ProgressMessage = &progressMessage.String
+	}
+	if result.Valid {
+		job.Result = &result.String
+	}
+	if errorMessage.Valid {
+		job.ErrorMessage = &errorMessage.String
+	}
+	if startedAt.Valid {
+		job.StartedAt = &startedAt.Time
+	}
+	if completedAt.Valid {
+		job.CompletedAt = &completedAt.Time
+	}
+	if claimedBy.Valid {
+		job.ClaimedBy = &claimedBy.String
+	}
+	if claimedAt.Valid {
+		job.ClaimedAt = &claimedAt.Time
+	}
+	if retryAfter.Valid {
+		job.RetryAfter = &retryAfter.Time
+	}
+	if cancelledAt.Valid {
+		job.CancelledAt = &cancelledAt.Time
+	}
+	if timeoutSeconds.Valid {
+		val := int(timeoutSeconds.Int64)
+		job.TimeoutSeconds = &val
+	}
+	if jobHash.Valid {
+		job.JobHash = &jobHash.String
+	}
+
+	return job, nil
+}
+
+// CreateJob creates a new job
+func (db *DB) CreateJob(job *Job) error {
+	_, err := db.Exec(
+		`INSERT INTO jobs (id, type, app_id, status, payload, progress, progress_message, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		job.ID, job.Type, job.AppID, job.Status, job.Payload, job.Progress, job.ProgressMessage,
+		job.CreatedAt, job.UpdatedAt,
+	)
+	return err
+}
+
+// GetJob retrieves a job by ID
+func (db *DB) GetJob(id string) (*Job, error) {
+	row := db.QueryRow(
+		`SELECT id, type, app_id, status, payload, progress, progress_message, result, error_message,
+		        started_at, completed_at, created_at, updated_at,
+		        claimed_by, claimed_at, retry_count, max_retries, retry_after,
+		        cancelled_at, timeout_seconds, job_hash
+		 FROM jobs WHERE id = ?`,
+		id,
+	)
+	return scanJobFromRow(row)
+}
+
+// GetJobsByAppID retrieves jobs for a specific app, ordered by creation date (newest first)
+func (db *DB) GetJobsByAppID(appID string, limit int) ([]*Job, error) {
+	rows, err := db.Query(
+		`SELECT id, type, app_id, status, payload, progress, progress_message, result, error_message,
+		        started_at, completed_at, created_at, updated_at,
+		        claimed_by, claimed_at, retry_count, max_retries, retry_after,
+		        cancelled_at, timeout_seconds, job_hash
+		 FROM jobs
+		 WHERE app_id = ?
+		 ORDER BY created_at DESC
+		 LIMIT ?`,
+		appID, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var jobs []*Job
+	for rows.Next() {
+		job, err := scanJob(rows)
+		if err != nil {
+			return nil, err
+		}
+		jobs = append(jobs, job)
+	}
+
+	return jobs, nil
+}
+
+// GetActiveJobForApp retrieves any pending or running job for an app (for concurrency check)
+func (db *DB) GetActiveJobForApp(appID string) (*Job, error) {
+	row := db.QueryRow(
+		`SELECT id, type, app_id, status, payload, progress, progress_message, result, error_message,
+		        started_at, completed_at, created_at, updated_at,
+		        claimed_by, claimed_at, retry_count, max_retries, retry_after,
+		        cancelled_at, timeout_seconds, job_hash
+		 FROM jobs
+		 WHERE app_id = ? AND status IN (?, ?)
+		 ORDER BY created_at DESC
+		 LIMIT 1`,
+		appID, constants.JobStatusPending, constants.JobStatusRunning,
+	)
+	
+	job, err := scanJobFromRow(row)
+	if err == sql.ErrNoRows {
+		return nil, nil // No active job found
+	}
+	return job, err
+}
+
+// UpdateJobStatus updates a job's status and progress
+func (db *DB) UpdateJobStatus(id, status string, progress int, message *string) error {
+	now := time.Now()
+
+	// If transitioning to running, set started_at
+	if status == constants.JobStatusRunning {
+		_, err := db.Exec(
+			`UPDATE jobs
+			 SET status = ?, progress = ?, progress_message = ?, started_at = COALESCE(started_at, ?), updated_at = ?
+			 WHERE id = ?`,
+			status, progress, message, now, now, id,
+		)
+		return err
+	}
+
+	_, err := db.Exec(
+		`UPDATE jobs
+		 SET status = ?, progress = ?, progress_message = ?, updated_at = ?
+		 WHERE id = ?`,
+		status, progress, message, now, id,
+	)
+	return err
+}
+
+// UpdateJobCompleted marks a job as completed or failed
+func (db *DB) UpdateJobCompleted(id, status string, result *string, errorMsg *string) error {
+	now := time.Now()
+	progress := 100
+	if status == constants.JobStatusFailed {
+		// Keep current progress on failure
+		var currentProgress int
+		err := db.QueryRow(`SELECT progress FROM jobs WHERE id = ?`, id).Scan(&currentProgress)
+		if err == nil {
+			progress = currentProgress
+		}
+	}
+
+	_, err := db.Exec(
+		`UPDATE jobs
+		 SET status = ?, progress = ?, result = ?, error_message = ?, completed_at = ?, updated_at = ?
+		 WHERE id = ?`,
+		status, progress, result, errorMsg, now, now, id,
+	)
+	return err
+}
+
+// GetPendingJobs retrieves pending jobs, ordered by creation date (oldest first)
+func (db *DB) GetPendingJobs(limit int) ([]*Job, error) {
+	rows, err := db.Query(
+		`SELECT id, type, app_id, status, payload, progress, progress_message, result, error_message,
+		        started_at, completed_at, created_at, updated_at,
+		        claimed_by, claimed_at, retry_count, max_retries, retry_after,
+		        cancelled_at, timeout_seconds, job_hash
+		 FROM jobs
+		 WHERE status = ?
+		 ORDER BY created_at ASC
+		 LIMIT ?`,
+		constants.JobStatusPending, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var jobs []*Job
+	for rows.Next() {
+		job, err := scanJob(rows)
+		if err != nil {
+			return nil, err
+		}
+		jobs = append(jobs, job)
+	}
+
+	return jobs, nil
+}
+
+// ClaimPendingJob atomically claims a pending job for a worker
+// This prevents race conditions where multiple workers claim the same job
+func (db *DB) ClaimPendingJob(workerID string) (*Job, error) {
+	now := time.Now()
+	
+	// SQLite doesn't support UPDATE ... RETURNING, so we use a transaction-based approach:
+	// 1. Find a pending job that isn't claimed
+	// 2. Try to claim it atomically
+	// 3. Return the claimed job
+	
+	// Use a transaction to ensure atomicity
+	tx, err := db.BeginTx(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	
+	// Find a pending job that isn't claimed
+	var jobID string
+	err = tx.QueryRow(
+		`SELECT id FROM jobs
+		 WHERE status = ? AND (claimed_by IS NULL OR claimed_by = '')
+		 ORDER BY created_at ASC
+		 LIMIT 1`,
+		constants.JobStatusPending,
+	).Scan(&jobID)
+	
+	if err == sql.ErrNoRows {
+		return nil, nil // No job available
+	}
+	if err != nil {
+		return nil, err
+	}
+	
+	// Try to claim it atomically
+	result, err := tx.Exec(
+		`UPDATE jobs
+		 SET status = ?, claimed_by = ?, claimed_at = ?, started_at = COALESCE(started_at, ?), updated_at = ?
+		 WHERE id = ? AND status = ? AND (claimed_by IS NULL OR claimed_by = '')`,
+		constants.JobStatusRunning, workerID, now, now, now,
+		jobID, constants.JobStatusPending,
+	)
+	if err != nil {
+		return nil, err
+	}
+	
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return nil, err
+	}
+	
+	if rowsAffected == 0 {
+		// Another worker claimed it first, return nil
+		return nil, nil
+	}
+	
+	// Retrieve the claimed job
+	job := &Job{}
+	var payload, progressMessage, resultStr, errorMessage, claimedBy, jobHash sql.NullString
+	var startedAt, completedAt, claimedAt, retryAfter, cancelledAt sql.NullTime
+	var timeoutSeconds sql.NullInt64
+	
+	err = tx.QueryRow(
+		`SELECT id, type, app_id, status, payload, progress, progress_message, result, error_message,
+		        started_at, completed_at, created_at, updated_at,
+		        claimed_by, claimed_at, retry_count, max_retries, retry_after,
+		        cancelled_at, timeout_seconds, job_hash
+		 FROM jobs
+		 WHERE id = ?`,
+		jobID,
+	).Scan(
+		&job.ID, &job.Type, &job.AppID, &job.Status, &payload, &job.Progress, &progressMessage,
+		&resultStr, &errorMessage, &startedAt, &completedAt, &job.CreatedAt, &job.UpdatedAt,
+		&claimedBy, &claimedAt, &job.RetryCount, &job.MaxRetries, &retryAfter,
+		&cancelledAt, &timeoutSeconds, &jobHash,
+	)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Handle nullable fields
+	if payload.Valid {
+		job.Payload = &payload.String
+	}
+	if progressMessage.Valid {
+		job.ProgressMessage = &progressMessage.String
+	}
+	if resultStr.Valid {
+		job.Result = &resultStr.String
+	}
+	if errorMessage.Valid {
+		job.ErrorMessage = &errorMessage.String
+	}
+	if startedAt.Valid {
+		job.StartedAt = &startedAt.Time
+	}
+	if completedAt.Valid {
+		job.CompletedAt = &completedAt.Time
+	}
+	if claimedBy.Valid {
+		job.ClaimedBy = &claimedBy.String
+	}
+	if claimedAt.Valid {
+		job.ClaimedAt = &claimedAt.Time
+	}
+	if retryAfter.Valid {
+		job.RetryAfter = &retryAfter.Time
+	}
+	if cancelledAt.Valid {
+		job.CancelledAt = &cancelledAt.Time
+	}
+	if timeoutSeconds.Valid {
+		val := int(timeoutSeconds.Int64)
+		job.TimeoutSeconds = &val
+	}
+	if jobHash.Valid {
+		job.JobHash = &jobHash.String
+	}
+	
+	// Commit the transaction
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	
+	return job, nil
+}
+
+// ReleaseJobClaim releases a job claim (e.g., if worker crashes)
+func (db *DB) ReleaseJobClaim(jobID string) error {
+	_, err := db.Exec(
+		`UPDATE jobs
+		 SET claimed_by = NULL, claimed_at = NULL, updated_at = ?
+		 WHERE id = ?`,
+		time.Now(), jobID,
+	)
+	return err
+}
+
+// CancelJob marks a job as cancelled
+func (db *DB) CancelJob(jobID string) error {
+	now := time.Now()
+	_, err := db.Exec(
+		`UPDATE jobs
+		 SET cancelled_at = ?, updated_at = ?
+		 WHERE id = ? AND status IN (?, ?)`,
+		now, now, jobID, constants.JobStatusPending, constants.JobStatusRunning,
+	)
+	return err
+}
+
+// IsJobCancelled checks if a job has been cancelled
+func (db *DB) IsJobCancelled(jobID string) (bool, error) {
+	var cancelledAt sql.NullTime
+	err := db.QueryRow(
+		`SELECT cancelled_at FROM jobs WHERE id = ?`,
+		jobID,
+	).Scan(&cancelledAt)
+	if err != nil {
+		return false, err
+	}
+	return cancelledAt.Valid, nil
+}
+
+// MarkStaleJobsAsFailed marks jobs that have been in "running" state for too long as failed
+// This handles recovery from crashes/restarts
+func (db *DB) MarkStaleJobsAsFailed(staleThreshold time.Duration) error {
+	cutoffTime := time.Now().Add(-staleThreshold)
+	errorMsg := fmt.Sprintf("Job marked as failed due to stale state (no updates for %v)", staleThreshold)
+
+	result, err := db.Exec(
+		`UPDATE jobs
+		 SET status = ?, error_message = ?, completed_at = ?, updated_at = ?
+		 WHERE status = ? AND updated_at < ?`,
+		constants.JobStatusFailed, errorMsg, time.Now(), time.Now(),
+		constants.JobStatusRunning, cutoffTime,
+	)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected > 0 {
+		slog.Info("Marked stale jobs as failed", "count", rowsAffected, "threshold", staleThreshold)
+	}
+
+	return nil
+}
+
+// CleanupOldCompletedJobs deletes old completed/failed jobs for an app, keeping only the most recent N
+func (db *DB) CleanupOldCompletedJobs(appID string, keepCount int) error {
+	// Delete all but the most recent N completed/failed jobs for this app
+	_, err := db.Exec(
+		`DELETE FROM jobs
+		 WHERE app_id = ?
+		 AND status IN (?, ?)
+		 AND id NOT IN (
+		     SELECT id FROM jobs
+		     WHERE app_id = ? AND status IN (?, ?)
+		     ORDER BY created_at DESC
+		     LIMIT ?
+		 )`,
+		appID, constants.JobStatusCompleted, constants.JobStatusFailed,
+		appID, constants.JobStatusCompleted, constants.JobStatusFailed, keepCount,
+	)
+	return err
+}
+
+// CleanupAllOldCompletedJobs deletes old completed/failed jobs for all apps in a single query
+// This is more efficient than calling CleanupOldCompletedJobs for each app
+func (db *DB) CleanupAllOldCompletedJobs(keepCount int) error {
+	// For each app, keep only the most recent N completed/failed jobs
+	_, err := db.Exec(
+		`DELETE FROM jobs
+		 WHERE status IN (?, ?)
+		 AND id NOT IN (
+		     SELECT id FROM (
+		         SELECT id, app_id,
+		                ROW_NUMBER() OVER (PARTITION BY app_id ORDER BY created_at DESC) as rn
+		         FROM jobs
+		         WHERE status IN (?, ?)
+		     ) ranked
+		     WHERE rn <= ?
+		 )`,
+		constants.JobStatusCompleted, constants.JobStatusFailed,
+		constants.JobStatusCompleted, constants.JobStatusFailed, keepCount,
+	)
+	return err
 }

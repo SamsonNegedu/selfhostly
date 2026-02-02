@@ -132,6 +132,10 @@ func (r *Router) requiresNodeID(path string) bool {
 	if strings.HasPrefix(path, "/api/system/containers/") {
 		return true
 	}
+	// Job endpoints require node_id to route to the correct node's local DB
+	if strings.HasPrefix(path, "/api/jobs/") {
+		return true
+	}
 	return false
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/selfhostly/internal/cloudflare"
@@ -14,16 +15,16 @@ import (
 
 // CleanupResult represents the result of a cleanup operation
 type CleanupResult struct {
-	Step         string    `json:"step"`
-	Success      bool      `json:"success"`
-	Error        string    `json:"error,omitempty"`
-	ErrorMessage string    `json:"error_message,omitempty"`
+	Step         string        `json:"step"`
+	Success      bool          `json:"success"`
+	Error        string        `json:"error,omitempty"`
+	ErrorMessage string        `json:"error_message,omitempty"`
 	Duration     time.Duration `json:"duration"`
 }
 
 // CleanupOperation represents a single cleanup step
 type CleanupOperation struct {
-	Name     string
+	Name      string
 	Executor  func() error
 	OnSuccess func()
 	OnError   func(error)
@@ -58,7 +59,7 @@ func (cm *CleanupManager) CleanupApp(app *db.App) ([]CleanupResult, error) {
 	slog.Info("Starting comprehensive app cleanup", "app", app.Name, "appID", app.ID)
 	cm.startTime = time.Now()
 	cm.results = make([]CleanupResult, 0)
-	
+
 	// Define cleanup operations in the correct order (reverse dependency)
 	operations := []CleanupOperation{
 		{
@@ -70,7 +71,13 @@ func (cm *CleanupManager) CleanupApp(app *db.App) ([]CleanupResult, error) {
 				slog.Info("Successfully stopped Docker containers", "app", app.Name)
 			},
 			OnError: func(err error) {
-				slog.Warn("Failed to stop Docker containers, continuing anyway", "app", app.Name, "error", err)
+				// Check if this is a "directory not found" error - not critical since StopApp now handles this
+				// This callback should rarely trigger since StopApp returns nil for missing directories
+				if strings.Contains(err.Error(), "no such file or directory") {
+					slog.Info("App directory already removed, skipping container stop", "app", app.Name)
+				} else {
+					slog.Warn("Failed to stop Docker containers, continuing anyway", "app", app.Name, "error", err)
+				}
 			},
 		},
 		{
@@ -134,7 +141,7 @@ func (cm *CleanupManager) CleanupApp(app *db.App) ([]CleanupResult, error) {
 			},
 		},
 	}
-	
+
 	// Execute all cleanup operations
 	var lastError error
 	for _, operation := range operations {
@@ -143,20 +150,20 @@ func (cm *CleanupManager) CleanupApp(app *db.App) ([]CleanupResult, error) {
 			Step:     operation.Name,
 			Duration: 0,
 		}
-		
+
 		err := operation.Executor()
 		result.Duration = time.Since(start)
 		result.Success = err == nil
-		
+
 		if err != nil {
 			result.Error = err.Error()
 			result.ErrorMessage = err.Error()
 			lastError = err
 		}
-		
+
 		cm.results = append(cm.results, result)
 		cm.operationCount++
-		
+
 		// Execute callbacks
 		if err == nil {
 			if operation.OnSuccess != nil {
@@ -168,7 +175,7 @@ func (cm *CleanupManager) CleanupApp(app *db.App) ([]CleanupResult, error) {
 			}
 		}
 	}
-	
+
 	// Log summary
 	successCount := 0
 	for _, result := range cm.results {
@@ -176,7 +183,7 @@ func (cm *CleanupManager) CleanupApp(app *db.App) ([]CleanupResult, error) {
 			successCount++
 		}
 	}
-	
+
 	totalDuration := time.Since(cm.startTime)
 	slog.Info("App cleanup completed",
 		"app", app.Name,
@@ -186,7 +193,7 @@ func (cm *CleanupManager) CleanupApp(app *db.App) ([]CleanupResult, error) {
 		"failedSteps", len(operations)-successCount,
 		"totalDuration", totalDuration,
 	)
-	
+
 	// Log details for failed operations
 	for _, result := range cm.results {
 		if !result.Success {
@@ -198,12 +205,12 @@ func (cm *CleanupManager) CleanupApp(app *db.App) ([]CleanupResult, error) {
 			)
 		}
 	}
-	
+
 	// Return comprehensive results and any critical errors
 	if lastError != nil {
 		return cm.results, fmt.Errorf("cleanup completed with errors: %w", lastError)
 	}
-	
+
 	return cm.results, nil
 }
 

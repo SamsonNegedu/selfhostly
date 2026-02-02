@@ -47,7 +47,7 @@ func (s *Server) manualCheckNode(c *gin.Context) {
 
 	// Trigger health check
 	err := s.nodeService.HealthCheckNode(c.Request.Context(), nodeID)
-	
+
 	// Fetch updated node status
 	node, getErr := s.nodeService.GetNode(c.Request.Context(), nodeID)
 	if getErr != nil {
@@ -78,13 +78,13 @@ func (s *Server) manualCheckNode(c *gin.Context) {
 func (s *Server) sendStartupHeartbeat() {
 	// Wait a bit for server to fully initialize
 	time.Sleep(constants.HeartbeatDelay)
-	
+
 	primaryURL := s.config.Node.PrimaryNodeURL
 	// Use internal API endpoint which requires node authentication
 	heartbeatURL := primaryURL + apipaths.NodeHeartbeat(s.config.Node.ID)
-	
+
 	slog.Info("sending startup heartbeat to primary", "url", heartbeatURL)
-	
+
 	// Send heartbeat with node authentication headers
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest("POST", heartbeatURL, nil)
@@ -92,18 +92,18 @@ func (s *Server) sendStartupHeartbeat() {
 		slog.Warn("failed to create heartbeat request", "error", err)
 		return
 	}
-	
+
 	// Add node authentication headers
 	req.Header.Set("X-Node-ID", s.config.Node.ID)
 	req.Header.Set("X-Node-API-Key", s.config.Node.APIKey)
-	
+
 	resp, err := client.Do(req)
 	if err != nil {
 		slog.Warn("failed to send heartbeat to primary", "error", err, "url", heartbeatURL)
 		return
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode == http.StatusOK {
 		slog.Info("startup heartbeat sent successfully to primary")
 	} else {

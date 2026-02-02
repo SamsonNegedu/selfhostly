@@ -509,7 +509,7 @@ func TestInjectTunnelContainerAndMarshal(t *testing.T) {
 	if _, exists := merged.Networks["frontend"]; !exists {
 		t.Error("Expected frontend network to exist in merged compose")
 	}
-	
+
 	if _, exists := merged.Networks[constants.CoreAPINetwork]; !exists {
 		t.Errorf("Expected %s to exist in merged compose", constants.CoreAPINetwork)
 	}

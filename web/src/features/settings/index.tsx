@@ -5,7 +5,7 @@ import { Button } from '@/shared/components/ui/button'
 import { Checkbox } from '@/shared/components/ui'
 import { Badge } from '@/shared/components/ui/badge'
 import AppBreadcrumb from '@/shared/components/layout/Breadcrumb'
-import { CheckCircle2, AlertCircle, Network, Shield, Globe } from 'lucide-react'
+import { CheckCircle2, AlertCircle, Network, Shield } from 'lucide-react'
 
 function Settings() {
     const { data: settings, isLoading: settingsLoading } = useSettings()
@@ -14,6 +14,7 @@ function Settings() {
 
     const [selectedProvider, setSelectedProvider] = useState<string>('')
     const [providerConfig, setProviderConfig] = useState<Record<string, any>>({})
+    const [maskedTokens, setMaskedTokens] = useState<Record<string, string>>({}) // Store masked tokens for placeholders
     const [autoStartApps, setAutoStartApps] = useState(false)
 
     const { data: providerFeatures } = useProviderFeatures(selectedProvider)
@@ -27,24 +28,34 @@ function Settings() {
             const activeProvider = settings.active_tunnel_provider || 'cloudflare'
             setSelectedProvider(activeProvider)
 
-            // Parse provider config
+            // Parse provider config - only use tunnel_provider_config, no legacy fields
             try {
                 if (settings.tunnel_provider_config) {
                     const parsed = JSON.parse(settings.tunnel_provider_config)
-                    setProviderConfig(parsed || {})
-                } else {
-                    // Fallback to old format for backward compatibility
-                    const legacyConfig: Record<string, any> = {}
-                    if (settings.cloudflare_api_token || settings.cloudflare_account_id) {
-                        legacyConfig.cloudflare = {
-                            api_token: settings.cloudflare_api_token || '',
-                            account_id: settings.cloudflare_account_id || ''
+                    // Store masked tokens separately for placeholders, clear from config
+                    const cleaned = { ...parsed }
+                    const masked: Record<string, string> = {}
+                    Object.keys(cleaned).forEach(provider => {
+                        if (cleaned[provider]?.api_token?.includes('****')) {
+                            // Store masked token for placeholder
+                            masked[provider] = cleaned[provider].api_token
+                            // Clear masked token from config (user needs to enter new token)
+                            cleaned[provider] = {
+                                ...cleaned[provider],
+                                api_token: ''
+                            }
                         }
-                    }
-                    setProviderConfig(legacyConfig)
+                    })
+                    setMaskedTokens(masked)
+                    setProviderConfig(cleaned || {})
+                } else {
+                    // No provider config yet - start with empty config
+                    setMaskedTokens({})
+                    setProviderConfig({})
                 }
             } catch (error) {
                 console.error('Failed to parse provider config:', error)
+                setMaskedTokens({})
                 setProviderConfig({})
             }
         }
@@ -84,9 +95,19 @@ function Settings() {
     }
 
     const handleSaveProvider = () => {
+        // Clean up masked tokens before saving - don't send tokens that contain "****"
+        const cleanedConfig = { ...providerConfig }
+        if (cleanedConfig[selectedProvider]?.api_token?.includes('****')) {
+            // Remove masked token - backend will keep existing token
+            cleanedConfig[selectedProvider] = {
+                ...cleanedConfig[selectedProvider],
+                api_token: ''
+            }
+        }
+
         const configToSave = {
             active_tunnel_provider: selectedProvider,
-            tunnel_provider_config: JSON.stringify(providerConfig),
+            tunnel_provider_config: JSON.stringify(cleanedConfig),
             auto_start_apps: autoStartApps
         }
 
@@ -108,7 +129,7 @@ function Settings() {
                                 value={currentProviderConfig.api_token || ''}
                                 onChange={(e) => handleConfigChange('api_token', e.target.value)}
                                 className="w-full px-3 py-2 border border-input bg-background text-foreground rounded-md focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground"
-                                placeholder="Enter Cloudflare API token"
+                                placeholder={maskedTokens[selectedProvider] || "Enter Cloudflare API token"}
                             />
                             <p className="text-xs text-muted-foreground mt-1">
                                 Create an API token with 'Cloudflare Tunnel' permissions
@@ -263,10 +284,6 @@ function Settings() {
 
                         {/* Provider Configuration Fields */}
                         <div>
-                            <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                                <Globe className="h-4 w-4" />
-                                Configuration
-                            </h4>
                             {renderProviderConfigFields()}
                         </div>
 
@@ -303,12 +320,12 @@ function Settings() {
                                             auto_start_apps: newValue
                                         })
                                     }}
-                                    className="mt-0.5"
+                                    className="mt-0.5 shrink-0"
                                 />
-                                <div className="flex-1">
+                                <div className="flex-1 pt-0.5">
                                     <label
                                         htmlFor="auto_start_apps"
-                                        className="text-sm font-medium cursor-pointer select-none leading-tight"
+                                        className="text-sm font-medium cursor-pointer select-none leading-tight block"
                                     >
                                         Auto-start applications on server boot
                                     </label>

@@ -17,6 +17,7 @@ import (
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/docker"
 	"github.com/selfhostly/internal/domain"
+	"github.com/selfhostly/internal/jobs"
 	"github.com/selfhostly/internal/node"
 	"github.com/selfhostly/internal/routing"
 	"github.com/selfhostly/internal/service"
@@ -32,6 +33,7 @@ type Server struct {
 	systemService  domain.SystemService
 	composeService domain.ComposeService
 	nodeService    domain.NodeService
+	jobWorker      *jobs.Worker // Background job processor
 	engine         *gin.Engine
 	authService    *auth.Service
 	httpServer     *http.Server
@@ -84,6 +86,10 @@ func NewServer(cfg *config.Config, database *db.DB) *Server {
 
 	nodeService := service.NewNodeService(database, cfg, logger)
 
+	// Initialize job processing system
+	jobProcessor := jobs.NewProcessor(database, dockerManager, appService, tunnelService, logger)
+	jobWorker := jobs.NewWorker(jobProcessor, database, constants.JobWorkerPollInterval, logger)
+
 	// Create shutdown context
 	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
 
@@ -97,6 +103,7 @@ func NewServer(cfg *config.Config, database *db.DB) *Server {
 		systemService:  systemService,
 		composeService: composeService,
 		nodeService:    nodeService,
+		jobWorker:      jobWorker,
 		engine:         engine,
 		authService:    authService,
 		shutdownCtx:    shutdownCtx,
@@ -321,7 +328,15 @@ func (s *Server) startBackgroundTasks() {
 		go s.sendPeriodicHeartbeats()
 	}
 
-	slog.Info("background tasks started", "health_check_interval", "30s")
+	// Start job worker for background async operations
+	go func() {
+		slog.Info("starting job worker")
+		if err := s.jobWorker.Start(s.shutdownCtx); err != nil {
+			slog.Error("job worker stopped with error", "error", err)
+		}
+	}()
+
+	slog.Info("background tasks started", "health_check_interval", "30s", "job_worker_enabled", true)
 }
 
 // runPeriodicHealthChecks performs health checks on all nodes every 30 seconds
@@ -486,7 +501,7 @@ func (s *Server) getAuthMiddleware() gin.HandlerFunc {
 			"host", c.Request.Host,
 			"cookie_length", len(c.Request.Header.Get("Cookie")),
 		)
-		
+
 		// Wrap the Gin handler for go-pkgz/auth middleware
 		var userInfo token.User
 		var authenticated bool
