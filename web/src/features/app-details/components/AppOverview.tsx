@@ -16,6 +16,7 @@ import {
     AlertTriangle
 } from 'lucide-react'
 import ActivityTimeline from './ActivityTimeline'
+import { useAppServices } from '@/shared/services/api'
 import type { App } from '@/shared/types/api'
 
 interface AppOverviewProps {
@@ -23,23 +24,23 @@ interface AppOverviewProps {
 }
 
 interface ComposeInfo {
-    services: string[]
     networks: string[]
     volumes: string[]
 }
 
 function AppOverview({ app }: AppOverviewProps) {
-    // Parse compose content to extract useful info
+    // Get services from backend endpoint for consistency with LogViewer
+    const { data: services = [] } = useAppServices(app.id, app.node_id || '')
+
+    // Parse compose content to extract networks and volumes (services come from backend)
     const composeInfo: ComposeInfo = useMemo(() => {
         const info: ComposeInfo = {
-            services: [],
             networks: [],
             volumes: []
         }
 
         try {
             const lines = app.compose_content.split('\n')
-            let inServicesSection = false
             let inNetworksSection = false
             let inVolumesSection = false
             let currentIndent = 0
@@ -56,40 +57,18 @@ function AppOverview({ app }: AppOverviewProps) {
 
                 // Check for top-level sections
                 if (indent === 0) {
-                    if (trimmedLine.startsWith('services:')) {
-                        inServicesSection = true
-                        inNetworksSection = false
-                        inVolumesSection = false
-                        currentIndent = 0
-                        continue
-                    } else if (trimmedLine.startsWith('networks:')) {
-                        inServicesSection = false
+                    if (trimmedLine.startsWith('networks:')) {
                         inNetworksSection = true
                         inVolumesSection = false
                         currentIndent = 0
                         continue
                     } else if (trimmedLine.startsWith('volumes:')) {
-                        inServicesSection = false
                         inNetworksSection = false
                         inVolumesSection = true
                         currentIndent = 0
                         continue
-                    } else if (trimmedLine.startsWith('version:')) {
+                    } else if (trimmedLine.startsWith('version:') || trimmedLine.startsWith('services:')) {
                         continue
-                    }
-                }
-
-                // Extract services (first level under 'services:')
-                if (inServicesSection && indent > 0) {
-                    if (currentIndent === 0) {
-                        currentIndent = indent
-                    }
-                    // Only match keys at the first indent level under services
-                    if (indent === currentIndent && trimmedLine.includes(':')) {
-                        const serviceName = trimmedLine.split(':')[0].trim()
-                        if (serviceName && !info.services.includes(serviceName)) {
-                            info.services.push(serviceName)
-                        }
                     }
                 }
 
@@ -206,7 +185,7 @@ function AppOverview({ app }: AppOverviewProps) {
                         <div className="flex items-center justify-between">
                             <div>
                                 <p className="text-sm text-muted-foreground mb-1">Services</p>
-                                <p className="text-2xl font-bold">{composeInfo.services.length}</p>
+                                <p className="text-2xl font-bold">{services.length}</p>
                             </div>
                             <div className="p-3 rounded-full bg-blue-100 dark:bg-blue-900/30">
                                 <Server className="h-6 w-6 text-blue-600 dark:text-blue-400" />
@@ -259,11 +238,11 @@ function AppOverview({ app }: AppOverviewProps) {
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
-                            {composeInfo.services.length > 0 ? (
+                            {services.length > 0 ? (
                                 <div className="space-y-2">
-                                    {composeInfo.services.map((service, index) => (
+                                    {services.map((service) => (
                                         <div
-                                            key={index}
+                                            key={service}
                                             className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
                                         >
                                             <div className="flex items-center gap-2">

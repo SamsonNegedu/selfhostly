@@ -218,7 +218,7 @@ func TestSystemService_GetAppLogs(t *testing.T) {
 	mockExecutor.SetMockOutput("docker", []string{"compose", "-f", "docker-compose.yml", "logs", "--tail=100"}, []byte(expectedLogs))
 
 	// Get app logs
-	logs, err := service.GetAppLogs(ctx, app.ID, testNodeID)
+	logs, err := service.GetAppLogs(ctx, app.ID, testNodeID, "")
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -248,7 +248,7 @@ func TestSystemService_GetAppLogs_NotFound(t *testing.T) {
 	testNodeID := nodes[0].ID
 
 	// Try to get logs for non-existent app
-	_, err = service.GetAppLogs(ctx, "non-existent-id", testNodeID)
+	_, err = service.GetAppLogs(ctx, "non-existent-id", testNodeID, "")
 	if err == nil {
 		t.Error("Expected error for non-existent app, got nil")
 	}

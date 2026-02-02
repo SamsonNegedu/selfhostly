@@ -267,7 +267,10 @@ func (s *Server) getAppLogs(c *gin.Context) {
 		return
 	}
 
-	logs, err := s.systemService.GetAppLogs(c.Request.Context(), id, nodeID)
+	// Get optional service filter from query parameter
+	service := c.Query("service")
+
+	logs, err := s.systemService.GetAppLogs(c.Request.Context(), id, nodeID, service)
 	if err != nil {
 		s.handleServiceError(c, "get app logs", err)
 		return
@@ -275,6 +278,30 @@ func (s *Server) getAppLogs(c *gin.Context) {
 
 	c.Header("Content-Type", "text/plain")
 	c.Data(http.StatusOK, "text/plain", logs)
+}
+
+// getAppServices returns the list of service names for an app
+func (s *Server) getAppServices(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
+		return
+	}
+
+	// Get node_id from middleware (already validated)
+	nodeID := getNodeIDFromContext(c)
+	if nodeID == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "node_id is required"})
+		return
+	}
+
+	services, err := s.systemService.GetAppServices(c.Request.Context(), id, nodeID)
+	if err != nil {
+		s.handleServiceError(c, "get app services", err)
+		return
+	}
+
+	c.JSON(http.StatusOK, services)
 }
 
 // getAppStats returns real-time resource statistics for an app

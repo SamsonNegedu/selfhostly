@@ -85,7 +85,8 @@ type ProviderFeatures struct {
 type SystemService interface {
 	GetSystemStats(ctx context.Context, nodeIDs []string) ([]*system.SystemStats, error)
 	GetAppStats(ctx context.Context, appID string, nodeID string) (*AppStats, error)
-	GetAppLogs(ctx context.Context, appID string, nodeID string) ([]byte, error)
+	GetAppLogs(ctx context.Context, appID string, nodeID string, service string) ([]byte, error)
+	GetAppServices(ctx context.Context, appID string, nodeID string) ([]string, error)
 	RestartContainer(ctx context.Context, containerID, nodeID string) error
 	StopContainer(ctx context.Context, containerID, nodeID string) error
 	DeleteContainer(ctx context.Context, containerID, nodeID string) error

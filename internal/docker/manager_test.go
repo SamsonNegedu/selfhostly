@@ -464,7 +464,7 @@ func TestGetAppLogs(t *testing.T) {
 	mockExecutor.SetMockOutput("docker", []string{"compose", "-f", "docker-compose.yml", "logs", "--tail=100"},
 		logOutput)
 
-	logs, err := manager.GetAppLogs(appName)
+	logs, err := manager.GetAppLogs(appName, "")
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}

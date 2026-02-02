@@ -22,6 +22,7 @@ const (
 	ComposeSubcommandRm      = "rm"
 	ComposeSubcommandPs      = "ps"
 	ComposeSubcommandLogs    = "logs"
+	ComposeSubcommandConfig  = "config"
 )
 
 // Docker Compose flags
@@ -133,10 +134,21 @@ func ComposePsQuietCommand() []string {
 		Build()
 }
 
-// ComposeLogsCommand returns command for "docker compose -f docker-compose.yml logs --tail=100"
-func ComposeLogsCommand(tailLines int) []string {
-	return NewComposeCommand(ComposeSubcommandLogs).
-		WithFlag(ComposeFlagTail + "=" + fmt.Sprintf("%d", tailLines)).
+// ComposeLogsCommand returns command for "docker compose -f docker-compose.yml logs --tail=100 [service]"
+// If service is empty, returns logs for all services
+func ComposeLogsCommand(tailLines int, service string) []string {
+	builder := NewComposeCommand(ComposeSubcommandLogs).
+		WithFlag(ComposeFlagTail + "=" + fmt.Sprintf("%d", tailLines))
+	if service != "" {
+		builder = builder.WithService(service)
+	}
+	return builder.Build()
+}
+
+// ComposeConfigServicesCommand returns command for "docker compose -f docker-compose.yml config --services"
+func ComposeConfigServicesCommand() []string {
+	return NewComposeCommand(ComposeSubcommandConfig).
+		WithFlag("--services").
 		Build()
 }
 

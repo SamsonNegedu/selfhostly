@@ -161,20 +161,38 @@ func (s *systemService) GetAppStats(ctx context.Context, appID string, nodeID st
 }
 
 // GetAppLogs retrieves logs for a specific app
-func (s *systemService) GetAppLogs(ctx context.Context, appID string, nodeID string) ([]byte, error) {
-	s.logger.DebugContext(ctx, "getting app logs", "appID", appID, "nodeID", nodeID)
+// If service is empty, returns logs for all services
+func (s *systemService) GetAppLogs(ctx context.Context, appID string, nodeID string, service string) ([]byte, error) {
+	s.logger.DebugContext(ctx, "getting app logs", "appID", appID, "nodeID", nodeID, "service", service)
 
 	app, err := s.database.GetApp(appID)
 	if err != nil {
 		return nil, domain.WrapAppNotFound(appID, err)
 	}
 
-	logs, err := s.dockerManager.GetAppLogs(app.Name)
+	logs, err := s.dockerManager.GetAppLogs(app.Name, service)
 	if err != nil {
 		return nil, domain.WrapContainerOperationFailed("get app logs", err)
 	}
 
 	return logs, nil
+}
+
+// GetAppServices retrieves the list of service names for a specific app
+func (s *systemService) GetAppServices(ctx context.Context, appID string, nodeID string) ([]string, error) {
+	s.logger.DebugContext(ctx, "getting app services", "appID", appID, "nodeID", nodeID)
+
+	app, err := s.database.GetApp(appID)
+	if err != nil {
+		return nil, domain.WrapAppNotFound(appID, err)
+	}
+
+	services, err := s.dockerManager.GetAppServices(app.Name)
+	if err != nil {
+		return nil, domain.WrapContainerOperationFailed("get app services", err)
+	}
+
+	return services, nil
 }
 
 // RestartContainer restarts a specific container

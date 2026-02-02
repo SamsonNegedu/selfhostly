@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/selfhostly/internal/apipaths"
@@ -700,8 +701,20 @@ func (c *Client) RollbackComposeVersion(node *db.Node, appID string, version int
 }
 
 // GetAppLogs fetches logs for an app from a remote node
-func (c *Client) GetAppLogs(node *db.Node, appID string) ([]byte, error) {
-	req, err := http.NewRequest("GET", node.APIEndpoint+apipaths.AppLogs(appID), nil)
+func (c *Client) GetAppLogs(node *db.Node, appID string, service string) ([]byte, error) {
+	reqURL := node.APIEndpoint + apipaths.AppLogs(appID)
+	if service != "" {
+		u, err := url.Parse(reqURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse URL: %w", err)
+		}
+		q := u.Query()
+		q.Set("service", service)
+		u.RawQuery = q.Encode()
+		reqURL = u.String()
+	}
+
+	req, err := http.NewRequest("GET", reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -725,6 +738,34 @@ func (c *Client) GetAppLogs(node *db.Node, appID string) ([]byte, error) {
 	}
 
 	return logs, nil
+}
+
+// GetAppServices fetches the list of service names for an app from a remote node
+func (c *Client) GetAppServices(node *db.Node, appID string) ([]string, error) {
+	req, err := http.NewRequest("GET", node.APIEndpoint+apipaths.AppServices(appID), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.setNodeAuthHeaders(req, node)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch app services from node %s: %w", node.Name, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("node returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var services []string
+	if err := json.NewDecoder(resp.Body).Decode(&services); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return services, nil
 }
 
 // GetAppStats fetches stats for an app from a remote node

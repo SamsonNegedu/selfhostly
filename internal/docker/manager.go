@@ -347,15 +347,16 @@ func (m *Manager) GetAppStatus(name string) (string, error) {
 }
 
 // GetAppLogs fetches logs from the app
-func (m *Manager) GetAppLogs(name string) ([]byte, error) {
+// If service is empty, returns logs for all services
+func (m *Manager) GetAppLogs(name string, service string) ([]byte, error) {
 	appPath := filepath.Join(m.appsDir, name)
 
-	slog.Debug("fetching app logs", "app", name, "appPath", appPath, "command", "docker compose logs --tail=100")
+	slog.Debug("fetching app logs", "app", name, "service", service, "appPath", appPath, "command", "docker compose logs --tail=100")
 
-	cmd := ComposeLogsCommand(100)
+	cmd := ComposeLogsCommand(100, service)
 	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, cmd[0], cmd[1:]...)
 	if err != nil {
-		slog.Error("failed to get app logs", "app", name, "error", err, "output", string(output))
+		slog.Error("failed to get app logs", "app", name, "service", service, "error", err, "output", string(output))
 		return nil, fmt.Errorf("failed to get logs: %w\nOutput: %s", err, string(output))
 	}
 
@@ -376,8 +377,46 @@ func (m *Manager) GetAppLogs(name string) ([]byte, error) {
 		nonEmptyLines[i], nonEmptyLines[j] = nonEmptyLines[j], nonEmptyLines[i]
 	}
 
-	slog.Debug("app logs retrieved", "app", name, "lineCount", len(nonEmptyLines))
+	slog.Debug("app logs retrieved", "app", name, "service", service, "lineCount", len(nonEmptyLines))
 	return []byte(strings.Join(nonEmptyLines, "\n")), nil
+}
+
+// GetAppServices returns the list of service names defined in the app's docker-compose.yml
+func (m *Manager) GetAppServices(name string) ([]string, error) {
+	appPath := filepath.Join(m.appsDir, name)
+
+	slog.Debug("fetching app services", "app", name, "appPath", appPath, "command", "docker compose config --services")
+
+	cmd := ComposeConfigServicesCommand()
+	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, cmd[0], cmd[1:]...)
+	if err != nil {
+		slog.Error("failed to get app services", "app", name, "error", err, "output", string(output))
+		return nil, fmt.Errorf("failed to get services: %w\nOutput: %s", err, string(output))
+	}
+
+	// Parse newline-separated service names
+	servicesStr := strings.TrimSpace(string(output))
+	if servicesStr == "" {
+		slog.Debug("app has no services", "app", name)
+		return []string{}, nil
+	}
+
+	services := strings.Split(servicesStr, "\n")
+	// Trim whitespace from each service name
+	for i := range services {
+		services[i] = strings.TrimSpace(services[i])
+	}
+
+	// Remove empty strings
+	var nonEmptyServices []string
+	for _, service := range services {
+		if service != "" {
+			nonEmptyServices = append(nonEmptyServices, service)
+		}
+	}
+
+	slog.Debug("app services retrieved", "app", name, "serviceCount", len(nonEmptyServices))
+	return nonEmptyServices, nil
 }
 
 // DeleteAppDirectory removes the app directory
