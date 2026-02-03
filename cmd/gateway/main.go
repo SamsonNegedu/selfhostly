@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/selfhostly/internal/gateway"
+	"github.com/selfhostly/internal/logger"
 )
 
 func main() {
@@ -19,26 +19,44 @@ func main() {
 		envFile = ".env"
 	}
 	_ = godotenv.Load(envFile)
-	logger := slog.Default()
+	
+	// Load environment and logging config
+	environment := os.Getenv("APP_ENV")
+	if environment == "" {
+		environment = "production"
+	}
+	
+	// Determine JSON logging preference (same logic as backend)
+	logJSONEnv := os.Getenv("LOG_JSON")
+	var logJSON bool
+	if logJSONEnv != "" {
+		logJSON = logJSONEnv == "true"
+	} else {
+		// Default: JSON in production, text in development
+		logJSON = environment != "development"
+	}
+	
+	// Initialize logger with configuration
+	appLogger := logger.InitLogger(environment, logJSON)
 
 	cfg, err := gateway.LoadConfig()
 	if err != nil {
-		logger.Error("failed to load config", "error", err)
+		appLogger.Error("failed to load config", "error", err)
 		os.Exit(1)
 	}
 
-	logger.Info("gateway configuration loaded",
+	appLogger.Info("gateway configuration loaded",
 		"primary_backend_url", cfg.PrimaryBackendURL,
 		"listen_address", cfg.ListenAddress,
 		"auth_enabled", cfg.AuthEnabled,
 		"registry_ttl", cfg.RegistryTTL,
 	)
 
-	registry := gateway.NewNodeRegistry(cfg.PrimaryBackendURL, cfg.GatewayAPIKey, cfg.RegistryTTL, logger)
+	registry := gateway.NewNodeRegistry(cfg.PrimaryBackendURL, cfg.GatewayAPIKey, cfg.RegistryTTL, appLogger)
 	registry.Start()
 
-	router := gateway.NewRouter(registry, logger)
-	proxy := gateway.NewProxy(router, registry, cfg, logger)
+	router := gateway.NewRouter(registry, appLogger)
+	proxy := gateway.NewProxy(router, registry, cfg, appLogger)
 
 	server := &http.Server{
 		Addr:         cfg.ListenAddress,
@@ -49,9 +67,9 @@ func main() {
 	}
 
 	go func() {
-		logger.Info("gateway listening", "address", cfg.ListenAddress, "primary_backend", cfg.PrimaryBackendURL)
+		appLogger.Info("gateway listening", "address", cfg.ListenAddress, "primary_backend", cfg.PrimaryBackendURL)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("gateway server error", "error", err)
+			appLogger.Error("gateway server error", "error", err)
 			os.Exit(1)
 		}
 	}()
@@ -59,11 +77,11 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	logger.Info("shutting down gateway...")
+	appLogger.Info("shutting down gateway...")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
-		logger.Error("gateway shutdown error", "error", err)
+		appLogger.Error("gateway shutdown error", "error", err)
 	}
-	logger.Info("gateway stopped")
+	appLogger.Info("gateway stopped")
 }

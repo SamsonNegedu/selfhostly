@@ -41,7 +41,7 @@ func main() {
 
 	// Initialize structured logger based on environment
 	// This sets slog as the default logger, so we can use slog directly throughout
-	logger.InitLogger(cfg.Environment)
+	logger.InitLogger(cfg.Environment, cfg.LogJSON)
 	
 	slog.Info("Application starting", "cwd", cwd, "environment", cfg.Environment)
 

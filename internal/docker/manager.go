@@ -474,6 +474,29 @@ func (m *Manager) RestartTunnelService(name string) error {
 	return nil
 }
 
+// RestartAppService restarts a specific service within an app
+func (m *Manager) RestartAppService(appName string, serviceName string) error {
+	appPath := filepath.Join(m.appsDir, appName)
+
+	// Check if directory exists first
+	if !m.directoryExists(appPath) {
+		slog.Error("app directory does not exist", "app", appName, "appPath", appPath)
+		return fmt.Errorf("app directory not found: %s", appPath)
+	}
+
+	slog.Info("restarting app service", "app", appName, "service", serviceName, "appPath", appPath, "command", fmt.Sprintf("docker compose restart %s", serviceName))
+
+	cmd := ComposeRestartServiceCommand(serviceName)
+	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, cmd[0], cmd[1:]...)
+	if err != nil {
+		slog.Error("failed to restart app service", "app", appName, "service", serviceName, "error", err, "output", string(output))
+		return fmt.Errorf("failed to restart service %s: %w\nOutput: %s", serviceName, err, string(output))
+	}
+
+	slog.Info("app service restarted successfully", "app", appName, "service", serviceName, "output", string(output))
+	return nil
+}
+
 // StopTunnelService stops the generic tunnel service
 func (m *Manager) StopTunnelService(name string) error {
 	appPath := filepath.Join(m.appsDir, name)

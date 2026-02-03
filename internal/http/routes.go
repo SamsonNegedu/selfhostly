@@ -94,6 +94,7 @@ func (s *Server) setupAppRoutes(api *gin.RouterGroup) {
 			appSpecific.POST("/update", s.updateAppContainers)
 			appSpecific.GET("/logs", s.getAppLogs)
 			appSpecific.GET("/services", s.getAppServices)
+			appSpecific.POST("/services/:service/restart", s.restartAppService)
 			appSpecific.GET("/stats", s.getAppStats)
 			appSpecific.GET("/quick-tunnel-url", s.getQuickTunnelURL)
 			appSpecific.POST("/quick-tunnel", s.createQuickTunnelForApp)

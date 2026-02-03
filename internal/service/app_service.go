@@ -1023,6 +1023,45 @@ func (s *appService) RestartCloudflared(ctx context.Context, appID string, nodeI
 	return nil
 }
 
+// RestartAppService restarts a specific service within an app
+func (s *appService) RestartAppService(ctx context.Context, appID string, nodeID string, serviceName string) error {
+	s.logger.InfoContext(ctx, "restarting app service", "appID", appID, "nodeID", nodeID, "service", serviceName)
+	
+	app, err := s.database.GetApp(appID)
+	if err != nil {
+		s.logger.DebugContext(ctx, "app not found for service restart", "appID", appID)
+		return domain.WrapAppNotFound(appID, err)
+	}
+
+	// Validate that the service exists in the app
+	services, err := s.dockerManager.GetAppServices(app.Name)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "failed to get app services", "app", app.Name, "error", err)
+		return domain.WrapContainerOperationFailed("get app services", err)
+	}
+
+	serviceExists := false
+	for _, svc := range services {
+		if svc == serviceName {
+			serviceExists = true
+			break
+		}
+	}
+
+	if !serviceExists {
+		s.logger.WarnContext(ctx, "service not found in app", "app", app.Name, "service", serviceName, "availableServices", services)
+		return fmt.Errorf("service %q not found in app %q. Available services: %v", serviceName, app.Name, services)
+	}
+
+	if err := s.dockerManager.RestartAppService(app.Name, serviceName); err != nil {
+		s.logger.ErrorContext(ctx, "failed to restart app service", "app", app.Name, "service", serviceName, "error", err)
+		return domain.WrapContainerOperationFailed(fmt.Sprintf("restart service %s", serviceName), err)
+	}
+
+	s.logger.InfoContext(ctx, "app service restarted successfully", "app", app.Name, "service", serviceName, "appID", appID)
+	return nil
+}
+
 // ============================================================================
 // Async Job Operations
 // ============================================================================

@@ -56,12 +56,16 @@ function NodesListView({ nodes }: NodesListViewProps) {
             key: 'status',
             label: 'Status',
             width: 'w-28',
-            render: (node) => getStatusBadge(node.status)
+            render: (node) => getStatusBadge(node.status),
+            sortable: true,
+            sortValue: (node) => node.status
         },
         {
             key: 'name',
             label: 'Name',
             width: 'flex-1 min-w-0',
+            sortable: true,
+            sortValue: (node) => node.name.toLowerCase(),
             render: (node) => (
                 <div className="flex items-center gap-2">
                     <Server className="h-4 w-4 text-muted-foreground flex-shrink-0" />
@@ -73,6 +77,8 @@ function NodesListView({ nodes }: NodesListViewProps) {
             key: 'role',
             label: 'Role',
             width: 'w-28',
+            sortable: true,
+            sortValue: (node) => node.is_primary ? 0 : 1,
             render: (node) => (
                 node.is_primary ? (
                     <Badge variant="default" className="bg-blue-600">
@@ -89,6 +95,8 @@ function NodesListView({ nodes }: NodesListViewProps) {
             key: 'endpoint',
             label: 'API Endpoint',
             width: 'w-64',
+            sortable: true,
+            sortValue: (node) => node.api_endpoint.toLowerCase(),
             render: (node) => (
                 <div className="flex items-center gap-2">
                     <Globe className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
@@ -102,6 +110,8 @@ function NodesListView({ nodes }: NodesListViewProps) {
             key: 'last_seen',
             label: 'Last Seen',
             width: 'w-40',
+            sortable: true,
+            sortValue: (node) => node.last_seen ? new Date(node.last_seen) : new Date(0),
             render: (node) => (
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <Clock className="h-3 w-3 flex-shrink-0" />

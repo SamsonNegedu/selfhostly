@@ -17,6 +17,7 @@ type Config struct {
 	DatabasePath  string
 	AppsDir       string
 	Environment   string // development, staging, production
+	LogJSON       bool   // Whether to use JSON logging format (defaults based on environment if not set)
 	Cloudflare    CloudflareConfig
 	Auth          AuthConfig
 	AutoStart     bool
@@ -118,11 +119,25 @@ func Load() (*Config, error) {
 		authBaseURL = nodeAPIEndpoint
 	}
 
+	environment := getEnv("APP_ENV", "production")
+	
+	// Determine JSON logging preference
+	// If LOG_JSON is explicitly set, use it; otherwise default based on environment
+	logJSONEnv := getEnv("LOG_JSON", "")
+	var logJSON bool
+	if logJSONEnv != "" {
+		logJSON = logJSONEnv == "true"
+	} else {
+		// Default: JSON in production, text in development
+		logJSON = environment != "development"
+	}
+
 	cfg := &Config{
 		ServerAddress: getEnv("SERVER_ADDRESS", ":8080"),
 		DatabasePath:  getEnv("DATABASE_PATH", "./data/selfhostly.db"),
 		AppsDir:       getEnv("APPS_DIR", "./apps"),
-		Environment:   getEnv("APP_ENV", "production"),
+		Environment:   environment,
+		LogJSON:       logJSON,
 		Cloudflare: CloudflareConfig{
 			APIToken:  os.Getenv("CLOUDFLARE_API_TOKEN"),
 			AccountID: os.Getenv("CLOUDFLARE_ACCOUNT_ID"),

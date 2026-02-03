@@ -1,6 +1,7 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/Card'
 import { Badge } from '@/shared/components/ui/Badge'
+import { Button } from '@/shared/components/ui/Button'
 import {
     Activity,
     Clock,
@@ -13,10 +14,14 @@ import {
     XCircle,
     Play,
     Pause,
-    AlertTriangle
+    AlertTriangle,
+    RefreshCw,
+    Loader2
 } from 'lucide-react'
 import ActivityTimeline from './ActivityTimeline'
-import { useAppServices } from '@/shared/services/api'
+import { useAppServices, useRestartAppService } from '@/shared/services/api'
+import { useToast } from '@/shared/components/ui/Toast'
+import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog'
 import type { App } from '@/shared/types/api'
 
 interface AppOverviewProps {
@@ -31,6 +36,9 @@ interface ComposeInfo {
 function AppOverview({ app }: AppOverviewProps) {
     // Get services from backend endpoint for consistency with LogViewer
     const { data: services = [] } = useAppServices(app.id, app.node_id || '')
+    const restartService = useRestartAppService()
+    const { toast } = useToast()
+    const [serviceToRestart, setServiceToRestart] = useState<string | null>(null)
 
     // Parse compose content to extract networks and volumes (services come from backend)
     const composeInfo: ComposeInfo = useMemo(() => {
@@ -153,6 +161,27 @@ function AppOverview({ app }: AppOverviewProps) {
         return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     }
 
+    const handleRestartService = () => {
+        if (!serviceToRestart || !app.node_id) return
+
+        restartService.mutate(
+            {
+                appId: app.id,
+                nodeId: app.node_id,
+                serviceName: serviceToRestart,
+            },
+            {
+                onSuccess: () => {
+                    toast.success('Service restarted', `Service "${serviceToRestart}" has been restarted successfully`)
+                    setServiceToRestart(null)
+                },
+                onError: (error) => {
+                    toast.error('Failed to restart service', error instanceof Error ? error.message : 'Unknown error')
+                },
+            }
+        )
+    }
+
     return (
         <div className="space-y-6">
             {/* Quick Stats Grid */}
@@ -240,20 +269,40 @@ function AppOverview({ app }: AppOverviewProps) {
                         <CardContent>
                             {services.length > 0 ? (
                                 <div className="space-y-2">
-                                    {services.map((service) => (
-                                        <div
-                                            key={service}
-                                            className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
-                                        >
-                                            <div className="flex items-center gap-2">
-                                                <div className="w-2 h-2 rounded-full bg-primary" />
-                                                <span className="font-mono text-sm font-medium">{service}</span>
+                                    {services.map((service) => {
+                                        const isRestarting = restartService.isPending && serviceToRestart === service
+                                        return (
+                                            <div
+                                                key={service}
+                                                className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-2 h-2 rounded-full bg-primary" />
+                                                    <span className="font-mono text-sm font-medium">{service}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <Badge variant="outline" className="text-xs">
+                                                        active
+                                                    </Badge>
+                                                    {app.status === 'running' && (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="h-7 px-2"
+                                                            onClick={() => setServiceToRestart(service)}
+                                                            disabled={isRestarting}
+                                                        >
+                                                            {isRestarting ? (
+                                                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                            ) : (
+                                                                <RefreshCw className="h-3.5 w-3.5" />
+                                                            )}
+                                                        </Button>
+                                                    )}
+                                                </div>
                                             </div>
-                                            <Badge variant="outline" className="text-xs">
-                                                active
-                                            </Badge>
-                                        </div>
-                                    ))}
+                                        )
+                                    })}
                                 </div>
                             ) : (
                                 <p className="text-sm text-muted-foreground text-center py-4">
@@ -317,6 +366,19 @@ function AppOverview({ app }: AppOverviewProps) {
                     </CardContent>
                 </Card>
             </div>
+
+            {/* Restart Service Confirmation Dialog */}
+            <ConfirmationDialog
+                open={!!serviceToRestart}
+                onOpenChange={(open: boolean) => !open && setServiceToRestart(null)}
+                title="Restart Service"
+                description={`Are you sure you want to restart the service "${serviceToRestart}"? This will cause a brief service interruption.`}
+                confirmText="Restart"
+                cancelText="Cancel"
+                onConfirm={handleRestartService}
+                isLoading={restartService.isPending}
+                variant="default"
+            />
         </div>
     )
 }

@@ -131,12 +131,16 @@ function ContainersListView({ containers }: ContainersListViewProps) {
             key: 'status',
             label: 'Status',
             width: 'w-28',
-            render: (container) => getStatusBadge(container.state)
+            render: (container) => getStatusBadge(container.state),
+            sortable: true,
+            sortValue: (container) => container.state
         },
         {
             key: 'name',
             label: 'Container',
             width: 'flex-1 min-w-0',
+            sortable: true,
+            sortValue: (container) => container.name.toLowerCase(),
             render: (container) => {
                 const memPercent = container.memory_limit_bytes > 0
                     ? (container.memory_usage_bytes / container.memory_limit_bytes) * 100
@@ -175,6 +179,8 @@ function ContainersListView({ containers }: ContainersListViewProps) {
             key: 'app',
             label: 'App',
             width: 'w-48',
+            sortable: true,
+            sortValue: (container) => container.app_name.toLowerCase(),
             render: (container) => (
                 <div className="flex items-center gap-2">
                     <span className="font-medium text-sm truncate">{container.app_name}</span>
@@ -194,6 +200,8 @@ function ContainersListView({ containers }: ContainersListViewProps) {
             key: 'cpu',
             label: 'CPU',
             width: 'w-32',
+            sortable: true,
+            sortValue: (container) => container.state === 'running' ? container.cpu_percent : -1,
             render: (container) => {
                 if (container.state !== 'running') {
                     return <span className="text-muted-foreground text-sm">—</span>
@@ -218,7 +226,14 @@ function ContainersListView({ containers }: ContainersListViewProps) {
         {
             key: 'memory',
             label: 'Memory',
-            width: 'w-40',
+            width: 'w-48',
+            sortable: true,
+            sortValue: (container) => {
+                if (container.state !== 'running') return -1
+                return container.memory_limit_bytes > 0
+                    ? (container.memory_usage_bytes / container.memory_limit_bytes) * 100
+                    : container.memory_usage_bytes
+            },
             render: (container) => {
                 if (container.state !== 'running') {
                     return <span className="text-muted-foreground text-sm">—</span>
@@ -228,11 +243,11 @@ function ContainersListView({ containers }: ContainersListViewProps) {
                     : 0
                 const colorClass = memPercent > 80 ? 'bg-red-500' : memPercent > 50 ? 'bg-yellow-500' : 'bg-green-500'
                 return (
-                    <div className="space-y-1">
-                        <div className="flex items-baseline gap-1">
-                            <span className="text-sm font-medium">{formatBytes(container.memory_usage_bytes)}</span>
+                    <div className="space-y-1 min-w-0">
+                        <div className="flex items-baseline gap-1 flex-wrap">
+                            <span className="text-sm font-medium whitespace-nowrap">{formatBytes(container.memory_usage_bytes)}</span>
                             {container.memory_limit_bytes > 0 && (
-                                <span className="text-xs text-muted-foreground">
+                                <span className="text-xs text-muted-foreground whitespace-nowrap">
                                     / {formatBytes(container.memory_limit_bytes)}
                                 </span>
                             )}

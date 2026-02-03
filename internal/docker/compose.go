@@ -262,7 +262,7 @@ func InjectTunnelContainer(compose *ComposeFile, appName string, containerConfig
 	tunnelService := Service{
 		Image:         containerConfig.Image,
 		ContainerName: fmt.Sprintf("%s-tunnel", appName),
-		Restart:       "always",
+		Restart:       "unless-stopped",
 		Networks:      networks,
 		Environment:   containerConfig.Environment,
 		Command:       commandStr,

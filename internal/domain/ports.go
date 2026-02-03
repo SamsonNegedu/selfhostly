@@ -24,6 +24,7 @@ type AppService interface {
 	StopApp(ctx context.Context, appID string, nodeID string) (*db.App, error)
 	UpdateAppContainers(ctx context.Context, appID string, nodeID string) (*db.App, error)
 	RestartCloudflared(ctx context.Context, appID string, nodeID string) error
+	RestartAppService(ctx context.Context, appID string, nodeID string, serviceName string) error
 
 	// Async job-based operations (return job instead of waiting for completion)
 	UpdateAppContainersAsync(ctx context.Context, appID string) (*db.Job, error)

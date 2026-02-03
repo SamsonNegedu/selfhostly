@@ -1,13 +1,15 @@
-import React, { useState, useRef, useEffect, ReactNode } from 'react'
+import React, { useState, useRef, useEffect, ReactNode, useMemo } from 'react'
 import { Card } from './Card'
 import { Button } from './Button'
-import { MoreVertical, ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
+import { MoreVertical, ChevronDown, ChevronUp, Loader2, ArrowUp, ArrowDown } from 'lucide-react'
 
 export interface ColumnDef<T> {
     key: string
     label: string
     width?: string
     render: (item: T) => ReactNode
+    sortable?: boolean
+    sortValue?: (item: T) => string | number | Date
 }
 
 export interface RowAction<T> {
@@ -33,6 +35,8 @@ export interface DataTableProps<T> {
     onSelectionChange?: (selectedIds: Set<string>) => void
 }
 
+type SortDirection = 'asc' | 'desc' | null
+
 export function DataTable<T>({
     data,
     columns,
@@ -50,6 +54,8 @@ export function DataTable<T>({
     const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null)
     const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set())
     const [loadingDropdownIds, setLoadingDropdownIds] = useState<Set<string>>(new Set())
+    const [sortColumn, setSortColumn] = useState<string | null>(null)
+    const [sortDirection, setSortDirection] = useState<SortDirection>(null)
 
     const dropdownTriggerRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
 
@@ -203,6 +209,58 @@ export function DataTable<T>({
         return actions.filter(action => action.show === undefined || action.show(item))
     }
 
+    // Handle column header click for sorting
+    const handleSort = (columnKey: string) => {
+        const column = columns.find(col => col.key === columnKey)
+        if (!column?.sortable || !column?.sortValue) return
+
+        if (sortColumn === columnKey) {
+            // Toggle direction: asc -> desc -> null
+            if (sortDirection === 'asc') {
+                setSortDirection('desc')
+            } else if (sortDirection === 'desc') {
+                setSortDirection(null)
+                setSortColumn(null)
+            }
+        } else {
+            // New column, start with ascending
+            setSortColumn(columnKey)
+            setSortDirection('asc')
+        }
+    }
+
+    // Sort data based on current sort state
+    const sortedData = useMemo(() => {
+        if (!sortColumn || !sortDirection) {
+            return data
+        }
+
+        const column = columns.find(col => col.key === sortColumn)
+        if (!column?.sortValue) {
+            return data
+        }
+
+        const sorted = [...data].sort((a, b) => {
+            const aValue = column.sortValue!(a)
+            const bValue = column.sortValue!(b)
+
+            // Handle different types
+            if (aValue === null || aValue === undefined) return 1
+            if (bValue === null || bValue === undefined) return -1
+
+            let comparison = 0
+            if (aValue < bValue) {
+                comparison = -1
+            } else if (aValue > bValue) {
+                comparison = 1
+            }
+
+            return sortDirection === 'asc' ? comparison : -comparison
+        })
+
+        return sorted
+    }, [data, sortColumn, sortDirection, columns])
+
     if (isLoading) {
         return (
             <Card className="p-12 text-center">
@@ -240,14 +298,40 @@ export function DataTable<T>({
                                     />
                                 </th>
                             )}
-                            {columns.map((col) => (
-                                <th
-                                    key={col.key}
-                                    className={`px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider ${col.width || ''}`}
-                                >
-                                    {col.label}
-                                </th>
-                            ))}
+                            {columns.map((col) => {
+                                const isSortable = col.sortable && col.sortValue
+                                const isSorted = sortColumn === col.key
+                                const isAsc = sortDirection === 'asc'
+                                const isDesc = sortDirection === 'desc'
+
+                                return (
+                                    <th
+                                        key={col.key}
+                                        className={`px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider ${col.width || ''} ${
+                                            isSortable ? 'cursor-pointer hover:bg-muted/50 transition-colors select-none' : ''
+                                        }`}
+                                        onClick={() => isSortable && handleSort(col.key)}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <span>{col.label}</span>
+                                            {isSortable && (
+                                                <div className="flex flex-col">
+                                                    <ArrowUp
+                                                        className={`h-3 w-3 transition-opacity ${
+                                                            isSorted && isAsc ? 'opacity-100 text-primary' : 'opacity-30'
+                                                        }`}
+                                                    />
+                                                    <ArrowDown
+                                                        className={`h-3 w-3 -mt-1 transition-opacity ${
+                                                            isSorted && isDesc ? 'opacity-100 text-primary' : 'opacity-30'
+                                                        }`}
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+                                    </th>
+                                )
+                            })}
                             {(actions.length > 0 || expandableContent) && (
                                 <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider w-10">
                                     Actions
@@ -256,7 +340,7 @@ export function DataTable<T>({
                         </tr>
                     </thead>
                     <tbody className="divide-y">
-                        {data.map((item) => {
+                        {sortedData.map((item) => {
                             const rowKey = getRowKey(item)
                             const isExpanded = expandedRowId === rowKey
                             const isSelected = selectedRows.has(rowKey)
@@ -279,7 +363,7 @@ export function DataTable<T>({
                                             </td>
                                         )}
                                         {columns.map((col) => (
-                                            <td key={col.key} className="px-4 py-4">
+                                            <td key={col.key} className="px-4 py-4 min-w-0">
                                                 {col.render(item)}
                                             </td>
                                         ))}

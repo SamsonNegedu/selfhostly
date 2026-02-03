@@ -84,12 +84,16 @@ function AppListView({ filteredApps }: AppListViewProps) {
             key: 'status',
             label: 'Status',
             width: 'w-28',
-            render: (app) => getStatusBadge(app.status)
+            render: (app) => getStatusBadge(app.status),
+            sortable: true,
+            sortValue: (app) => app.status
         },
         {
             key: 'app',
             label: 'Application',
             width: 'flex-1 min-w-0',
+            sortable: true,
+            sortValue: (app) => app.name.toLowerCase(),
             render: (app) => (
                 <div className="flex flex-col min-w-0">
                     <div className="flex items-center gap-2">
@@ -118,6 +122,8 @@ function AppListView({ filteredApps }: AppListViewProps) {
             key: 'node',
             label: 'Node',
             width: 'w-28',
+            sortable: true,
+            sortValue: (app) => getNodeName(app.node_id).toLowerCase(),
             render: (app) => (
                 <div className="flex items-center gap-2">
                     <div className="w-2 h-2 bg-blue-500 rounded-full" />
@@ -131,6 +137,8 @@ function AppListView({ filteredApps }: AppListViewProps) {
             key: 'health',
             label: 'Health',
             width: 'w-28',
+            sortable: true,
+            sortValue: (app) => computeHealthScore(app).score,
             render: (app) => {
                 const health = computeHealthScore(app)
                 return (
@@ -169,6 +177,8 @@ function AppListView({ filteredApps }: AppListViewProps) {
             key: 'updated',
             label: 'Last Updated',
             width: 'w-36',
+            sortable: true,
+            sortValue: (app) => new Date(app.updated_at),
             render: (app) => (
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <Clock className="h-3 w-3 flex-shrink-0" />

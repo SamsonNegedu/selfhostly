@@ -304,6 +304,38 @@ func (s *Server) getAppServices(c *gin.Context) {
 	c.JSON(http.StatusOK, services)
 }
 
+// restartAppService restarts a specific service within an app
+func (s *Server) restartAppService(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid app ID"})
+		return
+	}
+
+	serviceName := c.Param("service")
+	if serviceName == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Service name is required"})
+		return
+	}
+
+	// Get node_id from middleware (already validated)
+	nodeID := getNodeIDFromContext(c)
+	if nodeID == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "node_id is required"})
+		return
+	}
+
+	if err := s.appService.RestartAppService(c.Request.Context(), id, nodeID, serviceName); err != nil {
+		s.handleServiceError(c, "restart app service", err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("Service %s restarted successfully", serviceName),
+		"service": serviceName,
+	})
+}
+
 // getAppStats returns real-time resource statistics for an app
 func (s *Server) getAppStats(c *gin.Context) {
 	id := c.Param("id")

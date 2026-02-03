@@ -174,8 +174,8 @@ func TestInjectTunnelContainer(t *testing.T) {
 		t.Errorf("Expected container name %s, got %s", expectedContainerName, tunnelService.ContainerName)
 	}
 
-	if tunnelService.Restart != "always" {
-		t.Errorf("Expected restart policy always, got %s", tunnelService.Restart)
+	if tunnelService.Restart != "unless-stopped" {
+		t.Errorf("Expected restart policy unless-stopped, got %s", tunnelService.Restart)
 	}
 
 	// Tunnel should be on both the app's network and core API network

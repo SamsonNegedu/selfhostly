@@ -18,6 +18,7 @@ import (
 	"github.com/selfhostly/internal/docker"
 	"github.com/selfhostly/internal/domain"
 	"github.com/selfhostly/internal/jobs"
+	"github.com/selfhostly/internal/logger"
 	"github.com/selfhostly/internal/node"
 	"github.com/selfhostly/internal/routing"
 	"github.com/selfhostly/internal/service"
@@ -71,24 +72,24 @@ func NewServer(cfg *config.Config, database *db.DB) *Server {
 	// Initialize docker manager
 	dockerManager := docker.NewManager(cfg.AppsDir)
 
-	// Initialize logger
-	logger := slog.Default()
+	// Initialize logger with configuration
+	appLogger := logger.InitLogger(cfg.Environment, cfg.LogJSON)
 
 	// Initialize services (Phase 2 integration)
-	tunnelService := service.NewTunnelService(database, dockerManager, cfg, logger)
-	appService := service.NewAppService(database, dockerManager, cfg, logger, tunnelService)
-	systemService := service.NewSystemService(database, dockerManager, cfg, logger)
+	tunnelService := service.NewTunnelService(database, dockerManager, cfg, appLogger)
+	appService := service.NewAppService(database, dockerManager, cfg, appLogger, tunnelService)
+	systemService := service.NewSystemService(database, dockerManager, cfg, appLogger)
 
 	// Initialize routing dependencies for compose service
 	composeNodeClient := node.NewClient()
-	composeRouter := routing.NewNodeRouter(database, composeNodeClient, cfg.Node.ID, logger)
-	composeService := service.NewComposeService(database, dockerManager, composeRouter, composeNodeClient, logger)
+	composeRouter := routing.NewNodeRouter(database, composeNodeClient, cfg.Node.ID, appLogger)
+	composeService := service.NewComposeService(database, dockerManager, composeRouter, composeNodeClient, appLogger)
 
-	nodeService := service.NewNodeService(database, cfg, logger)
+	nodeService := service.NewNodeService(database, cfg, appLogger)
 
 	// Initialize job processing system
-	jobProcessor := jobs.NewProcessor(database, dockerManager, appService, tunnelService, logger)
-	jobWorker := jobs.NewWorker(jobProcessor, database, constants.JobWorkerPollInterval, logger)
+	jobProcessor := jobs.NewProcessor(database, dockerManager, appService, tunnelService, appLogger)
+	jobWorker := jobs.NewWorker(jobProcessor, database, constants.JobWorkerPollInterval, appLogger)
 
 	// Create shutdown context
 	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())

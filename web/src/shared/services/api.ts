@@ -290,6 +290,22 @@ export function useUpdateAppContainers() {
   });
 }
 
+// Restart a specific service within an app
+export function useRestartAppService() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: ({ appId, nodeId, serviceName }: { appId: string; nodeId: string; serviceName: string }) => {
+      return apiClient.post<{ message: string; service: string }>(`/api/apps/${appId}/services/${serviceName}/restart?node_id=${nodeId}`);
+    },
+    onSuccess: (_, { appId }) => {
+      // Invalidate app stats and services to refresh the UI
+      queryClient.invalidateQueries({ queryKey: ['app-stats', appId] });
+      queryClient.invalidateQueries({ queryKey: ['app-services', appId] });
+    },
+  });
+}
+
 // Compose Versions API
 export function useComposeVersions(appId: string, nodeId: string) {
   return useQuery<ComposeVersion[]>({

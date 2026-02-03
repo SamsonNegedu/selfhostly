@@ -21,7 +21,7 @@ const avatarVariants = cva(
 
 export interface AvatarProps
   extends React.HTMLAttributes<HTMLDivElement>,
-    VariantProps<typeof avatarVariants> {
+  VariantProps<typeof avatarVariants> {
   src?: string
   name?: string
   fallback?: React.ReactNode
@@ -31,10 +31,10 @@ const Avatar = React.forwardRef<HTMLDivElement, AvatarProps>(
   ({ className, src, name, fallback, size, ...props }, ref) => {
     const [hasError, setHasError] = React.useState(false)
     const [isLoading, setIsLoading] = React.useState(!src)
-    
+
     // If src is not provided, always use fallback
     const shouldUseFallback = !src || hasError || isLoading
-    
+
     React.useEffect(() => {
       if (src) {
         const img = new Image()
@@ -51,13 +51,13 @@ const Avatar = React.forwardRef<HTMLDivElement, AvatarProps>(
         setIsLoading(false)
       }
     }, [src])
-    
+
     if (shouldUseFallback) {
       // If custom fallback is provided, don't apply the default avatar styles
-      const fallbackClassName = fallback 
+      const fallbackClassName = fallback
         ? cn(size === 'sm' ? "h-8 w-8" : size === 'md' ? "h-10 w-10" : size === 'lg' ? "h-12 w-12" : "h-16 w-16", className)
         : cn(avatarVariants({ size }), className)
-        
+
       return (
         <div
           ref={ref}
@@ -68,7 +68,7 @@ const Avatar = React.forwardRef<HTMLDivElement, AvatarProps>(
         </div>
       )
     }
-    
+
     return (
       <div ref={ref} className={cn("relative", className)} {...props}>
         <img

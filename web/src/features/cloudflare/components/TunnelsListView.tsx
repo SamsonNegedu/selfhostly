@@ -77,12 +77,16 @@ function TunnelsListView({ tunnels, apps: appsProp }: TunnelsListViewProps) {
             key: 'status',
             label: 'Status',
             width: 'w-28',
-            render: (tunnel) => getStatusBadge(tunnel)
+            render: (tunnel) => getStatusBadge(tunnel),
+            sortable: true,
+            sortValue: (tunnel) => tunnel.is_active ? 'active' : tunnel.status || 'inactive'
         },
         {
             key: 'name',
             label: 'Tunnel Name',
             width: 'flex-1 min-w-0',
+            sortable: true,
+            sortValue: (tunnel) => tunnel.tunnel_name.toLowerCase(),
             render: (tunnel) => (
                 <div>
                     <div className="font-medium">{tunnel.tunnel_name}</div>
@@ -99,6 +103,8 @@ function TunnelsListView({ tunnels, apps: appsProp }: TunnelsListViewProps) {
             key: 'public_url',
             label: 'Public URL',
             width: 'w-64',
+            sortable: true,
+            sortValue: (tunnel) => tunnel.public_url ? tunnel.public_url.toLowerCase() : '',
             render: (tunnel) => {
                 if (!tunnel.public_url) {
                     return <span className="text-muted-foreground text-sm">—</span>
@@ -153,6 +159,8 @@ function TunnelsListView({ tunnels, apps: appsProp }: TunnelsListViewProps) {
             key: 'created',
             label: 'Created',
             width: 'w-36',
+            sortable: true,
+            sortValue: (tunnel) => new Date(tunnel.created_at),
             render: (tunnel) => (
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <Clock className="h-3 w-3 flex-shrink-0" />
