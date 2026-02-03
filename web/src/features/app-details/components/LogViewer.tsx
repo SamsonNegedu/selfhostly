@@ -1,7 +1,7 @@
 import React from 'react'
-import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/card'
-import { Button } from '@/shared/components/ui/button'
-import { SimpleDropdown, SimpleDropdownItem } from '@/shared/components/ui/simple-dropdown'
+import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/Card'
+import { Button } from '@/shared/components/ui/Button'
+import { SimpleDropdown, SimpleDropdownItem } from '@/shared/components/ui/SimpleDropdown'
 import { Download, RefreshCw, ChevronDown } from 'lucide-react'
 import { useAppServices } from '@/shared/services/api'
 

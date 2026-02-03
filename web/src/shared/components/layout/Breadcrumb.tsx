@@ -8,7 +8,7 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from '@/shared/components/ui/breadcrumb'
+} from '@/shared/components/ui/Breadcrumb'
 
 interface BreadcrumbItem {
   label: string

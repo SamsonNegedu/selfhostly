@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Github, AlertCircle, Shield, X, Server } from 'lucide-react';
-import { Button } from '@/shared/components/ui/button';
+import { Button } from '@/shared/components/ui/Button';
 import { loginWithGitHub } from '@/shared/services/api';
 import { useSearchParams } from 'react-router-dom';
 

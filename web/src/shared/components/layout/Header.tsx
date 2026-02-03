@@ -1,13 +1,13 @@
 import { Link } from 'react-router-dom';
 import { Server, LogOut, Menu, Sun, Moon, Monitor } from 'lucide-react';
-import { Button } from '../ui/button';
+import { Button } from '../ui/Button';
 import SmartAvatar from '../ui/SmartAvatar';
 import { useAuth } from '../auth/AuthProvider';
 import { logout } from '@/shared/services/api';
 import {
     SimpleDropdown,
     SimpleDropdownItem,
-} from '../ui/simple-dropdown';
+} from '../ui/SimpleDropdown';
 import { useTheme } from '../theme/ThemeProvider';
 
 interface HeaderProps {

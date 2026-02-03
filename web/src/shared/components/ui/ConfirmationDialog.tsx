@@ -8,8 +8,8 @@ import {
     DialogFooter,
     DialogTitle,
     DialogDescription,
-} from './dialog'
-import { Button } from './button'
+} from './Dialog'
+import { Button } from './Button'
 
 interface ConfirmationDialogProps {
     open: boolean

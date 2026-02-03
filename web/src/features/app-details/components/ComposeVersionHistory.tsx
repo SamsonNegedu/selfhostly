@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/card'
-import { Button } from '@/shared/components/ui/button'
+import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/Card'
+import { Button } from '@/shared/components/ui/Button'
 import { History, RotateCcw, Eye, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { useComposeVersions, useRollbackToVersion } from '@/shared/services/api'
 import { useToast } from '@/shared/components/ui/Toast'

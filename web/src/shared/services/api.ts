@@ -546,7 +546,11 @@ export function useDeleteTunnel() {
     onSuccess: (_, variables) => {
       // Invalidate jobs query so AppActions picks up the new job and shows progress
       queryClient.invalidateQueries({ queryKey: ['jobs', 'app', variables.appId, variables.nodeId] });
-      // Note: Don't invalidate app/tunnel queries here - let the job completion handler do it
+      // Invalidate tunnels list to immediately update UI
+      queryClient.invalidateQueries({ queryKey: ['tunnels', 'app', variables.appId] });
+      queryClient.invalidateQueries({ queryKey: ['tunnels', 'list'] });
+      // Also invalidate app query to refresh app details
+      queryClient.invalidateQueries({ queryKey: ['app', variables.appId] });
     },
   });
 }

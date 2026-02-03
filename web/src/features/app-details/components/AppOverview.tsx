@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
-import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/card'
-import { Badge } from '@/shared/components/ui/badge'
+import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/Card'
+import { Badge } from '@/shared/components/ui/Badge'
 import {
     Activity,
     Clock,

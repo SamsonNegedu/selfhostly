@@ -1,9 +1,9 @@
-export { Button } from './button'
-export { TooltipProvider, TooltipTrigger, TooltipContent } from './tooltip'
-export { Card, CardHeader, CardTitle, CardContent } from './card'
-export { Checkbox } from './checkbox'
-export { Textarea } from './textarea'
-export { Avatar, AvatarFallback } from './avatar'
+export { Button } from './Button'
+export { TooltipProvider, TooltipTrigger, TooltipContent } from './Tooltip'
+export { Card, CardHeader, CardTitle, CardContent } from './Card'
+export { Checkbox } from './Checkbox'
+export { Textarea } from './Textarea'
+export { Avatar, AvatarFallback } from './Avatar'
 export {
   Dialog,
   DialogPortal,
@@ -15,11 +15,11 @@ export {
   DialogFooter,
   DialogTitle,
   DialogDescription,
-} from './dialog'
+} from './Dialog'
 export {
   SimpleDropdown,
   SimpleDropdownItem
-} from './simple-dropdown'
+} from './SimpleDropdown'
 export {
   Breadcrumb,
   BreadcrumbList,
@@ -28,5 +28,5 @@ export {
   BreadcrumbPage,
   BreadcrumbSeparator,
   BreadcrumbEllipsis,
-} from './breadcrumb'
+} from './Breadcrumb'
 export { Skeleton, CardSkeleton, DashboardSkeleton, AppDetailsSkeleton } from './Skeleton'

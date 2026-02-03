@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Card, CardContent } from '@/shared/components/ui/card';
+import { Card, CardContent } from '@/shared/components/ui/Card';
 import { Cpu, HardDrive, Server, Activity, ChevronDown, ChevronUp } from 'lucide-react';
 import type { SystemStats } from '@/shared/types/api';
 

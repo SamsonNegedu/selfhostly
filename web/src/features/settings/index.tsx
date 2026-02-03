@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useSettings, useUpdateSettings, useProviders, useProviderFeatures } from '@/shared/services/api'
-import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/card'
-import { Button } from '@/shared/components/ui/button'
+import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/Card'
+import { Button } from '@/shared/components/ui/Button'
 import { Checkbox } from '@/shared/components/ui'
-import { Badge } from '@/shared/components/ui/badge'
+import { Badge } from '@/shared/components/ui/Badge'
 import AppBreadcrumb from '@/shared/components/layout/Breadcrumb'
 import { CheckCircle2, AlertCircle, Network, Shield } from 'lucide-react'
 

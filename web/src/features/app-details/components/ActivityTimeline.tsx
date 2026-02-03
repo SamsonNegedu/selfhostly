@@ -22,7 +22,7 @@ interface Activity {
 const getJobIcon = (job: Job) => {
     if (job.status === 'running') return <Loader2 className="h-4 w-4 animate-spin" />
     if (job.status === 'failed') return <AlertTriangle className="h-4 w-4" />
-    
+
     switch (job.type) {
         case 'app_create': return <CheckCircle className="h-4 w-4" />
         case 'app_update': return <Upload className="h-4 w-4" />
@@ -46,9 +46,9 @@ const getJobDescription = (job: Job) => {
         'tunnel_create': 'Custom tunnel creation',
         'quick_tunnel': 'Quick Tunnel setup'
     }
-    
+
     const action = typeMap[job.type] || job.type
-    
+
     if (job.status === 'completed') return `${action} completed`
     if (job.status === 'failed') return `${action} failed`
     if (job.status === 'running') return `${action} in progress`

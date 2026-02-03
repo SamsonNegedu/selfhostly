@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNodes } from '../../services/api';
-import { Badge } from './badge';
-import { Button } from './button';
+import { Badge } from './Badge';
+import { Button } from './Button';
 import { ChevronDown, Check, Server, Filter } from 'lucide-react';
 
 interface NodeSelectorProps {

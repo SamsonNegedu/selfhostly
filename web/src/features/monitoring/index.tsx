@@ -3,10 +3,10 @@ import { useSystemStats } from '@/shared/services/api';
 import { useNodeContext } from '@/shared/contexts/NodeContext';
 import { AlertCircle, Search, X, WifiOff, ServerCrash } from 'lucide-react';
 import { DashboardSkeleton } from '@/shared/components/ui/Skeleton';
-import { Button } from '@/shared/components/ui/button';
-import { Card, CardContent } from '@/shared/components/ui/card';
+import { Button } from '@/shared/components/ui/Button';
+import { Card, CardContent } from '@/shared/components/ui/Card';
 import SystemOverview from './components/SystemOverview';
-import ContainersTable from './components/ContainersTable';
+import ContainersListView from './components/ContainersListView';
 import ResourceAlerts from './components/ResourceAlerts';
 import type { ContainerInfo, SystemStats } from '@/shared/types/api';
 
@@ -258,8 +258,8 @@ function Monitoring() {
             </div>
           )}
 
-          {/* Containers Table */}
-          <ContainersTable containers={filteredContainers} />
+          {/* Containers List */}
+          <ContainersListView containers={filteredContainers} />
         </div>
       )}
     </div>

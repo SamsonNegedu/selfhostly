@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { useAppStore } from '@/shared/stores/app-store'
-import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/card'
-import { Button } from '@/shared/components/ui/button'
+import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/Card'
+import { Button } from '@/shared/components/ui/Button'
 import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog'
 import { Play, Pause, RefreshCw, Trash2, ExternalLink, Clock, Search, Loader2, MoreVertical, TrendingUp } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useDeleteApp, useStartApp, useStopApp, useUpdateAppContainers } from '@/shared/services/api'
 import { useToast } from '@/shared/components/ui/Toast'
-import { SimpleDropdown, SimpleDropdownItem } from '@/shared/components/ui/simple-dropdown'
+import { SimpleDropdown, SimpleDropdownItem } from '@/shared/components/ui/SimpleDropdown'
 import type { App } from '@/shared/types/api'
 
 interface AppToDelete {

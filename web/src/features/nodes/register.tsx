@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useRegisterNode } from '../../shared/services/api';
-import { Button } from '../../shared/components/ui/button';
-import { Card } from '../../shared/components/ui/card';
-import { Input } from '../../shared/components/ui/input';
+import { Button } from '../../shared/components/ui/Button';
+import { Card } from '../../shared/components/ui/Card';
+import { Input } from '../../shared/components/ui/Input';
 import { ArrowLeft, HelpCircle } from 'lucide-react';
 import type { RegisterNodeRequest } from '../../shared/types/api';
 

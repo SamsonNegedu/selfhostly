@@ -86,7 +86,7 @@ func TestComposeLogsCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := ComposeLogsCommand(tt.tailLines)
+			cmd := ComposeLogsCommand(tt.tailLines, "")
 			if !reflect.DeepEqual(cmd, tt.want) {
 				t.Errorf("ComposeLogsCommand(%d) = %v, want %v", tt.tailLines, cmd, tt.want)
 			}

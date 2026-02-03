@@ -1,4 +1,4 @@
-import { Avatar, AvatarFallback } from './avatar'
+import { Avatar, AvatarFallback } from './Avatar'
 import { getInitials } from '@/shared/lib/avatar'
 import { User } from '@/shared/services/api'
 

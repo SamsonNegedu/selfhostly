@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { RotateCw, Square, Trash2 } from 'lucide-react';
-import { Button } from '@/shared/components/ui/button';
+import { Button } from '@/shared/components/ui/Button';
 import { useRestartContainer, useStopContainer, useDeleteContainer } from '@/shared/services/api';
 import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog';
 import { useToast } from '@/shared/components/ui/Toast';

@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
-import { Button } from '@/shared/components/ui/button'
-import { Input } from '@/shared/components/ui/input'
+import { Button } from '@/shared/components/ui/Button'
+import { Input } from '@/shared/components/ui/Input'
 import { Plus, Trash2, Globe, CheckCircle, AlertCircle } from 'lucide-react'
 import type { IngressRule } from '@/shared/types/api'
 

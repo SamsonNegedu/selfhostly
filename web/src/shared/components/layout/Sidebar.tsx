@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Cloud, Activity, Settings, ChevronLeft, ChevronRight, X, Network, Package } from 'lucide-react';
-import { Button } from '../ui/button';
+import { Button } from '../ui/Button';
 import { NodeSelector } from '../ui/NodeSelector';
 import { useNodeContext } from '../../contexts/NodeContext';
 

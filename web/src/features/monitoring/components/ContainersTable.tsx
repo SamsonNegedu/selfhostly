@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
-import { Card, CardContent } from '@/shared/components/ui/card';
-import { Badge } from '@/shared/components/ui/badge';
-import { Button } from '@/shared/components/ui/button';
+import { Card, CardContent } from '@/shared/components/ui/Card';
+import { Badge } from '@/shared/components/ui/Badge';
+import { Button } from '@/shared/components/ui/Button';
 import { Network, HardDrive, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import type { ContainerInfo } from '@/shared/types/api';
 import ContainerActions from './ContainerActions';

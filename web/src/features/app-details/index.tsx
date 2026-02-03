@@ -4,10 +4,10 @@ import { useApp, useStartApp, useStopApp, useUpdateAppContainers, useDeleteApp, 
 import { useAppStore } from '@/shared/stores/app-store'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '@/shared/components/ui/Toast'
-import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/card'
+import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/Card'
 import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog'
 import { Terminal, Settings, Cloud, Info, AlertTriangle } from 'lucide-react'
-import { Button } from '@/shared/components/ui/button'
+import { Button } from '@/shared/components/ui/Button'
 import LogViewer from './components/LogViewer'
 import ComposeEditor from './components/ComposeEditor'
 import CloudflareTab from './components/CloudflareTab'
@@ -50,19 +50,19 @@ function AppDetails() {
 
     // Track if nodeId was previously undefined (query was disabled)
     const prevNodeIdRef = React.useRef<string | undefined>(undefined)
-    
+
     // Refetch app data when nodeId becomes available for the first time
     // This ensures we get fresh data from the backend, not stale cached data
     useEffect(() => {
         const wasDisabled = prevNodeIdRef.current === undefined || prevNodeIdRef.current === ''
         const isNowEnabled = !!nodeId && nodeId !== ''
-        
+
         if (wasDisabled && isNowEnabled && appId) {
             // Query was just enabled - ensure we refetch to get deterministic backend state
             // This handles the case where app was created and we navigated here before nodeId was resolved
             refetch()
         }
-        
+
         prevNodeIdRef.current = nodeId
     }, [appId, nodeId, refetch])
 

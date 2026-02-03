@@ -1,16 +1,18 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useApps, useQueryClient } from '@/shared/services/api'
 import { useAppStore } from '@/shared/stores/app-store'
 import AppList from './components/AppList'
-import { AlertCircle, Search, Filter, X, TrendingUp, Server, Activity, AlertTriangle, Plus } from 'lucide-react'
+import AppListView from './components/AppListView'
+import { AlertCircle, Search, Filter, X, TrendingUp, Server, Activity, AlertTriangle, Plus, LayoutGrid, List } from 'lucide-react'
 import { DashboardSkeleton } from '@/shared/components/ui/Skeleton'
-import { Button } from '@/shared/components/ui/button'
+import { Button } from '@/shared/components/ui/Button'
 import { useNodeContext } from '@/shared/contexts/NodeContext'
 import type { App } from '@/shared/types/api'
 
 type SortOption = 'name' | 'date' | 'status'
 type FilterStatus = 'all' | 'running' | 'stopped' | 'updating' | 'error'
+type ViewMode = 'grid' | 'list'
 
 function Dashboard() {
     // Get global node context
@@ -25,6 +27,17 @@ function Dashboard() {
     const [statusFilter, setStatusFilter] = useState<FilterStatus>('all')
     const [sortBy, setSortBy] = useState<SortOption>('date')
     const [showFilters, setShowFilters] = useState(false)
+
+    // View mode state with localStorage persistence
+    const [viewMode, setViewMode] = useState<ViewMode>(() => {
+        const saved = localStorage.getItem('apps-view-mode')
+        return (saved === 'grid' || saved === 'list') ? saved : 'list' // Default to list view
+    })
+
+    // Save view mode preference
+    useEffect(() => {
+        localStorage.setItem('apps-view-mode', viewMode)
+    }, [viewMode])
 
     // Subscribe to query cache updates and sync with Zustand store
     React.useEffect(() => {
@@ -135,12 +148,35 @@ function Dashboard() {
                         Manage and monitor your self-hosted apps
                     </p>
                 </div>
-                <Link to="/apps/new" className="w-full sm:w-auto">
-                    <Button className="button-press w-full sm:w-auto">
-                        <Plus className="h-4 w-4 mr-2" />
-                        <span className="sm:inline">New App</span>
-                    </Button>
-                </Link>
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                    {/* View Toggle */}
+                    <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
+                        <Button
+                            variant={viewMode === 'list' ? 'default' : 'ghost'}
+                            size="sm"
+                            onClick={() => setViewMode('list')}
+                            className="h-8 px-3"
+                        >
+                            <List className="h-4 w-4" />
+                            <span className="hidden sm:inline ml-1.5">List</span>
+                        </Button>
+                        <Button
+                            variant={viewMode === 'grid' ? 'default' : 'ghost'}
+                            size="sm"
+                            onClick={() => setViewMode('grid')}
+                            className="h-8 px-3"
+                        >
+                            <LayoutGrid className="h-4 w-4" />
+                            <span className="hidden sm:inline ml-1.5">Grid</span>
+                        </Button>
+                    </div>
+                    <Link to="/apps/new" className="flex-1 sm:flex-none">
+                        <Button className="button-press w-full sm:w-auto">
+                            <Plus className="h-4 w-4 mr-2" />
+                            <span className="sm:inline">New App</span>
+                        </Button>
+                    </Link>
+                </div>
             </div>
 
             {/* Statistics Cards */}
@@ -279,7 +315,12 @@ function Dashboard() {
                 </div>
             ) : null}
 
-            <AppList filteredApps={filteredAndSortedApps} />
+            {/* Render appropriate view based on mode */}
+            {viewMode === 'list' ? (
+                <AppListView filteredApps={filteredAndSortedApps} />
+            ) : (
+                <AppList filteredApps={filteredAndSortedApps} />
+            )}
         </div>
     )
 }
