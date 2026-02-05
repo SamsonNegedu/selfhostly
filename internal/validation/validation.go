@@ -90,23 +90,29 @@ func ValidateComposeContent(content string) error {
 	// Check size limit (1MB)
 	maxSize := 1 << 20 // 1MB
 	if len(content) > maxSize {
-		return errors.New("compose file too large (maximum 1MB)")
+		return fmt.Errorf("compose file too large: %d bytes (maximum %d bytes)", len(content), maxSize)
 	}
 	
 	// Parse and validate the compose file structure
 	compose, err := docker.ParseCompose([]byte(content))
 	if err != nil {
+		// If it's already a ComposeParseError, return it as-is
+		var parseErr *docker.ComposeParseError
+		if errors.As(err, &parseErr) {
+			return err
+		}
+		// Otherwise wrap it
 		return fmt.Errorf("invalid compose file: %w", err)
 	}
 	
 	// Validate that services don't reference undefined networks
 	if err := validateServiceNetworks(compose); err != nil {
-		return err
+		return fmt.Errorf("network validation failed: %w", err)
 	}
 	
 	// Validate that services don't reference undefined volumes
 	if err := validateServiceVolumes(compose); err != nil {
-		return err
+		return fmt.Errorf("volume validation failed: %w", err)
 	}
 	
 	return nil
@@ -136,7 +142,7 @@ func validateServiceNetworks(compose *docker.ComposeFile) error {
 				continue
 			}
 			
-			return fmt.Errorf("service %q refers to undefined network %q: network must be defined in the networks section", serviceName, networkName)
+			return fmt.Errorf("service %q refers to undefined network %q: add the network definition under the 'networks:' section (e.g., networks: { %q: {} })", serviceName, networkName, networkName)
 		}
 	}
 	

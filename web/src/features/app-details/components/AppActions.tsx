@@ -162,17 +162,17 @@ export function AppActions({
     const isStopped = appStatus === 'stopped'
     const hasActiveJob = !!(currentJob && (currentJob.status === 'pending' || currentJob.status === 'running'))
 
-    // Show job progress if there's an active job
-    if (hasActiveJob && currentJob) {
-        return (
-            <div className="flex-1">
-                <JobProgress job={currentJob} compact />
-            </div>
-        )
-    }
-
     return (
-        <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap sm:flex-nowrap">
+        <div className="flex items-center gap-3 flex-1">
+            {/* Show job progress if there's an active job, but don't hide action buttons */}
+            {hasActiveJob && currentJob && (
+                <div className="flex-1 min-w-0">
+                    <JobProgress job={currentJob} compact />
+                </div>
+            )}
+            
+            {/* Action buttons - always visible, but disabled when job is active */}
+            <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap sm:flex-nowrap">
             {/* Refresh Button */}
             {onRefresh && (
                 <TooltipProvider>
@@ -204,7 +204,7 @@ export function AppActions({
                             variant="default"
                             size="sm"
                             onClick={onStart}
-                            disabled={isAnyActionPending}
+                            disabled={isAnyActionPending || hasActiveJob}
                             className="h-9 px-2 sm:px-3 bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-400 text-white gap-1 sm:gap-1.5 text-xs sm:text-sm"
                         >
                             {isStartPending ? (
@@ -229,7 +229,7 @@ export function AppActions({
                             variant="secondary"
                             size="sm"
                             onClick={onStop}
-                            disabled={isAnyActionPending}
+                            disabled={isAnyActionPending || hasActiveJob}
                             className="h-9 px-2 sm:px-3 gap-1 sm:gap-1.5 text-xs sm:text-sm"
                         >
                             {isStopPending ? (
@@ -253,7 +253,7 @@ export function AppActions({
                         variant="outline"
                         size="sm"
                         onClick={onUpdate}
-                        disabled={isAnyActionPending}
+                        disabled={isAnyActionPending || hasActiveJob}
                         className="h-9 px-2 sm:px-3 gap-1 sm:gap-1.5 text-xs sm:text-sm"
                     >
                         {isUpdatePending ? (
@@ -276,7 +276,7 @@ export function AppActions({
                         variant="ghost"
                         size="icon"
                         onClick={onDelete}
-                        disabled={isAnyActionPending}
+                        disabled={isAnyActionPending || hasActiveJob}
                         className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10"
                     >
                         {isDeletePending ? (
@@ -290,6 +290,7 @@ export function AppActions({
                     <p>Delete application</p>
                 </TooltipContent>
             </TooltipProvider>
+            </div>
         </div>
     )
 }

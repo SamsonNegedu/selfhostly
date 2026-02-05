@@ -1,7 +1,9 @@
 package docker
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/selfhostly/internal/constants"
@@ -106,6 +108,291 @@ services:
 	_, err := ParseCompose([]byte(invalidCompose))
 	if err == nil {
 		t.Error("Expected error when parsing invalid YAML")
+	}
+	
+	// Verify it's a ComposeParseError with helpful information
+	var parseErr *ComposeParseError
+	if !errors.As(err, &parseErr) {
+		t.Error("Expected ComposeParseError type")
+	} else {
+		if parseErr.Message == "" {
+			t.Error("Expected non-empty error message")
+		}
+		if parseErr.Suggestion == "" {
+			t.Error("Expected non-empty suggestion")
+		}
+	}
+}
+
+func TestParseComposeErrorMessages(t *testing.T) {
+	tests := []struct {
+		name          string
+		compose       string
+		expectLine    bool
+		expectSuggestion bool
+		errorContains string
+	}{
+		{
+			name: "invalid depends_on type",
+			compose: `
+services:
+  web:
+    image: nginx
+    depends_on: 123
+`,
+			expectLine: true,
+			expectSuggestion: true,
+			errorContains: "depends_on",
+		},
+		{
+			name: "no services",
+			compose: `
+version: "3.8"
+networks:
+  frontend: {}
+`,
+			expectLine: false,
+			expectSuggestion: true,
+			errorContains: "no services",
+		},
+		{
+			name: "invalid YAML syntax",
+			compose: `
+services:
+  web:
+    image: nginx
+    ports: [invalid
+`,
+			expectLine: true,
+			expectSuggestion: true,
+			errorContains: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseCompose([]byte(tt.compose))
+			if err == nil {
+				t.Error("Expected error but got none")
+				return
+			}
+
+			var parseErr *ComposeParseError
+			if !errors.As(err, &parseErr) {
+				t.Errorf("Expected ComposeParseError, got %T: %v", err, err)
+				return
+			}
+
+			if tt.expectLine && parseErr.Line == 0 {
+				t.Error("Expected line number but got 0")
+			}
+
+			if tt.expectSuggestion && parseErr.Suggestion == "" {
+				t.Error("Expected suggestion but got empty string")
+			}
+
+			if tt.errorContains != "" && !strings.Contains(parseErr.Message, tt.errorContains) {
+				t.Errorf("Expected error message to contain %q, got %q", tt.errorContains, parseErr.Message)
+			}
+
+			// Verify error message is helpful
+			errStr := parseErr.Error()
+			if errStr == "" {
+				t.Error("Error string should not be empty")
+			}
+		})
+	}
+}
+
+func TestParseComposeDependsOnWithConditions(t *testing.T) {
+	// Test depends_on with conditions (Docker Compose v3.9+ syntax)
+	composeWithConditions := `
+services:
+  kanba:
+    image: nginx:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+  postgres:
+    image: postgres:15-alpine
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+`
+
+	compose, err := ParseCompose([]byte(composeWithConditions))
+	if err != nil {
+		t.Fatalf("Failed to parse compose with depends_on conditions: %v", err)
+	}
+
+	kanbaService, exists := compose.Services["kanba"]
+	if !exists {
+		t.Fatal("Expected kanba service to exist")
+	}
+
+	// Check that depends_on was parsed correctly
+	if len(kanbaService.DependsOn.WithConditions) == 0 {
+		t.Error("Expected depends_on to be parsed with conditions")
+	}
+
+	postgresDep, exists := kanbaService.DependsOn.WithConditions["postgres"]
+	if !exists {
+		t.Error("Expected postgres dependency to exist")
+	}
+
+	if postgresDep.Condition != "service_healthy" {
+		t.Errorf("Expected condition 'service_healthy', got '%s'", postgresDep.Condition)
+	}
+}
+
+func TestParseComposeDependsOnSimpleList(t *testing.T) {
+	// Test depends_on as simple list (older syntax)
+	composeWithList := `
+services:
+  web:
+    image: nginx:latest
+    depends_on:
+      - db
+      - redis
+  db:
+    image: postgres:latest
+  redis:
+    image: redis:latest
+`
+
+	compose, err := ParseCompose([]byte(composeWithList))
+	if err != nil {
+		t.Fatalf("Failed to parse compose with depends_on list: %v", err)
+	}
+
+	webService, exists := compose.Services["web"]
+	if !exists {
+		t.Fatal("Expected web service to exist")
+	}
+
+	// Check that depends_on was parsed as a list
+	if len(webService.DependsOn.Services) == 0 {
+		t.Error("Expected depends_on to be parsed as a list")
+	}
+
+	expectedDeps := []string{"db", "redis"}
+	if len(webService.DependsOn.Services) != len(expectedDeps) {
+		t.Errorf("Expected %d dependencies, got %d", len(expectedDeps), len(webService.DependsOn.Services))
+	}
+
+	for _, expectedDep := range expectedDeps {
+		found := false
+		for _, dep := range webService.DependsOn.Services {
+			if dep == expectedDep {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Expected dependency '%s' not found", expectedDep)
+		}
+	}
+}
+
+func TestParseComposeBuildArgsListFormat(t *testing.T) {
+	// Test build args as list format (KEY=value)
+	composeWithListArgs := `
+services:
+  app:
+    build:
+      context: .
+      args:
+        - NEXT_PUBLIC_SUPABASE_URL=https://dummy.supabase.co
+        - NEXT_PUBLIC_SUPABASE_ANON_KEY=dummy_key
+        - DATABASE_URL=postgresql://user:pass@postgres:5432/db
+    image: myapp:latest
+`
+
+	compose, err := ParseCompose([]byte(composeWithListArgs))
+	if err != nil {
+		t.Fatalf("Failed to parse compose with build args list: %v", err)
+	}
+
+	appService, exists := compose.Services["app"]
+	if !exists {
+		t.Fatal("Expected app service to exist")
+	}
+
+	// Check that args were parsed correctly
+	if len(appService.Build.Args.Args) == 0 {
+		t.Error("Expected build args to be parsed")
+	}
+
+	expectedArgs := map[string]string{
+		"NEXT_PUBLIC_SUPABASE_URL":    "https://dummy.supabase.co",
+		"NEXT_PUBLIC_SUPABASE_ANON_KEY": "dummy_key",
+		"DATABASE_URL":                "postgresql://user:pass@postgres:5432/db",
+	}
+
+	if len(appService.Build.Args.Args) != len(expectedArgs) {
+		t.Errorf("Expected %d args, got %d", len(expectedArgs), len(appService.Build.Args.Args))
+	}
+
+	for key, expectedValue := range expectedArgs {
+		actualValue, exists := appService.Build.Args.Args[key]
+		if !exists {
+			t.Errorf("Expected arg '%s' not found", key)
+			continue
+		}
+		if actualValue != expectedValue {
+			t.Errorf("Expected arg '%s' to be '%s', got '%s'", key, expectedValue, actualValue)
+		}
+	}
+}
+
+func TestParseComposeBuildArgsMapFormat(t *testing.T) {
+	// Test build args as map format (KEY: value)
+	composeWithMapArgs := `
+services:
+  app:
+    build:
+      context: .
+      args:
+        BUILD_VERSION: ${APP_VERSION:-latest}
+        NODE_ENV: production
+    image: myapp:latest
+`
+
+	compose, err := ParseCompose([]byte(composeWithMapArgs))
+	if err != nil {
+		t.Fatalf("Failed to parse compose with build args map: %v", err)
+	}
+
+	appService, exists := compose.Services["app"]
+	if !exists {
+		t.Fatal("Expected app service to exist")
+	}
+
+	// Check that args were parsed correctly
+	if len(appService.Build.Args.Args) == 0 {
+		t.Error("Expected build args to be parsed")
+	}
+
+	expectedArgs := map[string]string{
+		"BUILD_VERSION": "${APP_VERSION:-latest}",
+		"NODE_ENV":      "production",
+	}
+
+	if len(appService.Build.Args.Args) != len(expectedArgs) {
+		t.Errorf("Expected %d args, got %d", len(expectedArgs), len(appService.Build.Args.Args))
+	}
+
+	for key, expectedValue := range expectedArgs {
+		actualValue, exists := appService.Build.Args.Args[key]
+		if !exists {
+			t.Errorf("Expected arg '%s' not found", key)
+			continue
+		}
+		if actualValue != expectedValue {
+			t.Errorf("Expected arg '%s' to be '%s', got '%s'", key, expectedValue, actualValue)
+		}
 	}
 }
 

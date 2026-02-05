@@ -59,15 +59,6 @@ func (p *Processor) ProcessJob(ctx context.Context, job *db.Job) error {
 		return p.db.UpdateJobCompleted(job.ID, constants.JobStatusFailed, nil, &errorMsg)
 	}
 
-	// Check if job is cancelled before processing
-	cancelled, err := p.db.IsJobCancelled(job.ID)
-	if err != nil {
-		p.logger.Warn("failed to check cancellation status", "job_id", job.ID, "error", err)
-	} else if cancelled {
-		p.logger.InfoContext(ctx, "job was cancelled", "job_id", job.ID)
-		return p.db.UpdateJobCompleted(job.ID, constants.JobStatusFailed, nil, stringPtr("Job was cancelled"))
-	}
-
 	// Process the job
 	err = handler.Handle(ctx, job, progress)
 
