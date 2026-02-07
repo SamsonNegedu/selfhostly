@@ -154,7 +154,7 @@ func TestValidateComposeContent(t *testing.T) {
 			"invalid yaml syntax",
 			"services:\n  web:\n    image: nginx\n    ports:\n      - \"80:80\n      - \"443:443\"",
 			true,
-			"invalid compose file",
+			"YAML syntax error",
 		},
 	}
 	

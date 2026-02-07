@@ -1,12 +1,15 @@
 package docker
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
 
+	"github.com/compose-spec/compose-go/v2/loader"
+	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/selfhostly/internal/constants"
 	"github.com/selfhostly/internal/tunnel"
 	"gopkg.in/yaml.v3"
@@ -46,48 +49,6 @@ type ComposeFile struct {
 	Volumes  map[string]Volume  `yaml:"volumes,omitempty"`
 }
 
-// BuildArgsConfig represents build arguments configuration
-// Supports both formats:
-//   - Map format: {KEY1: value1, KEY2: value2}
-//   - List format: [KEY1=value1, KEY2=value2]
-type BuildArgsConfig struct {
-	Args map[string]string
-}
-
-// UnmarshalYAML implements custom unmarshaling for BuildArgsConfig
-// to support both list and map formats
-func (b *BuildArgsConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	b.Args = make(map[string]string)
-
-	// Try to unmarshal as a list first (KEY=value format)
-	var list []string
-	if err := unmarshal(&list); err == nil {
-		for _, item := range list {
-			parts := strings.SplitN(item, "=", 2)
-			if len(parts) == 2 {
-				b.Args[parts[0]] = parts[1]
-			} else if len(parts) == 1 {
-				// Handle case where value is omitted (just KEY)
-				b.Args[parts[0]] = ""
-			}
-		}
-		return nil
-	}
-
-	// If that fails, try to unmarshal as a map
-	var m map[string]string
-	if err := unmarshal(&m); err != nil {
-		return err
-	}
-	b.Args = m
-	return nil
-}
-
-// MarshalYAML implements custom marshaling for BuildArgsConfig
-func (b BuildArgsConfig) MarshalYAML() (interface{}, error) {
-	return b.Args, nil
-}
-
 // DependsOnConfig represents a dependency configuration for a service
 // Supports both formats:
 //   - Simple list: ["service1", "service2"]
@@ -102,50 +63,6 @@ type DependsOnConfig struct {
 // DependsOnCondition represents a dependency condition
 type DependsOnCondition struct {
 	Condition string `yaml:"condition,omitempty"`
-}
-
-// UnmarshalYAML implements custom unmarshaling for DependsOnConfig
-// to support both list and map formats
-func (d *DependsOnConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	// Try to unmarshal as a list first
-	var list []string
-	if err := unmarshal(&list); err == nil {
-		d.Services = list
-		d.WithConditions = nil
-		return nil
-	}
-
-	// If that fails, try to unmarshal as a map
-	var m map[string]interface{}
-	if err := unmarshal(&m); err != nil {
-		return err
-	}
-
-	d.WithConditions = make(map[string]DependsOnCondition)
-	for k, v := range m {
-		if condMap, ok := v.(map[interface{}]interface{}); ok {
-			// Handle map[interface{}]interface{} from YAML parser
-			cond := DependsOnCondition{}
-			if condition, ok := condMap["condition"].(string); ok {
-				cond.Condition = condition
-			}
-			d.WithConditions[k] = cond
-		} else if condMap, ok := v.(map[string]interface{}); ok {
-			// Handle map[string]interface{} (already converted)
-			cond := DependsOnCondition{}
-			if condition, ok := condMap["condition"].(string); ok {
-				cond.Condition = condition
-			}
-			d.WithConditions[k] = cond
-		} else {
-			// Fallback: treat as simple string dependency
-			if d.Services == nil {
-				d.Services = []string{}
-			}
-			d.Services = append(d.Services, k)
-		}
-	}
-	return nil
 }
 
 // MarshalYAML implements custom marshaling for DependsOnConfig
@@ -200,15 +117,15 @@ type Volume struct{}
 
 // BuildConfig represents a docker-compose build configuration
 type BuildConfig struct {
-	Context    string           `yaml:"context,omitempty"`
-	Dockerfile string           `yaml:"dockerfile,omitempty"`
-	Args       BuildArgsConfig  `yaml:"args,omitempty"`
-	Target     string           `yaml:"target,omitempty"`
-	Network    string           `yaml:"network,omitempty"`
+	Context    string            `yaml:"context,omitempty"`
+	Dockerfile string            `yaml:"dockerfile,omitempty"`
+	Args       map[string]string `yaml:"args,omitempty"`
+	Target     string            `yaml:"target,omitempty"`
+	Network    string            `yaml:"network,omitempty"`
 	Labels     map[string]string `yaml:"labels,omitempty"`
-	CacheFrom  string           `yaml:"cache_from,omitempty"`
-	NoCache    bool             `yaml:"no_cache,omitempty"`
-	Pull       bool             `yaml:"pull,omitempty"`
+	CacheFrom  string            `yaml:"cache_from,omitempty"`
+	NoCache    bool              `yaml:"no_cache,omitempty"`
+	Pull       bool              `yaml:"pull,omitempty"`
 	SSH        map[string]string `yaml:"ssh,omitempty"`
 }
 
@@ -285,78 +202,33 @@ type Placement struct {
 	MaxReplicasPerNode *int     `yaml:"maxreplicaspernode,omitempty"`
 }
 
-// extractLineNumberFromError attempts to extract line number from YAML error message
-// YAML errors typically include "line X:" in their messages
-func extractLineNumberFromError(err error) (line, column int) {
-	errStr := err.Error()
-	
-	// Try to match "line X:" pattern
-	lineMatch := regexp.MustCompile(`line (\d+):`)
-	matches := lineMatch.FindStringSubmatch(errStr)
-	if len(matches) >= 2 {
-		if lineNum, parseErr := strconv.Atoi(matches[1]); parseErr == nil {
-			line = lineNum
-		}
-	}
-	
-	// Try to match "column X:" pattern
-	colMatch := regexp.MustCompile(`column (\d+):`)
-	colMatches := colMatch.FindStringSubmatch(errStr)
-	if len(colMatches) >= 2 {
-		if colNum, parseErr := strconv.Atoi(colMatches[1]); parseErr == nil {
-			column = colNum
-		}
-	}
-	
-	return line, column
-}
-
-// enhanceYAMLError creates a more descriptive error from YAML parsing errors
-func enhanceYAMLError(err error, content []byte) *ComposeParseError {
+// enhanceComposeGoError wraps a compose-go error with our custom ComposeParseError
+func enhanceComposeGoError(err error, content []byte) *ComposeParseError {
 	line, column := extractLineNumberFromError(err)
 	errStr := err.Error()
-	
-	// Create enhanced error message
+
 	parseErr := &ComposeParseError{
 		Line:        line,
 		Column:      column,
 		OriginalErr: err,
 	}
-	
-	// Provide specific error messages based on common YAML errors
+
+	// Provide specific error messages based on common errors
 	switch {
-	case strings.Contains(errStr, "cannot unmarshal"):
-		// Type mismatch errors
-		if strings.Contains(errStr, "depends_on") {
-			parseErr.Message = "invalid 'depends_on' format"
-			parseErr.Suggestion = "Use either a list format (depends_on: [service1, service2]) or map format with conditions (depends_on: {service1: {condition: service_healthy}})"
-		} else if strings.Contains(errStr, "ports") {
-			parseErr.Message = "invalid 'ports' format"
-			parseErr.Suggestion = "Ports should be a list of strings in format 'HOST:CONTAINER' (e.g., ['8080:80'])"
-		} else if strings.Contains(errStr, "volumes") {
-			parseErr.Message = "invalid 'volumes' format"
-			parseErr.Suggestion = "Volumes should be a list of strings in format 'HOST:CONTAINER' or 'VOLUME_NAME:/path'"
-		} else if strings.Contains(errStr, "environment") {
-			parseErr.Message = "invalid 'environment' format"
-			parseErr.Suggestion = "Environment variables should be a map of key-value pairs (e.g., KEY: value) or a list of KEY=VALUE strings"
-		} else {
-			parseErr.Message = "type mismatch in YAML structure"
-			parseErr.Suggestion = "Check that all field types match their expected format. Review Docker Compose file specification for correct syntax."
-		}
-	case strings.Contains(errStr, "yaml: unmarshal errors"):
-		parseErr.Message = "multiple YAML parsing errors detected"
-		parseErr.Suggestion = "Check the error details above for specific field issues. Ensure all YAML syntax is correct (proper indentation, quotes, etc.)"
-	case strings.Contains(errStr, "yaml: line"):
+	case strings.Contains(errStr, "yaml:") || strings.Contains(errStr, "cannot unmarshal"):
 		parseErr.Message = "YAML syntax error"
 		parseErr.Suggestion = "Check for missing colons, incorrect indentation, or unclosed quotes/brackets"
-	case strings.Contains(errStr, "did not find expected"):
-		parseErr.Message = "YAML structure error"
-		parseErr.Suggestion = "Check for missing colons after keys, incorrect indentation, or unclosed brackets/braces"
+	case strings.Contains(errStr, "services"):
+		parseErr.Message = "invalid services configuration"
+		parseErr.Suggestion = "Check that all services are properly defined under the 'services:' section"
+	case strings.Contains(errStr, "Additional property") || strings.Contains(errStr, "additional properties"):
+		parseErr.Message = "unknown property in compose file"
+		parseErr.Suggestion = "Check for typos in property names. Refer to the Docker Compose specification for valid properties."
 	default:
-		parseErr.Message = "failed to parse YAML structure"
-		parseErr.Suggestion = "Verify your YAML syntax is correct. Common issues include incorrect indentation, missing colons, or unclosed quotes."
+		parseErr.Message = errStr
+		parseErr.Suggestion = "Verify your Docker Compose file syntax. Check indentation, quotes, and structure."
 	}
-	
+
 	// Add line context if we have a line number
 	if line > 0 && len(content) > 0 {
 		lines := strings.Split(string(content), "\n")
@@ -367,33 +239,342 @@ func enhanceYAMLError(err error, content []byte) *ComposeParseError {
 			}
 		}
 	}
-	
+
 	return parseErr
 }
 
-// ParseCompose parses and validates docker-compose YAML content
-func ParseCompose(content []byte) (*ComposeFile, error) {
-	var compose ComposeFile
-	
-	// First, try to decode into a generic structure to catch YAML syntax errors early
-	var raw map[string]interface{}
-	if err := yaml.Unmarshal(content, &raw); err != nil {
-		return nil, enhanceYAMLError(err, content)
-	}
-	
-	// Now unmarshal into the typed structure
-	if err := yaml.Unmarshal(content, &compose); err != nil {
-		return nil, enhanceYAMLError(err, content)
+// extractLineNumberFromError attempts to extract line number from YAML error message
+func extractLineNumberFromError(err error) (line, column int) {
+	errStr := err.Error()
+
+	// Try to match "line X:" pattern
+	lineMatch := regexp.MustCompile(`line (\d+):`)
+	matches := lineMatch.FindStringSubmatch(errStr)
+	if len(matches) >= 2 {
+		if lineNum, parseErr := strconv.Atoi(matches[1]); parseErr == nil {
+			line = lineNum
+		}
 	}
 
-	if len(compose.Services) == 0 {
+	// Try to match "column X:" pattern
+	colMatch := regexp.MustCompile(`column (\d+):`)
+	colMatches := colMatch.FindStringSubmatch(errStr)
+	if len(colMatches) >= 2 {
+		if colNum, parseErr := strconv.Atoi(colMatches[1]); parseErr == nil {
+			column = colNum
+		}
+	}
+
+	return line, column
+}
+
+// ParseCompose parses and validates docker-compose YAML content using the official compose-go library.
+// This handles all Docker Compose formats (list vs map for environment, depends_on, build.args, etc.)
+func ParseCompose(content []byte) (*ComposeFile, error) {
+	// First, quick YAML syntax check to give better errors
+	var raw map[string]interface{}
+	if err := yaml.Unmarshal(content, &raw); err != nil {
+		return nil, enhanceComposeGoError(err, content)
+	}
+
+	// Use compose-go to parse the content
+	config := composetypes.ConfigDetails{
+		ConfigFiles: []composetypes.ConfigFile{
+			{Content: content},
+		},
+		// Empty environment map - we don't interpolate variables at parse time
+		// Docker resolves ${VAR} at container runtime
+		Environment: composetypes.Mapping{},
+	}
+
+	// Load with skip interpolation (keep ${VAR} as-is) and skip validation
+	// (we do our own validation downstream). We keep normalization enabled
+	// so compose-go creates implicit default networks, resolves short syntax, etc.
+	opts := func(o *loader.Options) {
+		o.SkipInterpolation = true
+		o.SkipValidation = true
+	}
+
+	project, err := loader.LoadWithContext(context.Background(), config, opts)
+	if err != nil {
+		return nil, enhanceComposeGoError(err, content)
+	}
+
+	if project == nil || len(project.Services) == 0 {
 		return nil, &ComposeParseError{
 			Message:    "no services defined in compose file",
 			Suggestion: "Add at least one service under the 'services:' section",
 		}
 	}
 
-	return &compose, nil
+	// Convert compose-go types to our internal types
+	return convertProject(project), nil
+}
+
+// convertProject converts a compose-go Project to our ComposeFile type
+func convertProject(project *composetypes.Project) *ComposeFile {
+	compose := &ComposeFile{
+		Services: make(map[string]Service),
+		Networks: make(map[string]Network),
+		Volumes:  make(map[string]Volume),
+	}
+
+	// Convert services
+	for name, svc := range project.Services {
+		compose.Services[name] = convertService(svc)
+	}
+
+	// Convert networks
+	for name, net := range project.Networks {
+		compose.Networks[name] = convertNetwork(net)
+	}
+
+	// Convert volumes
+	for name := range project.Volumes {
+		compose.Volumes[name] = Volume{}
+	}
+
+	return compose
+}
+
+// convertService converts a compose-go ServiceConfig to our Service type
+func convertService(svc composetypes.ServiceConfig) Service {
+	service := Service{
+		Image:         svc.Image,
+		ContainerName: svc.ContainerName,
+		Restart:       svc.Restart,
+		User:          svc.User,
+		Hostname:      svc.Hostname,
+		Domainname:    svc.DomainName,
+		WorkingDir:    svc.WorkingDir,
+		StopSignal:    svc.StopSignal,
+		Privileged:    svc.Privileged,
+		ReadonlyRootfs: svc.ReadOnly,
+		Init:          derefBool(svc.Init),
+	}
+
+	// Command ([]string → joined string)
+	if len(svc.Command) > 0 {
+		service.Command = strings.Join(svc.Command, " ")
+	}
+
+	// Environment (MappingWithEquals → map[string]string)
+	if len(svc.Environment) > 0 {
+		service.Environment = make(map[string]string)
+		for key, val := range svc.Environment {
+			if val != nil {
+				service.Environment[key] = *val
+			} else {
+				service.Environment[key] = ""
+			}
+		}
+	}
+
+	// Env files
+	for _, ef := range svc.EnvFiles {
+		service.EnvironmentFiles = append(service.EnvironmentFiles, ef.Path)
+	}
+
+	// Ports ([]ServicePortConfig → []string "host:container")
+	for _, p := range svc.Ports {
+		service.Ports = append(service.Ports, convertPort(p))
+	}
+
+	// Volumes ([]ServiceVolumeConfig → []string "source:target")
+	for _, v := range svc.Volumes {
+		service.Volumes = append(service.Volumes, convertVolume(v))
+	}
+
+	// Networks (map[string]*ServiceNetworkConfig → []string)
+	for networkName := range svc.Networks {
+		service.Networks = append(service.Networks, networkName)
+	}
+
+	// DependsOn (compose-go DependsOnConfig → our DependsOnConfig)
+	if len(svc.DependsOn) > 0 {
+		service.DependsOn = convertDependsOn(svc.DependsOn)
+	}
+
+	// Build
+	if svc.Build != nil {
+		service.Build = convertBuild(*svc.Build)
+	}
+
+	// Healthcheck
+	if svc.HealthCheck != nil {
+		service.Healthcheck = convertHealthcheck(*svc.HealthCheck)
+	}
+
+	// Labels
+	if len(svc.Labels) > 0 {
+		service.Labels = make(map[string]string)
+		for k, v := range svc.Labels {
+			service.Labels[k] = v
+		}
+	}
+
+	// Logging
+	if svc.Logging != nil {
+		service.Logging = LoggingConfig{
+			Driver:  svc.Logging.Driver,
+			Options: svc.Logging.Options,
+		}
+	}
+
+	// ExtraHosts
+	if len(svc.ExtraHosts) > 0 {
+		for host, ips := range svc.ExtraHosts {
+			for _, ip := range ips {
+				service.ExtraHosts = append(service.ExtraHosts, host+":"+ip)
+			}
+		}
+	}
+
+	// Tmpfs
+	service.Tmpfs = svc.Tmpfs
+
+	// Devices
+	for _, d := range svc.Devices {
+		devStr := d.Source + ":" + d.Target
+		if d.Permissions != "" {
+			devStr += ":" + d.Permissions
+		}
+		service.Devices = append(service.Devices, devStr)
+	}
+
+	return service
+}
+
+// convertPort converts a compose-go ServicePortConfig to "host:container" string
+func convertPort(p composetypes.ServicePortConfig) string {
+	hostPort := p.Published
+	containerPort := fmt.Sprintf("%d", p.Target)
+	protocol := p.Protocol
+
+	if hostPort == "" {
+		hostPort = containerPort
+	}
+
+	result := fmt.Sprintf("%s:%s", hostPort, containerPort)
+	if protocol != "" && protocol != "tcp" {
+		result += "/" + protocol
+	}
+	return result
+}
+
+// convertVolume converts a compose-go ServiceVolumeConfig to "source:target" string
+func convertVolume(v composetypes.ServiceVolumeConfig) string {
+	if v.Source == "" {
+		return v.Target
+	}
+	result := v.Source + ":" + v.Target
+	if v.ReadOnly {
+		result += ":ro"
+	}
+	return result
+}
+
+// convertDependsOn converts compose-go DependsOnConfig to our DependsOnConfig
+func convertDependsOn(deps composetypes.DependsOnConfig) DependsOnConfig {
+	result := DependsOnConfig{}
+
+	hasConditions := false
+	for _, dep := range deps {
+		if dep.Condition != "" && dep.Condition != "service_started" {
+			hasConditions = true
+			break
+		}
+	}
+
+	if hasConditions {
+		result.WithConditions = make(map[string]DependsOnCondition)
+		for name, dep := range deps {
+			result.WithConditions[name] = DependsOnCondition{
+				Condition: dep.Condition,
+			}
+		}
+	} else {
+		for name := range deps {
+			result.Services = append(result.Services, name)
+		}
+	}
+
+	return result
+}
+
+// convertBuild converts a compose-go BuildConfig to our BuildConfig
+func convertBuild(b composetypes.BuildConfig) BuildConfig {
+	build := BuildConfig{
+		Context:    b.Context,
+		Dockerfile: b.Dockerfile,
+		Target:     b.Target,
+		Network:    b.Network,
+	}
+
+	// Build args (MappingWithEquals → map[string]string)
+	if len(b.Args) > 0 {
+		build.Args = make(map[string]string)
+		for key, val := range b.Args {
+			if val != nil {
+				build.Args[key] = *val
+			} else {
+				build.Args[key] = ""
+			}
+		}
+	}
+
+	// Labels
+	if len(b.Labels) > 0 {
+		build.Labels = make(map[string]string)
+		for k, v := range b.Labels {
+			build.Labels[k] = v
+		}
+	}
+
+	return build
+}
+
+// convertHealthcheck converts a compose-go HealthCheckConfig to our HealthcheckConfig
+func convertHealthcheck(hc composetypes.HealthCheckConfig) HealthcheckConfig {
+	result := HealthcheckConfig{
+		Disable: hc.Disable,
+	}
+
+	if len(hc.Test) > 0 {
+		result.Test = hc.Test
+	}
+
+	if hc.Interval != nil {
+		result.Interval = hc.Interval.String()
+	}
+	if hc.Timeout != nil {
+		result.Timeout = hc.Timeout.String()
+	}
+	if hc.StartPeriod != nil {
+		result.StartPeriod = hc.StartPeriod.String()
+	}
+	if hc.Retries != nil {
+		result.Retries = int(*hc.Retries)
+	}
+
+	return result
+}
+
+// convertNetwork converts a compose-go NetworkConfig to our Network type
+func convertNetwork(net composetypes.NetworkConfig) Network {
+	return Network{
+		Name:     net.Name,
+		Driver:   net.Driver,
+		External: bool(net.External),
+	}
+}
+
+// derefBool safely dereferences a *bool, returning false if nil
+func derefBool(b *bool) bool {
+	if b != nil {
+		return *b
+	}
+	return false
 }
 
 // checkDockerNetworkExists checks if a Docker network exists
@@ -492,12 +673,18 @@ func InjectTunnelContainer(compose *ComposeFile, appName string, containerConfig
 		commandStr = strings.Join(containerConfig.Command, " ")
 	}
 
+	// Convert environment map
+	env := containerConfig.Environment
+	if env == nil {
+		env = make(map[string]string)
+	}
+
 	tunnelService := Service{
 		Image:         containerConfig.Image,
 		ContainerName: fmt.Sprintf("%s-tunnel", appName),
 		Restart:       "unless-stopped",
 		Networks:      networks,
-		Environment:   containerConfig.Environment,
+		Environment:   env,
 		Command:       commandStr,
 	}
 

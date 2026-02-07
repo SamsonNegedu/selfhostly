@@ -284,7 +284,7 @@ function ContainersListView({ containers }: ContainersListViewProps) {
             icon: <Trash2 className="h-4 w-4" />,
             onClick: (container) => setContainerToDelete(container),
             variant: 'destructive',
-            show: (container) => !container.is_managed, // Only show for non-managed containers
+            show: (container) => container.state === 'stopped', // Only show for stopped containers
             loading: (container) => loadingContainerIds.has(container.id) && deleteMutation.isPending
         }
     ]
@@ -472,7 +472,7 @@ function ContainersListView({ containers }: ContainersListViewProps) {
                 open={!!containerToDelete}
                 onOpenChange={(open: boolean) => !open && setContainerToDelete(null)}
                 title="Delete Container"
-                description={`Are you sure you want to permanently delete "${containerToDelete?.name}"? This action cannot be undone and will remove the container and any data stored in it (volumes may persist depending on configuration).${containerToDelete?.app_name !== 'unmanaged' ? `\n\nNote: This is an external container (${containerToDelete?.app_name}) not managed by this system.` : ''}`}
+                description={`Are you sure you want to permanently delete "${containerToDelete?.name}"? This action cannot be undone and will remove the container and any data stored in it (volumes may persist depending on configuration).${containerToDelete?.is_managed ? `\n\nNote: This container belongs to the managed app "${containerToDelete?.app_name}". Deleting it may cause the app to malfunction. Consider stopping the entire app instead.` : containerToDelete?.app_name !== 'unmanaged' ? `\n\nNote: This is an external container (${containerToDelete?.app_name}) not managed by this system.` : ''}`}
                 confirmText="Delete Container"
                 cancelText="Cancel"
                 onConfirm={handleDelete}

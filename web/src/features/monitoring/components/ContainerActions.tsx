@@ -84,14 +84,14 @@ function ContainerActions({ containerId, containerName, containerState, appName,
         <Square className="h-4 w-4" />
       </Button>
 
-      {/* Delete Button - Only show for non-managed containers */}
-      {!isManaged && (
+      {/* Delete Button - Only show for stopped containers */}
+      {isStopped && (
         <Button
           variant="outline"
           size="sm"
           onClick={() => setDeleteDialogOpen(true)}
           disabled={deleteMutation.isPending}
-          title="Delete container (not managed by system)"
+          title="Delete stopped container"
           className="text-destructive hover:text-destructive h-9 w-9 p-0"
         >
           <Trash2 className="h-4 w-4" />
@@ -129,7 +129,7 @@ function ContainerActions({ containerId, containerName, containerState, appName,
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
         title="Delete Container"
-        description={`Are you sure you want to permanently delete "${containerName}"? This action cannot be undone and will remove the container and any data stored in it (volumes may persist depending on configuration).${appName !== 'unmanaged' ? `\n\nNote: This is an external container (${appName}) not managed by this system.` : ''}`}
+        description={`Are you sure you want to permanently delete "${containerName}"? This action cannot be undone and will remove the container and any data stored in it (volumes may persist depending on configuration).${isManaged ? `\n\nNote: This container belongs to the managed app "${appName}". Deleting it may cause the app to malfunction. Consider stopping the entire app instead.` : appName !== 'unmanaged' ? `\n\nNote: This is an external container (${appName}) not managed by this system.` : ''}`}
         confirmText="Delete Container"
         onConfirm={handleDelete}
         variant="destructive"

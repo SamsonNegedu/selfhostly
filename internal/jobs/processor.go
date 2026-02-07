@@ -26,14 +26,14 @@ func NewProcessor(
 	logger *slog.Logger,
 ) *Processor {
 	registry := NewHandlerRegistry()
-	
+
 	// Register all handlers
 	registry.Register(constants.JobTypeAppCreate, NewAppCreateHandler(database, dockerMgr, appSvc, tunnelSvc, logger))
 	registry.Register(constants.JobTypeAppUpdate, NewAppUpdateHandler(database, dockerMgr, logger))
 	registry.Register(constants.JobTypeTunnelCreate, NewTunnelCreateHandler(database, dockerMgr, appSvc, tunnelSvc, logger))
 	registry.Register(constants.JobTypeTunnelDelete, NewTunnelDeleteHandler(database, dockerMgr, tunnelSvc, logger))
 	registry.Register(constants.JobTypeQuickTunnel, NewQuickTunnelHandler(database, dockerMgr, tunnelSvc, logger))
-	
+
 	return &Processor{
 		registry: registry,
 		db:       database,
@@ -71,9 +71,4 @@ func (p *Processor) ProcessJob(ctx context.Context, job *db.Job) error {
 
 	p.logger.InfoContext(ctx, "job completed successfully", "job_id", job.ID, "type", job.Type)
 	return p.db.UpdateJobCompleted(job.ID, constants.JobStatusCompleted, nil, nil)
-}
-
-// Helper function for string pointers
-func stringPtr(s string) *string {
-	return &s
 }
