@@ -30,7 +30,7 @@ function CreateApp() {
         node_id: '', // Target node for deployment (empty = current node)
         tunnel_mode: '' as '' | 'custom' | 'quick',
         quick_tunnel_service: '',
-        quick_tunnel_port: 80,
+        quick_tunnel_port: 80 as number | string,
     })
 
     const showIngressStep = formData.tunnel_mode === 'custom'
@@ -150,7 +150,7 @@ function CreateApp() {
             node_id: formData.node_id || undefined,
             tunnel_mode: formData.tunnel_mode || undefined,
             quick_tunnel_service: formData.tunnel_mode === 'quick' ? formData.quick_tunnel_service.trim() : undefined,
-            quick_tunnel_port: formData.tunnel_mode === 'quick' ? formData.quick_tunnel_port : undefined,
+            quick_tunnel_port: formData.tunnel_mode === 'quick' ? Number(formData.quick_tunnel_port) : undefined,
         }
 
         createApp.mutate(submitData, {
@@ -171,7 +171,7 @@ function CreateApp() {
         formData.tunnel_mode === 'custom'
             ? { id: '3', label: hasValidIngressRules ? 'Ingress rules configured' : 'Ingress rules will use default', checked: true }
             : formData.tunnel_mode === 'quick'
-                ? { id: '3', label: `Quick Tunnel: ${formData.quick_tunnel_service || '?'}:${formData.quick_tunnel_port}`, checked: !!formData.quick_tunnel_service && formData.quick_tunnel_port >= 1 }
+                ? { id: '3', label: `Quick Tunnel: ${formData.quick_tunnel_service || '?'}:${formData.quick_tunnel_port}`, checked: !!formData.quick_tunnel_service && typeof formData.quick_tunnel_port === 'number' && formData.quick_tunnel_port >= 1 }
                 : { id: '3', label: 'No tunnel', checked: true }
     const checklist = [...baseChecklist, tunnelChecklistItem]
 
@@ -296,7 +296,7 @@ function CreateApp() {
                                                 min={1}
                                                 max={65535}
                                                 value={formData.quick_tunnel_port}
-                                                onChange={(e) => handleFieldChange('quick_tunnel_port', parseInt(e.target.value, 10) || 80)}
+                                                onChange={(e) => handleFieldChange('quick_tunnel_port', e.target.value === '' ? '' : parseInt(e.target.value, 10))}
                                                 className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ${errors.quick_tunnel_port ? 'border-destructive' : ''}`}
                                             />
                                             {errors.quick_tunnel_port && (

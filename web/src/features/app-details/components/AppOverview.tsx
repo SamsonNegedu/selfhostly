@@ -4,17 +4,8 @@ import { Badge } from '@/shared/components/ui/Badge'
 import { Button } from '@/shared/components/ui/Button'
 import {
     Activity,
-    Clock,
     Layers,
     HardDrive,
-    Network,
-    Calendar,
-    Server,
-    CheckCircle2,
-    XCircle,
-    Play,
-    Pause,
-    AlertTriangle,
     RefreshCw,
     Loader2
 } from 'lucide-react'
@@ -119,36 +110,6 @@ function AppOverview({ app }: AppOverviewProps) {
         return info
     }, [app.compose_content])
 
-    const getStatusIcon = (status: App['status']) => {
-        switch (status) {
-            case 'running':
-                return <Play className="h-4 w-4" />
-            case 'stopped':
-                return <Pause className="h-4 w-4" />
-            case 'updating':
-                return <Activity className="h-4 w-4 animate-spin" />
-            case 'error':
-                return <AlertTriangle className="h-4 w-4" />
-            default:
-                return <Clock className="h-4 w-4" />
-        }
-    }
-
-    const getStatusColor = (status: App['status']) => {
-        switch (status) {
-            case 'running':
-                return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-            case 'stopped':
-                return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
-            case 'updating':
-                return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-            case 'error':
-                return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-            default:
-                return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
-        }
-    }
-
     const formatDate = (dateString: string) => {
         const date = new Date(dateString)
         const now = new Date()
@@ -184,76 +145,6 @@ function AppOverview({ app }: AppOverviewProps) {
 
     return (
         <div className="space-y-6">
-            {/* Quick Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* Status Card */}
-                <Card>
-                    <CardContent className="pt-6">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-muted-foreground mb-1">Status</p>
-                                <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium ${getStatusColor(app.status)}`}>
-                                    {getStatusIcon(app.status)}
-                                    <span className="capitalize">{app.status}</span>
-                                </div>
-                            </div>
-                            <div className={`p-3 rounded-full ${app.status === 'running' ? 'bg-green-100 dark:bg-green-900/30' : 'bg-muted'}`}>
-                                {app.status === 'running' ? (
-                                    <CheckCircle2 className="h-6 w-6 text-green-600 dark:text-green-400" />
-                                ) : (
-                                    <XCircle className="h-6 w-6 text-muted-foreground" />
-                                )}
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {/* Services Count */}
-                <Card>
-                    <CardContent className="pt-6">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-muted-foreground mb-1">Services</p>
-                                <p className="text-2xl font-bold">{services.length}</p>
-                            </div>
-                            <div className="p-3 rounded-full bg-blue-100 dark:bg-blue-900/30">
-                                <Server className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {/* Networks Count */}
-                <Card>
-                    <CardContent className="pt-6">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-muted-foreground mb-1">Networks</p>
-                                <p className="text-2xl font-bold">{composeInfo.networks.length || 1}</p>
-                            </div>
-                            <div className="p-3 rounded-full bg-purple-100 dark:bg-purple-900/30">
-                                <Network className="h-6 w-6 text-purple-600 dark:text-purple-400" />
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {/* Uptime/Age */}
-                <Card>
-                    <CardContent className="pt-6">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-muted-foreground mb-1">Created</p>
-                                <p className="text-sm font-medium">{formatDate(app.created_at)}</p>
-                            </div>
-                            <div className="p-3 rounded-full bg-amber-100 dark:bg-amber-900/30">
-                                <Calendar className="h-6 w-6 text-amber-600 dark:text-amber-400" />
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
-
             {/* Main Info Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Left Column */}

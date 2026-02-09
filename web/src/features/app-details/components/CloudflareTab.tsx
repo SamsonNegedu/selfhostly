@@ -5,7 +5,7 @@ import { Badge } from '@/shared/components/ui/Badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/shared/components/ui/Dialog'
 import { Input } from '@/shared/components/ui/Input'
 import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog'
-import { RefreshCw, AlertCircle, CheckCircle2, Copy, Globe, Shield, ArrowRight, Clock, Trash2, Server, PlusCircle } from 'lucide-react'
+import { RefreshCw, AlertCircle, AlertTriangle, CheckCircle2, Copy, Globe, Shield, ArrowRight, Clock, Trash2, Server, PlusCircle } from 'lucide-react'
 import { useTunnel, useSyncTunnel, useDeleteTunnel, useCreateTunnelForApp, useCreateQuickTunnelForApp, useSwitchAppToCustomTunnel } from '@/shared/services/api'
 import { useToast } from '@/shared/components/ui/Toast'
 import { IngressConfiguration } from '@/features/cloudflare/IngressConfiguration'
@@ -41,7 +41,7 @@ function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
     const [createFormError, setCreateFormError] = useState<string | null>(null)
     const [showQuickTunnelDialog, setShowQuickTunnelDialog] = useState(false)
     const [quickTunnelService, setQuickTunnelService] = useState('')
-    const [quickTunnelPort, setQuickTunnelPort] = useState<number>(80)
+    const [quickTunnelPort, setQuickTunnelPort] = useState<number | string>(80)
     const [quickTunnelFormError, setQuickTunnelFormError] = useState<string | null>(null)
 
     const handleSync = () => {
@@ -186,7 +186,7 @@ function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
                         </h2>
                         {isQuick && tunnel.public_url ? (
                             <>
-                                <p className="text-muted-foreground mb-2 max-w-md mx-auto">
+                                <p className="text-muted-foreground mb-4 max-w-md mx-auto text-center">
                                     This app uses a temporary Quick Tunnel URL.
                                 </p>
                                 <a
@@ -198,9 +198,25 @@ function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
                                     {tunnel.public_url}
                                     <ArrowRight className="h-4 w-4" />
                                 </a>
-                                <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto">
-                                    If the tunnel stops working, you can recreate it. Or switch to a custom domain for a stable URL.
-                                </p>
+
+                                {/* Quick Tunnel Limitations Warning */}
+                                <div className="mb-4 p-4 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 text-sm text-amber-800 dark:text-amber-200 max-w-2xl mx-auto text-left">
+                                    <div className="flex items-start gap-2">
+                                        <AlertTriangle className="h-5 w-5 flex-shrink-0 mt-0.5" />
+                                        <div className="space-y-2">
+                                            <p className="font-semibold">Quick Tunnel Limitations:</p>
+                                            <ul className="list-disc list-inside space-y-1 text-xs">
+                                                <li>The URL may change if the container restarts</li>
+                                                <li>Limited to 200 concurrent requests</li>
+                                                <li>No support for Server-Sent Events (SSE)</li>
+                                                <li>Temporary solution - not recommended for production</li>
+                                            </ul>
+                                            <p className="text-xs pt-2 border-t border-amber-300 dark:border-amber-700">
+                                                <strong>Recommendation:</strong> Switch to a custom domain for a stable, production-ready URL.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
                                 <div className="flex flex-wrap gap-3 justify-center">
                                     <Button
                                         onClick={() => {
@@ -227,14 +243,14 @@ function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
                                     </Button>
                                 </div>
                                 <Dialog open={showSwitchDialog} onOpenChange={(open) => { setShowSwitchDialog(open); if (!open) setSwitchFormError(null) }}>
-                                    <DialogContent className="max-w-md">
+                                    <DialogContent className="max-w-md max-h-[90vh] flex flex-col">
                                         <DialogHeader>
                                             <DialogTitle>Switch to custom domain</DialogTitle>
                                             <DialogDescription>
                                                 Add at least one ingress rule with your custom hostname (e.g. app.example.com) and the service URL (e.g. http://vert:90 or http://web:80). This will replace the temporary Quick Tunnel URL.
                                             </DialogDescription>
                                         </DialogHeader>
-                                        <div className="space-y-4 py-2">
+                                        <div className="space-y-4 py-2 overflow-y-auto flex-1 min-h-0">
                                             {switchFormError && (
                                                 <p className="text-sm text-destructive">{switchFormError}</p>
                                             )}
@@ -337,8 +353,11 @@ function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
                                     <DialogContent className="max-w-md">
                                         <DialogHeader>
                                             <DialogTitle>Recreate Quick Tunnel</DialogTitle>
-                                            <DialogDescription>
-                                                Recreate the Quick Tunnel with a new temporary trycloudflare.com URL. Enter the compose service name and port that serves the app (e.g. web and 80).
+                                            <DialogDescription className="space-y-2">
+                                                <p>Recreate the Quick Tunnel with a new temporary trycloudflare.com URL. Enter the compose service name and port that serves the app (e.g. web and 80).</p>
+                                                <p className="text-xs text-amber-600 dark:text-amber-400">
+                                                    <strong>Note:</strong> Quick Tunnels have limitations (200 concurrent requests, no SSE, URL may change on restart). Consider switching to a custom domain for production.
+                                                </p>
                                             </DialogDescription>
                                         </DialogHeader>
                                         <div className="space-y-4 py-2">
@@ -361,7 +380,7 @@ function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
                                                     min={1}
                                                     max={65535}
                                                     value={quickTunnelPort}
-                                                    onChange={(e) => setQuickTunnelPort(parseInt(e.target.value, 10) || 80)}
+                                                    onChange={(e) => setQuickTunnelPort(e.target.value === '' ? '' : parseInt(e.target.value, 10))}
                                                     className="mt-1"
                                                 />
                                             </div>
@@ -376,7 +395,7 @@ function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
                                                         return
                                                     }
                                                     const port = Number(quickTunnelPort)
-                                                    if (port < 1 || port > 65535) {
+                                                    if (!quickTunnelPort || port < 1 || port > 65535 || isNaN(port)) {
                                                         setQuickTunnelFormError('Port must be between 1 and 65535.')
                                                         return
                                                     }
@@ -435,8 +454,11 @@ function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
                                     <DialogContent className="max-w-md">
                                         <DialogHeader>
                                             <DialogTitle>Create Quick Tunnel</DialogTitle>
-                                            <DialogDescription>
-                                                Expose this app with a temporary trycloudflare.com URL. Enter the compose service name and port that serves the app (e.g. web and 80).
+                                            <DialogDescription className="space-y-2">
+                                                <p>Expose this app with a temporary trycloudflare.com URL. Enter the compose service name and port that serves the app (e.g. web and 80).</p>
+                                                <p className="text-xs text-amber-600 dark:text-amber-400">
+                                                    <strong>Note:</strong> Quick Tunnels have limitations (200 concurrent requests, no SSE, URL may change on restart). Use a custom domain for production.
+                                                </p>
                                             </DialogDescription>
                                         </DialogHeader>
                                         <div className="space-y-4 py-2">
@@ -459,7 +481,7 @@ function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
                                                     min={1}
                                                     max={65535}
                                                     value={quickTunnelPort}
-                                                    onChange={(e) => setQuickTunnelPort(parseInt(e.target.value, 10) || 80)}
+                                                    onChange={(e) => setQuickTunnelPort(e.target.value === '' ? '' : parseInt(e.target.value, 10))}
                                                     className="mt-1"
                                                 />
                                             </div>
@@ -474,7 +496,7 @@ function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
                                                         return
                                                     }
                                                     const port = Number(quickTunnelPort)
-                                                    if (port < 1 || port > 65535) {
+                                                    if (!quickTunnelPort || port < 1 || port > 65535 || isNaN(port)) {
                                                         setQuickTunnelFormError('Port must be between 1 and 65535.')
                                                         return
                                                     }
@@ -498,14 +520,14 @@ function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
                                     </DialogContent>
                                 </Dialog>
                                 <Dialog open={showCreateDialog} onOpenChange={(open) => { setShowCreateDialog(open); if (!open) setCreateFormError(null) }}>
-                                    <DialogContent className="max-w-md">
+                                    <DialogContent className="max-w-md max-h-[90vh] flex flex-col">
                                         <DialogHeader>
                                             <DialogTitle>Create custom domain tunnel</DialogTitle>
                                             <DialogDescription>
                                                 Add at least one ingress rule with your custom hostname (e.g. app.example.com) and the service URL (e.g. http://vert:90 or http://web:80). The tunnel will be created with these rules so the public URL is your domain, not a placeholder.
                                             </DialogDescription>
                                         </DialogHeader>
-                                        <div className="space-y-4 py-2">
+                                        <div className="space-y-4 py-2 overflow-y-auto flex-1 min-h-0">
                                             {createFormError && (
                                                 <p className="text-sm text-destructive">{createFormError}</p>
                                             )}

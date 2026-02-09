@@ -72,12 +72,12 @@ export function AppActions({
         // This handles cases where jobs completed/failed and are no longer in the list
         if (hadActiveJobs && !hasActiveJobs && jobs !== undefined) {
             console.log('[AppActions] Smart refresh: active jobs cleared, refreshing app data')
-            
+
             // Invalidate and refetch app data
             queryClient.invalidateQueries({ queryKey: ['app', appId, nodeId] })
             queryClient.invalidateQueries({ queryKey: ['app', appId] })
             queryClient.refetchQueries({ queryKey: ['app', appId, nodeId], type: 'active' })
-            
+
             // Also invalidate tunnels in case the job affected tunnel state
             queryClient.invalidateQueries({ queryKey: ['tunnels', 'app', appId, nodeId] })
             queryClient.refetchQueries({ queryKey: ['tunnels', 'app', appId, nodeId], type: 'active' })
@@ -87,67 +87,67 @@ export function AppActions({
     // Handle job completion/failure - only process once per job
     useEffect(() => {
         if (!currentJob?.id) return
-        
+
         const jobId = currentJob.id
         const status = currentJob.status
-        
+
         // Skip if we've already processed this job
         if (processedJobIdsRef.current.has(jobId)) {
             return
         }
-        
+
         // Only process completed or failed jobs
         if (status !== 'completed' && status !== 'failed') {
             return
         }
-        
+
         // Mark as processed immediately to prevent duplicate processing
         processedJobIdsRef.current.add(jobId)
-        
+
         if (status === 'completed') {
             toast.success('Operation completed', currentJob.progress_message || 'Operation completed successfully')
-            
+
             // Invalidate queries to mark them as stale
             // This ensures queries will refetch when they become enabled
             queryClient.invalidateQueries({ queryKey: ['app', appId, nodeId] })
             queryClient.invalidateQueries({ queryKey: ['app', appId] }) // Also invalidate without nodeId for compatibility
             queryClient.invalidateQueries({ queryKey: ['apps'] })
-            
+
             // For app_create jobs, ensure queries refetch when they become enabled
             // The invalidation above will mark queries as stale, and they'll refetch when enabled
-            
+
             // Refetch active queries immediately
             queryClient.refetchQueries({ queryKey: ['app', appId, nodeId], type: 'active' })
             queryClient.refetchQueries({ queryKey: ['app', appId], type: 'active' })
-            
+
             // If it's a tunnel job, also refresh tunnel data
             if (currentJob.type === 'tunnel_create' || currentJob.type === 'tunnel_delete' || currentJob.type === 'quick_tunnel') {
                 queryClient.invalidateQueries({ queryKey: ['tunnels', 'app', appId, nodeId] })
                 queryClient.invalidateQueries({ queryKey: ['tunnels', 'list'] })
                 queryClient.refetchQueries({ queryKey: ['tunnels', 'app', appId, nodeId], type: 'active' })
             }
-            
+
             // Clear active job
             setActiveJobId(null)
         } else if (status === 'failed') {
             toast.error('Operation failed', currentJob.error_message || 'Operation failed')
-            
+
             // Refresh app data - invalidate both patterns for compatibility
             queryClient.invalidateQueries({ queryKey: ['app', appId, nodeId] })
             queryClient.invalidateQueries({ queryKey: ['app', appId] }) // Also invalidate without nodeId for compatibility
-            
+
             // Force immediate refetch of active app queries
             queryClient.refetchQueries({ queryKey: ['app', appId, nodeId], type: 'active' })
-            
+
             // If it's a tunnel job, also refresh tunnel data (even on failure to update status)
             if (currentJob.type === 'tunnel_create' || currentJob.type === 'tunnel_delete' || currentJob.type === 'quick_tunnel') {
                 queryClient.invalidateQueries({ queryKey: ['tunnels', 'app', appId, nodeId] })
                 queryClient.refetchQueries({ queryKey: ['tunnels', 'app', appId, nodeId], type: 'active' })
             }
-            
+
             // Keep job displayed so user can see error details
         }
-        
+
         // Clean up old processed IDs to prevent memory leak (keep last 10)
         if (processedJobIdsRef.current.size > 10) {
             const ids = Array.from(processedJobIdsRef.current)
@@ -163,133 +163,136 @@ export function AppActions({
     const hasActiveJob = !!(currentJob && (currentJob.status === 'pending' || currentJob.status === 'running'))
 
     return (
-        <div className="flex items-center gap-3 flex-1">
-            {/* Show job progress if there's an active job, but don't hide action buttons */}
+        <div className="flex flex-col items-end gap-2">
+            {/* Show job progress if there's an active job */}
             {hasActiveJob && currentJob && (
-                <div className="flex-1 min-w-0">
+                <div className="w-full max-w-md">
                     <JobProgress job={currentJob} compact />
                 </div>
             )}
-            
-            {/* Action buttons - always visible, but disabled when job is active */}
-            <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap sm:flex-nowrap">
-            {/* Refresh Button */}
-            {onRefresh && (
-                <TooltipProvider>
-                    <TooltipTrigger asChild>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={onRefresh}
-                            disabled={isRefreshing}
-                            className="h-8 w-8 sm:h-9 sm:w-9 text-muted-foreground hover:text-foreground"
-                        >
-                            <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                        <p>Refresh</p>
-                    </TooltipContent>
-                </TooltipProvider>
-            )}
 
-            {/* Divider */}
-            {onRefresh && <div className="h-6 w-px bg-border mx-1" />}
+            {/* Action buttons - grouped by function */}
+            <div className="flex items-center gap-2">
+                {/* Primary Actions Group */}
+                <div className="flex items-center gap-1 border border-border rounded-lg p-0.5">
+                    {/* Start Button - shown when stopped */}
+                    {isStopped && (
+                        <TooltipProvider>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={onStart}
+                                    disabled={isAnyActionPending || hasActiveJob}
+                                    className="h-8 px-3 bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600 text-white gap-1.5"
+                                >
+                                    {isStartPending ? (
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                        <Play className="h-3.5 w-3.5" />
+                                    )}
+                                    <span>Start</span>
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>Start application</p>
+                            </TooltipContent>
+                        </TooltipProvider>
+                    )}
 
-            {/* Start Button - shown when stopped */}
-            {isStopped && (
-                <TooltipProvider>
-                    <TooltipTrigger asChild>
-                        <Button
-                            variant="default"
-                            size="sm"
-                            onClick={onStart}
-                            disabled={isAnyActionPending || hasActiveJob}
-                            className="h-9 px-2 sm:px-3 bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-400 text-white gap-1 sm:gap-1.5 text-xs sm:text-sm"
-                        >
-                            {isStartPending ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                                <Play className="h-4 w-4" />
-                            )}
-                            <span className="hidden xs:inline">Start</span>
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                        <p>Start application</p>
-                    </TooltipContent>
-                </TooltipProvider>
-            )}
+                    {/* Stop Button - shown when running */}
+                    {isRunning && (
+                        <TooltipProvider>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={onStop}
+                                    disabled={isAnyActionPending || hasActiveJob}
+                                    className="h-8 px-3 hover:bg-muted gap-1.5"
+                                >
+                                    {isStopPending ? (
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                        <Square className="h-3.5 w-3.5" />
+                                    )}
+                                    <span>Stop</span>
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>Stop application</p>
+                            </TooltipContent>
+                        </TooltipProvider>
+                    )}
 
-            {/* Stop Button - shown when running */}
-            {isRunning && (
-                <TooltipProvider>
-                    <TooltipTrigger asChild>
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={onStop}
-                            disabled={isAnyActionPending || hasActiveJob}
-                            className="h-9 px-2 sm:px-3 gap-1 sm:gap-1.5 text-xs sm:text-sm"
-                        >
-                            {isStopPending ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                                <Square className="h-4 w-4" />
-                            )}
-                            <span className="hidden xs:inline">Stop</span>
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                        <p>Stop application</p>
-                    </TooltipContent>
-                </TooltipProvider>
-            )}
+                    {/* Update Button */}
+                    <TooltipProvider>
+                        <TooltipTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={onUpdate}
+                                disabled={isAnyActionPending || hasActiveJob}
+                                className="h-8 px-3 hover:bg-muted gap-1.5"
+                            >
+                                {isUpdatePending ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                    <RotateCcw className="h-3.5 w-3.5" />
+                                )}
+                                <span>Update</span>
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                            <p>Pull latest images & restart</p>
+                        </TooltipContent>
+                    </TooltipProvider>
+                </div>
 
-            {/* Update Button */}
-            <TooltipProvider>
-                <TooltipTrigger asChild>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={onUpdate}
-                        disabled={isAnyActionPending || hasActiveJob}
-                        className="h-9 px-2 sm:px-3 gap-1 sm:gap-1.5 text-xs sm:text-sm"
-                    >
-                        {isUpdatePending ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                            <RotateCcw className="h-4 w-4" />
-                        )}
-                        <span className="hidden xs:inline">Update</span>
-                    </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                    <p>Pull latest images & restart</p>
-                </TooltipContent>
-            </TooltipProvider>
+                {/* Secondary Actions Group */}
+                <div className="flex items-center gap-1">
+                    {/* Refresh Button */}
+                    {onRefresh && (
+                        <TooltipProvider>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={onRefresh}
+                                    disabled={isRefreshing}
+                                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                >
+                                    <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>Refresh</p>
+                            </TooltipContent>
+                        </TooltipProvider>
+                    )}
 
-            {/* Delete Button */}
-            <TooltipProvider>
-                <TooltipTrigger asChild>
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={onDelete}
-                        disabled={isAnyActionPending || hasActiveJob}
-                        className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10"
-                    >
-                        {isDeletePending ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                            <Trash2 className="h-4 w-4" />
-                        )}
-                    </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                    <p>Delete application</p>
-                </TooltipContent>
-            </TooltipProvider>
+                    {/* Delete Button */}
+                    <TooltipProvider>
+                        <TooltipTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={onDelete}
+                                disabled={isAnyActionPending || hasActiveJob}
+                                className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                            >
+                                {isDeletePending ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                )}
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                            <p>Delete application</p>
+                        </TooltipContent>
+                    </TooltipProvider>
+                </div>
             </div>
         </div>
     )

@@ -201,75 +201,97 @@ function AppDetails() {
             <Card className="overflow-hidden">
                 <CardHeader className="pb-3 sm:pb-4 p-4 sm:p-6">
                     <div className="flex flex-col gap-3 sm:gap-4">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
-                            <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-                                <CardTitle className="text-xl sm:text-2xl">{app.name}</CardTitle>
-                                <div
-                                    className={`px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-xs sm:text-sm font-medium flex items-center gap-1.5 sm:gap-2 ${getStatusColor(app.status)}`}
-                                >
-                                    {getStatusIcon(app.status)}
-                                    {app.status}
+                        <div className="flex items-start sm:items-center justify-between gap-3 sm:gap-4">
+                            <div className="flex flex-col gap-2">
+                                <div className="flex items-center gap-3">
+                                    <CardTitle className="text-2xl sm:text-3xl font-bold">{app.name}</CardTitle>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <div
+                                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold ${getStatusColor(app.status)}`}
+                                    >
+                                        {getStatusIcon(app.status)}
+                                        <span className="uppercase tracking-wide">{app.status}</span>
+                                    </div>
+                                    {app.public_url && (
+                                        <a
+                                            href={app.public_url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                                        >
+                                            <Cloud className="h-3 w-3" />
+                                            <span className="max-w-[200px] truncate">{app.public_url.replace(/^https?:\/\//, '')}</span>
+                                        </a>
+                                    )}
+                                    {app.node_id && (
+                                        <span className="text-xs text-muted-foreground">
+                                            Node: {app.node_id}
+                                        </span>
+                                    )}
                                 </div>
                             </div>
-                            <AppActions
-                                appId={app.id}
-                                nodeId={app.node_id}
-                                appStatus={app.status}
-                                isStartPending={startApp.isPending}
-                                isStopPending={stopApp.isPending}
-                                isUpdatePending={updateApp.isPending}
-                                isDeletePending={deleteApp.isPending}
-                                isRefreshing={isFetching}
-                                onRefresh={() => refetch()}
-                                onStart={() => startApp.mutate({ id: app.id, nodeId: app.node_id }, {
-                                    onSuccess: () => {
-                                        toast.success('App started', `${app.name} has been started successfully`)
-                                        refetch()
-                                    },
-                                    onError: (error) => {
-                                        toast.error('Failed to start app', error.message)
-                                    }
-                                })}
-                                onStop={() => stopApp.mutate({ id: app.id, nodeId: app.node_id }, {
-                                    onSuccess: () => {
-                                        toast.success('App stopped', `${app.name} has been stopped successfully`)
-                                        refetch()
-                                    },
-                                    onError: (error) => {
-                                        toast.error('Failed to stop app', error.message)
-                                    }
-                                })}
-                                onUpdate={() => updateApp.mutate({ id: app.id, nodeId: app.node_id }, {
-                                    onSuccess: () => {
-                                        toast.info('Update started', `${app.name} update is running in background`)
-                                        refetch()
-                                    },
-                                    onError: (error) => {
-                                        toast.error('Failed to start update', error.message)
-                                    }
-                                })}
-                                onDelete={handleDelete}
-                            />
-                        </div>
+                            <div className="flex-shrink-0">
+                                <AppActions
+                                    appId={app.id}
+                                    nodeId={app.node_id}
+                                    appStatus={app.status}
+                                    isStartPending={startApp.isPending}
+                                    isStopPending={stopApp.isPending}
+                                    isUpdatePending={updateApp.isPending}
+                                    isDeletePending={deleteApp.isPending}
+                                    isRefreshing={isFetching}
+                                    onRefresh={() => refetch()}
+                                    onStart={() => startApp.mutate({ id: app.id, nodeId: app.node_id }, {
+                                        onSuccess: () => {
+                                            toast.success('App started', `${app.name} has been started successfully`)
+                                            refetch()
+                                        },
+                                        onError: (error) => {
+                                            toast.error('Failed to start app', error.message)
+                                        }
+                                    })}
+                                    onStop={() => stopApp.mutate({ id: app.id, nodeId: app.node_id }, {
+                                        onSuccess: () => {
+                                            toast.success('App stopped', `${app.name} has been stopped successfully`)
+                                            refetch()
+                                        },
+                                        onError: (error) => {
+                                            toast.error('Failed to stop app', error.message)
+                                        }
+                                    })}
+                                    onUpdate={() => updateApp.mutate({ id: app.id, nodeId: app.node_id }, {
+                                        onSuccess: () => {
+                                            toast.info('Update started', `${app.name} update is running in background`)
+                                            refetch()
+                                        },
+                                        onError: (error) => {
+                                            toast.error('Failed to start update', error.message)
+                                        }
+                                    })}
+                                    onDelete={handleDelete}
+                                />
+                            </div>
 
-                        {/* Enhanced Tab Navigation */}
-                        <div className="flex overflow-x-auto border-b -mx-4 sm:-mx-6 px-4 sm:px-6 scrollbar-hide">
-                            {tabs.map((tab) => {
-                                const Icon = tab.icon
-                                return (
-                                    <button
-                                        key={tab.id}
-                                        className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-sm font-medium whitespace-nowrap border-b-2 transition-colors interactive-element ${activeTab === tab.id
-                                            ? 'border-primary text-primary'
-                                            : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted'
-                                            }`}
-                                        onClick={() => setActiveTab(tab.id)}
-                                    >
-                                        <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                                        <span className="hidden xs:inline">{tab.label}</span>
-                                    </button>
-                                )
-                            })}
+                            {/* Enhanced Tab Navigation */}
+                            <div className="flex overflow-x-auto border-b -mx-4 sm:-mx-6 px-4 sm:px-6 scrollbar-hide">
+                                {tabs.map((tab) => {
+                                    const Icon = tab.icon
+                                    return (
+                                        <button
+                                            key={tab.id}
+                                            className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-sm font-medium whitespace-nowrap border-b-2 transition-colors interactive-element ${activeTab === tab.id
+                                                ? 'border-primary text-primary'
+                                                : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted'
+                                                }`}
+                                            onClick={() => setActiveTab(tab.id)}
+                                        >
+                                            <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                                            <span className="hidden xs:inline">{tab.label}</span>
+                                        </button>
+                                    )
+                                })}
+                            </div>
                         </div>
                     </div>
                 </CardHeader>
@@ -287,24 +309,6 @@ function AppDetails() {
                         <p className="text-xs sm:text-sm text-muted-foreground mb-3 sm:mb-4">
                             {app.description}
                         </p>
-                    )}
-                    {app.tunnel_mode === 'quick' && (
-                        <div className="mb-4 p-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 text-sm text-amber-800 dark:text-amber-200">
-                            <span className="font-medium">Quick Tunnel:</span> This app uses a temporary trycloudflare.com URL. The URL may change if the container restarts. Limits: 200 concurrent requests, no Server-Sent Events. Switch to a custom domain from the Cloudflare tab for a stable URL.
-                        </div>
-                    )}
-                    {app.public_url && (
-                        <div className="mb-4">
-                            <a
-                                href={app.public_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-primary hover:underline inline-flex items-center gap-1 interactive-element"
-                            >
-                                <Cloud className="h-3 w-3" />
-                                {app.public_url}
-                            </a>
-                        </div>
                     )}
                     {app.status === 'error' && app.error_message && (
                         <div className="text-sm text-red-600 dark:text-red-400 mb-4 p-3 bg-red-50 dark:bg-red-900/20 rounded border border-red-200 dark:border-red-800">

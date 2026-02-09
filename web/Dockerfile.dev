@@ -6,8 +6,8 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies (no cache to ensure fresh install)
+RUN npm ci --prefer-offline --no-audit
 
 # Run Vite dev server
 # --host 0.0.0.0 allows access from outside the container

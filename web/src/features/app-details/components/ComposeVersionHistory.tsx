@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/Card'
 import { Button } from '@/shared/components/ui/Button'
-import { History, RotateCcw, Eye, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { RotateCcw, Eye, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { useComposeVersions, useRollbackToVersion } from '@/shared/services/api'
 import { useToast } from '@/shared/components/ui/Toast'
 import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog'
@@ -71,70 +70,33 @@ function ComposeVersionHistory({ appId, nodeId, onVersionSelect }: ComposeVersio
 
     if (isLoading) {
         return (
-            <Card>
-                <CardHeader>
-                    <div className="flex items-center gap-2">
-                        <History className="h-5 w-5 text-primary" />
-                        <CardTitle className="text-xl">Version History</CardTitle>
-                    </div>
-                </CardHeader>
-                <CardContent>
-                    <div className="flex items-center justify-center py-8">
-                        <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-                    </div>
-                </CardContent>
-            </Card>
+            <div className="flex items-center justify-center py-8">
+                <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+            </div>
         )
     }
 
     if (error) {
         return (
-            <Card>
-                <CardHeader>
-                    <div className="flex items-center gap-2">
-                        <History className="h-5 w-5 text-primary" />
-                        <CardTitle className="text-xl">Version History</CardTitle>
-                    </div>
-                </CardHeader>
-                <CardContent>
-                    <div className="flex items-center gap-2 text-destructive py-4">
-                        <AlertCircle className="h-5 w-5" />
-                        <span>Failed to load version history</span>
-                    </div>
-                </CardContent>
-            </Card>
+            <div className="flex items-center gap-2 text-destructive py-4">
+                <AlertCircle className="h-5 w-5" />
+                <span>Failed to load version history</span>
+            </div>
         )
     }
 
     if (!versions || versions.length === 0) {
         return (
-            <Card>
-                <CardHeader>
-                    <div className="flex items-center gap-2">
-                        <History className="h-5 w-5 text-primary" />
-                        <CardTitle className="text-xl">Version History</CardTitle>
-                    </div>
-                </CardHeader>
-                <CardContent>
-                    <div className="text-muted-foreground text-center py-8">
-                        No version history available yet
-                    </div>
-                </CardContent>
-            </Card>
+            <div className="text-muted-foreground text-center py-8">
+                No version history available yet
+            </div>
         )
     }
 
     return (
         <>
-            <Card>
-                <CardHeader>
-                    <div className="flex items-center gap-2">
-                        <History className="h-5 w-5 text-primary" />
-                        <CardTitle className="text-xl">Version History</CardTitle>
-                    </div>
-                </CardHeader>
-                <CardContent>
-                    <div className="space-y-2">
+            <div className="space-y-4">
+                <div className="space-y-2">
                         {versions.map((version, index) => (
                             <div
                                 key={version.id}
@@ -211,12 +173,11 @@ function ComposeVersionHistory({ appId, nodeId, onVersionSelect }: ComposeVersio
                         ))}
                     </div>
 
-                    {/* Info message */}
-                    <div className="mt-3 p-2 bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-900/30 rounded text-xs text-muted-foreground">
-                        <strong className="text-foreground">Tip:</strong> Click the eye icon to view version details.
-                    </div>
-                </CardContent>
-            </Card>
+                {/* Info message */}
+                <div className="p-2 bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-900/30 rounded text-xs text-muted-foreground">
+                    <strong className="text-foreground">Tip:</strong> Click the eye icon to view version details.
+                </div>
+            </div>
 
             {/* Rollback Confirmation Dialog */}
             <ConfirmationDialog
