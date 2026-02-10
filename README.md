@@ -1,10 +1,10 @@
 # Selfhostly
 
 <p>
-	<a href="https://picsum.photos/400/400" target="_blank">
+	<a href="https://github.com/user-attachments/assets/4d8df016-2bbe-4975-9dfd-474a79b12c85" target="_blank">
 		<img alt="Screenshot 2026-02-10 at 20 57 15" src="https://github.com/user-attachments/assets/4d8df016-2bbe-4975-9dfd-474a79b12c85" width="45%" height="auto">
 	</a>
-	<a href="https://picsum.photos/400/400" target="_blank">
+	<a href="https://github.com/user-attachments/assets/822001e0-ab5c-42e7-9b08-e993b7bc4283" target="_blank">
 		<img alt="Screenshot 2026-02-10 at 20 59 52" src="https://github.com/user-attachments/assets/822001e0-ab5c-42e7-9b08-e993b7bc4283" width="45%" height="auto">
 	</a>
 </p>
