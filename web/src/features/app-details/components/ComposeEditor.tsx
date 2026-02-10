@@ -464,9 +464,9 @@ function ComposeEditor({ appId, nodeId, initialComposeContent }: ComposeEditorPr
 
                 {/* Right Sidebar with Tabs */}
                 {activeSidebarTab && (
-                    <div className="flex flex-col lg:w-[32rem] lg:flex-shrink-0 space-y-4">
+                    <div className="flex flex-col lg:w-[32rem] lg:flex-shrink-0 lg:max-h-[calc(100vh-10rem)] min-h-0 space-y-0">
                         {/* Tabs */}
-                        <div className="flex items-center gap-2 border-b bg-card rounded-t-lg">
+                        <div className="flex items-center gap-2 border-b bg-card rounded-t-lg flex-shrink-0">
                             <button
                                 onClick={() => setActiveSidebarTab('env')}
                                 className={`flex-1 px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
@@ -489,8 +489,8 @@ function ComposeEditor({ appId, nodeId, initialComposeContent }: ComposeEditorPr
                             </button>
                         </div>
                         
-                        {/* Tab Content */}
-                        <div className="flex-1 overflow-auto">
+                        {/* Tab Content - scrolls within sidebar */}
+                        <div className="flex-1 min-h-0 overflow-auto rounded-b-lg">
                             {activeSidebarTab === 'env' && (
                                 <EnvVarSidebar composeContent={composeContent} />
                             )}

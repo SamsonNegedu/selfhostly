@@ -83,7 +83,7 @@ function CloudflareTab({ appId, nodeId }: CloudflareTabProps) {
         const isActive = status === 'active' || status === 'healthy' || status === 'degraded'
         if (isActive) {
             return (
-                <Badge variant="default" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
                     <CheckCircle2 className="h-3 w-3 mr-1" />
                     Healthy
                 </Badge>

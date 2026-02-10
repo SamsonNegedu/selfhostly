@@ -180,11 +180,11 @@ export function AppActions({
                         <TooltipProvider>
                             <TooltipTrigger asChild>
                                 <Button
-                                    variant="ghost"
+                                    variant="default"
                                     size="sm"
                                     onClick={onStart}
                                     disabled={isAnyActionPending || hasActiveJob}
-                                    className="h-8 px-3 bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600 text-white gap-1.5"
+                                    className="h-8 px-3 gap-1.5"
                                 >
                                     {isStartPending ? (
                                         <Loader2 className="h-3.5 w-3.5 animate-spin" />

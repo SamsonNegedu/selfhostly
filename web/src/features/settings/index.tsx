@@ -220,7 +220,7 @@ function Settings() {
                             {providers.length > 0 && (
                                 <div className="mt-2 flex flex-wrap gap-2">
                                     {configuredProviders.length > 0 ? (
-                                        <Badge variant="default" className="bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20">
+                                        <Badge variant="secondary" className="bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20">
                                             <CheckCircle2 className="h-3 w-3 mr-1" />
                                             {configuredProviders.length} provider{configuredProviders.length !== 1 ? 's' : ''} configured
                                         </Badge>

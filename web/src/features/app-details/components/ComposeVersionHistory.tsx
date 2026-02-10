@@ -95,8 +95,9 @@ function ComposeVersionHistory({ appId, nodeId, onVersionSelect }: ComposeVersio
 
     return (
         <>
-            <div className="space-y-4">
-                <div className="space-y-2">
+            <div className="flex flex-col">
+                {/* Scrollable version list - fixed max height so it scrolls inside the panel */}
+                <div className="overflow-y-auto space-y-2 pr-1 max-h-[min(70vh,600px)]">
                         {versions.map((version, index) => (
                             <div
                                 key={version.id}
@@ -171,10 +172,10 @@ function ComposeVersionHistory({ appId, nodeId, onVersionSelect }: ComposeVersio
                                 </div>
                             </div>
                         ))}
-                    </div>
+                </div>
 
-                {/* Info message */}
-                <div className="p-2 bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-900/30 rounded text-xs text-muted-foreground">
+                {/* Info message - stays visible below scroll */}
+                <div className="flex-shrink-0 p-2 mt-2 bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-900/30 rounded text-xs text-muted-foreground">
                     <strong className="text-foreground">Tip:</strong> Click the eye icon to view version details.
                 </div>
             </div>

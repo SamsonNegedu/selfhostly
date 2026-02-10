@@ -168,12 +168,25 @@ function AppOverview({ app }: AppOverviewProps) {
                                                 className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
                                             >
                                                 <div className="flex items-center gap-2">
-                                                    <div className="w-2 h-2 rounded-full bg-primary" />
+                                                    <div
+                                                        className={`w-2 h-2 rounded-full ${
+                                                            app.status === 'running'
+                                                                ? 'bg-green-500'
+                                                                : 'bg-muted-foreground'
+                                                        }`}
+                                                    />
                                                     <span className="font-mono text-sm font-medium">{service}</span>
                                                 </div>
                                                 <div className="flex items-center gap-2">
-                                                    <Badge variant="outline" className="text-xs">
-                                                        active
+                                                    <Badge
+                                                        variant="outline"
+                                                        className={`text-xs ${
+                                                            app.status === 'running'
+                                                                ? 'text-green-600 dark:text-green-400 border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20'
+                                                                : 'text-muted-foreground border-muted'
+                                                        }`}
+                                                    >
+                                                        {app.status === 'running' ? 'active' : 'stopped'}
                                                     </Badge>
                                                     {app.status === 'running' && (
                                                         <Button
@@ -245,14 +258,14 @@ function AppOverview({ app }: AppOverviewProps) {
                 </div>
 
                 {/* Right Column - Activity Timeline */}
-                <Card>
-                    <CardHeader>
+                <Card className="flex flex-col max-h-[600px]">
+                    <CardHeader className="flex-shrink-0">
                         <CardTitle className="text-lg flex items-center gap-2">
                             <Activity className="h-5 w-5 text-primary" />
                             Recent Activity
                         </CardTitle>
                     </CardHeader>
-                    <CardContent>
+                    <CardContent className="overflow-y-auto flex-1 min-h-0">
                         <ActivityTimeline app={app} />
                     </CardContent>
                 </Card>
