@@ -213,6 +213,57 @@ cd web && npm run lint  # Run linting
 - User operations have reasonable limits
 - Long-running operations use job queues
 
+## Security Validation
+
+### Docker Compose Security
+
+As of the latest version, Selfhostly implements comprehensive security validation for Docker Compose files to prevent host machine compromise.
+
+#### Blocked Configurations
+
+The following configurations are **automatically blocked** during compose file validation:
+
+1. **Privileged Mode** - `privileged: true`
+2. **Dangerous Volume Mounts**:
+   - `/var/run/docker.sock` (Docker socket)
+   - `/` (root filesystem)
+   - `/etc`, `/proc`, `/sys`, `/dev`, `/boot` (system directories)
+   - `/root`, `/home/*` (user directories with credentials)
+   - `/var/lib/docker` (Docker internals)
+3. **Device Access** - `devices:` section
+4. **Host Network Mode** - `network_mode: host`
+5. **Host PID Namespace** - `pid: host`
+6. **Host IPC Namespace** - `ipc: host`
+7. **Dangerous Capabilities** - `cap_add: [SYS_ADMIN, SYS_MODULE, SYS_PTRACE, NET_ADMIN, DAC_OVERRIDE, ALL]`
+8. **Disabled Security Features** - `security_opt: [apparmor=unconfined, seccomp=unconfined, label=disable]`
+9. **Custom Cgroup Parent** - `cgroup_parent:`
+10. **Dangerous Tmpfs Mounts** - tmpfs on system paths
+
+#### Allowed Configurations
+
+Safe configurations that work normally:
+
+- **Safe Volume Mounts**: `/data/*`, `/mnt/*`, `/opt/*`, named volumes, relative paths
+- **Safe Capabilities**: `NET_BIND_SERVICE`, `CHOWN`, `SETUID`, `SETGID`
+- **Safe Network Modes**: `bridge`, `container:name`, custom networks
+- **Safe Security Options**: `no-new-privileges=true`, custom AppArmor/seccomp profiles
+
+#### Implementation Location
+
+- **Validation Logic**: `internal/validation/validation.go`
+- **Test Suite**: `internal/validation/security_test.go`
+- **Documentation**: `docs/SECURITY.md`
+- **Quick Reference**: `docs/SECURITY_QUICK_REFERENCE.md`
+- **Examples**: `examples/security-examples.yml`
+
+#### When Working on Security
+
+1. **Never bypass security validation** - These protections are critical
+2. **Add tests for new validations** - Maintain test coverage
+3. **Document security changes** - Update `docs/SECURITY.md`
+4. **Consider false positives** - Ensure legitimate use cases still work
+5. **Test attack scenarios** - Verify malicious configs are blocked
+
 ## Troubleshooting Common Issues
 
 ### Docker Issues
@@ -232,6 +283,12 @@ cd web && npm run lint  # Run linting
 - Verify API response format
 - Test authentication flow
 - Ensure CORS policies are correct
+
+### Security Validation Issues
+- Review compose file for blocked configurations
+- Check error message for specific violation
+- Consult `docs/SECURITY_QUICK_REFERENCE.md`
+- Use safe alternatives (e.g., named volumes instead of host paths)
 
 ---
 

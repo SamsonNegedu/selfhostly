@@ -465,6 +465,7 @@ See [Development Guide](./docs/DEVELOPMENT.md) for live reload setup and debuggi
 - [Multi-Node Authentication](./docs/MULTI_NODE.md#authentication-strategies) - Node-to-node API keys and user auth
 - [Cloudflare Zero Trust Setup](./docs/CLOUDFLARE_ZERO_TRUST.md) - Recommended authentication method
 - [GitHub OAuth Setup](./docs/GITHUB_WHITELIST.md) - Alternative authentication option
+- [Volume Path Whitelist](./docs/VOLUME_WHITELIST.md) - Configure allowed host paths for unified backups
 
 ## Key Workflows
 

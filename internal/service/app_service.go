@@ -88,8 +88,11 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 		return nil, domain.WrapValidationError("app name", err)
 	}
 
-	// Validate compose content
-	if err := validation.ValidateComposeContent(req.ComposeContent); err != nil {
+	// Validate compose content with security config
+	securityConfig := &validation.SecurityConfig{
+		AllowedVolumePaths: s.config.Security.AllowedVolumePaths,
+	}
+	if err := validation.ValidateComposeContentWithConfig(req.ComposeContent, securityConfig); err != nil {
 		s.logger.WarnContext(ctx, "invalid compose content", "error", err)
 		return nil, domain.WrapValidationError("compose content", err)
 	}
@@ -425,7 +428,10 @@ func (s *appService) UpdateApp(ctx context.Context, appID string, nodeID string,
 
 	// Validate compose content if provided
 	if req.ComposeContent != "" {
-		if err := validation.ValidateComposeContent(req.ComposeContent); err != nil {
+		securityConfig := &validation.SecurityConfig{
+			AllowedVolumePaths: s.config.Security.AllowedVolumePaths,
+		}
+		if err := validation.ValidateComposeContentWithConfig(req.ComposeContent, securityConfig); err != nil {
 			s.logger.WarnContext(ctx, "invalid compose content", "error", err)
 			return nil, domain.WrapValidationError("compose content", err)
 		}
@@ -1127,8 +1133,11 @@ func (s *appService) CreateAppAsync(ctx context.Context, req domain.CreateAppReq
 		return nil, domain.WrapValidationError("app name", err)
 	}
 
-	// Validate compose content
-	if err := validation.ValidateComposeContent(req.ComposeContent); err != nil {
+	// Validate compose content with security config
+	securityConfig := &validation.SecurityConfig{
+		AllowedVolumePaths: s.config.Security.AllowedVolumePaths,
+	}
+	if err := validation.ValidateComposeContentWithConfig(req.ComposeContent, securityConfig); err != nil {
 		s.logger.WarnContext(ctx, "invalid compose content", "error", err)
 		return nil, domain.WrapValidationError("compose content", err)
 	}

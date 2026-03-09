@@ -23,6 +23,7 @@ type Config struct {
 	AutoStart     bool
 	CORS          CORSConfig
 	Node          NodeConfig
+	Security      SecurityConfig
 }
 
 // NodeConfig holds node-specific configuration for multi-node support
@@ -63,6 +64,14 @@ type GitHubOAuthConfig struct {
 	ClientID     string
 	ClientSecret string
 	AllowedUsers []string // Whitelist of GitHub usernames allowed to access the system
+}
+
+// SecurityConfig holds security-related configuration
+type SecurityConfig struct {
+	// AllowedVolumePaths is a list of host paths that are allowed to be mounted as volumes
+	// This whitelist overrides the default security restrictions for specific trusted paths
+	// Example: /home/user/Documents/apps,/mnt/backup
+	AllowedVolumePaths []string
 }
 
 // Load loads configuration from environment variables with defaults
@@ -167,6 +176,9 @@ func Load() (*Config, error) {
 			PrimaryNodeKey:    getEnv("PRIMARY_NODE_API_KEY", ""),
 			RegistrationToken: registrationToken,
 			GatewayAPIKey:     os.Getenv("GATEWAY_API_KEY"),
+		},
+		Security: SecurityConfig{
+			AllowedVolumePaths: parseCommaSeparatedList(os.Getenv("ALLOWED_VOLUME_PATHS")),
 		},
 	}
 

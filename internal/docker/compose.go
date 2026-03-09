@@ -103,6 +103,13 @@ type Service struct {
 	Privileged       bool                   `yaml:"privileged,omitempty"`
 	ReadonlyRootfs   bool                   `yaml:"read_only,omitempty"`
 	Init             bool                   `yaml:"init,omitempty"`
+	NetworkMode      string                 `yaml:"network_mode,omitempty"`
+	PidMode          string                 `yaml:"pid,omitempty"`
+	IpcMode          string                 `yaml:"ipc,omitempty"`
+	CapAdd           []string               `yaml:"cap_add,omitempty"`
+	CapDrop          []string               `yaml:"cap_drop,omitempty"`
+	SecurityOpt      []string               `yaml:"security_opt,omitempty"`
+	CgroupParent     string                 `yaml:"cgroup_parent,omitempty"`
 }
 
 // Network represents a docker-compose network
@@ -340,17 +347,24 @@ func convertProject(project *composetypes.Project) *ComposeFile {
 // convertService converts a compose-go ServiceConfig to our Service type
 func convertService(svc composetypes.ServiceConfig) Service {
 	service := Service{
-		Image:         svc.Image,
-		ContainerName: svc.ContainerName,
-		Restart:       svc.Restart,
-		User:          svc.User,
-		Hostname:      svc.Hostname,
-		Domainname:    svc.DomainName,
-		WorkingDir:    svc.WorkingDir,
-		StopSignal:    svc.StopSignal,
-		Privileged:    svc.Privileged,
+		Image:          svc.Image,
+		ContainerName:  svc.ContainerName,
+		Restart:        svc.Restart,
+		User:           svc.User,
+		Hostname:       svc.Hostname,
+		Domainname:     svc.DomainName,
+		WorkingDir:     svc.WorkingDir,
+		StopSignal:     svc.StopSignal,
+		Privileged:     svc.Privileged,
 		ReadonlyRootfs: svc.ReadOnly,
-		Init:          derefBool(svc.Init),
+		Init:           derefBool(svc.Init),
+		NetworkMode:    svc.NetworkMode,
+		PidMode:        svc.Pid,
+		IpcMode:        svc.Ipc,
+		CapAdd:         svc.CapAdd,
+		CapDrop:        svc.CapDrop,
+		SecurityOpt:    svc.SecurityOpt,
+		CgroupParent:   svc.CgroupParent,
 	}
 
 	// Command ([]string → joined string)
