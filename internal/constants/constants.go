@@ -21,11 +21,15 @@ const (
 
 // Job type values
 const (
-	JobTypeAppCreate     = "app_create"
-	JobTypeAppUpdate     = "app_update"
-	JobTypeTunnelCreate  = "tunnel_create"
-	JobTypeTunnelDelete  = "tunnel_delete"
-	JobTypeQuickTunnel   = "quick_tunnel"
+	JobTypeAppCreate          = "app_create"
+	JobTypeAppUpdate          = "app_update"
+	JobTypeAppStart           = "app_start"
+	JobTypeAppStop            = "app_stop"
+	JobTypeAppScheduledStart  = "app_scheduled_start"
+	JobTypeAppScheduledStop   = "app_scheduled_stop"
+	JobTypeTunnelCreate       = "tunnel_create"
+	JobTypeTunnelDelete       = "tunnel_delete"
+	JobTypeQuickTunnel        = "quick_tunnel"
 )
 
 // Tunnel mode values

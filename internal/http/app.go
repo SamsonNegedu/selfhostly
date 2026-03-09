@@ -108,7 +108,7 @@ func (s *Server) getApp(c *gin.Context) {
 		return
 	}
 
-	app, err := s.appService.GetApp(c.Request.Context(), id, nodeID)
+	app, err := s.appService.GetAppWithSchedule(c.Request.Context(), id, nodeID)
 	if err != nil {
 		s.handleServiceError(c, "get app", err)
 		return
@@ -438,7 +438,8 @@ func (s *Server) listApps(c *gin.Context) {
 		nodeIDs = httputil.ParseNodeIDs(c)
 	}
 
-	apps, err := s.appService.ListApps(c.Request.Context(), nodeIDs)
+	// Include schedules in the response for better UX
+	apps, err := s.appService.ListAppsWithSchedules(c.Request.Context(), nodeIDs)
 	if err != nil {
 		s.handleServiceError(c, "list apps", err)
 		return

@@ -17,7 +17,9 @@ import (
 type AppService interface {
 	CreateApp(ctx context.Context, req CreateAppRequest) (*db.App, error)
 	GetApp(ctx context.Context, appID string, nodeID string) (*db.App, error)
+	GetAppWithSchedule(ctx context.Context, appID string, nodeID string) (*db.App, error)
 	ListApps(ctx context.Context, nodeIDs []string) ([]*db.App, error)
+	ListAppsWithSchedules(ctx context.Context, nodeIDs []string) ([]*db.App, error)
 	UpdateApp(ctx context.Context, appID string, nodeID string, req UpdateAppRequest) (*db.App, error)
 	DeleteApp(ctx context.Context, appID string, nodeID string) error
 	StartApp(ctx context.Context, appID string, nodeID string) (*db.App, error)
@@ -33,6 +35,12 @@ type AppService interface {
 	CreateQuickTunnelForAppAsync(ctx context.Context, appID string, service string, port int) (*db.Job, error)
 	SwitchAppToCustomTunnelAsync(ctx context.Context, appID string, ingressRules []db.IngressRule) (*db.Job, error)
 	DeleteTunnelAsync(ctx context.Context, appID string) (*db.Job, error)
+	StartAppAsync(ctx context.Context, appID string) (*db.Job, error)
+	StopAppAsync(ctx context.Context, appID string) (*db.Job, error)
+
+	// Scheduler operations (called by scheduler, not exposed via HTTP)
+	CreateStartJob(ctx context.Context, appID string) error
+	CreateStopJob(ctx context.Context, appID string) error
 
 	// CreateTunnelForApp creates a named (custom domain) tunnel for an app that has none. When nodeID is remote, the request is forwarded to that node (all-or-nothing).
 	// Returns (app, handledLocally, error). handledLocally is true when the work was done on this node so the HTTP layer may apply optional ingress_rules.
@@ -44,6 +52,23 @@ type AppService interface {
 	GetQuickTunnelURL(ctx context.Context, appID string, nodeID string) (string, error)
 	// CreateQuickTunnelForApp adds a Quick Tunnel (temporary trycloudflare.com URL) to an app that has no tunnel.
 	CreateQuickTunnelForApp(ctx context.Context, appID string, nodeID string, service string, port int) (*db.App, error)
+}
+
+type ScheduleNextRuns struct {
+	AppID     string     `json:"app_id"`
+	NextStart *time.Time `json:"next_start"`
+	NextStop  *time.Time `json:"next_stop"`
+}
+
+// ScheduleService defines the primary port for schedule management use cases
+type ScheduleService interface {
+	CreateSchedule(ctx context.Context, appID, startCron, stopCron, timezone string, enabled bool) (*db.AppSchedule, error)
+	UpdateSchedule(ctx context.Context, appID, startCron, stopCron, timezone string, enabled bool) (*db.AppSchedule, error)
+	DeleteSchedule(ctx context.Context, appID string) error
+	GetSchedule(ctx context.Context, appID string) (*db.AppSchedule, error)
+	GetNextRunTimes(ctx context.Context, appID string) (*ScheduleNextRuns, error)
+	CalculateNextRunTimes(ctx context.Context, appID, startCron, stopCron, timezone string) (*ScheduleNextRuns, error)
+	ValidateCronExpression(expression string) error
 }
 
 // TunnelService defines the primary port for tunnel management use cases

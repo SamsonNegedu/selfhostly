@@ -99,6 +99,13 @@ func (s *Server) setupAppRoutes(api *gin.RouterGroup) {
 			appSpecific.GET("/quick-tunnel-url", s.getQuickTunnelURL)
 			appSpecific.POST("/quick-tunnel", s.createQuickTunnelForApp)
 
+			// Schedule routes
+			appSpecific.GET("/schedule", s.getAppSchedule)
+			appSpecific.POST("/schedule", s.createOrUpdateAppSchedule)
+			appSpecific.DELETE("/schedule", s.deleteAppSchedule)
+			appSpecific.POST("/schedule/test", s.testAppSchedule)
+			appSpecific.GET("/schedule/next-runs", s.getAppScheduleNextRuns)
+
 			// Compose version routes
 			appSpecific.GET("/compose/versions", s.getComposeVersions)
 			appSpecific.GET("/compose/versions/:version", s.getComposeVersion)

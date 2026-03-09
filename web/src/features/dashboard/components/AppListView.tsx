@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { Button } from '@/shared/components/ui/Button'
 import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog'
 import { Play, Pause, RefreshCw, Trash2, ExternalLink, XCircle, Clock, Loader2 } from 'lucide-react'
-import { useDeleteApp, useStartApp, useStopApp, useUpdateAppContainers, useNodes } from '@/shared/services/api'
+import { useDeleteApp, useStartApp, useStopApp, useUpdateAppContainers, useNodes, useScheduleNextRuns } from '@/shared/services/api'
 import { useToast } from '@/shared/components/ui/Toast'
 import { DataTable, ColumnDef, RowAction } from '@/shared/components/ui/DataTable'
+import { formatRelativeTime } from '@/shared/lib/utils'
 import type { App } from '@/shared/types/api'
 
 interface AppListViewProps {
@@ -55,6 +56,41 @@ const getStatusBadge = (status: string) => {
         <div className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-semibold ${colorClass}`}>
             {icon}
             {status}
+        </div>
+    )
+}
+
+// Next scheduled run component
+const NextScheduledRun = ({ app }: { app: App }) => {
+    const { data: nextRuns } = useScheduleNextRuns(app.id, app.node_id)
+
+    if (!app.schedule?.enabled || !nextRuns) {
+        return <span className="text-xs text-muted-foreground">—</span>
+    }
+
+    const nextAction = nextRuns.next_start && nextRuns.next_stop
+        ? new Date(nextRuns.next_start) <= new Date(nextRuns.next_stop)
+            ? { type: 'Start', time: nextRuns.next_start, icon: Play }
+            : { type: 'Stop', time: nextRuns.next_stop, icon: Pause }
+        : nextRuns.next_start
+            ? { type: 'Start', time: nextRuns.next_start, icon: Play }
+            : nextRuns.next_stop
+                ? { type: 'Stop', time: nextRuns.next_stop, icon: Pause }
+                : null
+
+    if (!nextAction) {
+        return <span className="text-xs text-muted-foreground">—</span>
+    }
+
+    const Icon = nextAction.icon
+    const isStart = nextAction.type === 'Start'
+
+    return (
+        <div className="flex items-center gap-1.5 text-xs">
+            <Icon className={`h-3 w-3 ${isStart ? 'text-green-600 dark:text-green-400' : 'text-gray-600 dark:text-gray-400'}`} />
+            <span className="text-muted-foreground">
+                {nextAction.type} {formatRelativeTime(nextAction.time)}
+            </span>
         </div>
     )
 }
@@ -121,7 +157,7 @@ function AppListView({ filteredApps }: AppListViewProps) {
         {
             key: 'node',
             label: 'Node',
-            width: 'w-28',
+            width: 'w-48',
             sortable: true,
             sortValue: (app) => getNodeName(app.node_id).toLowerCase(),
             render: (app) => (
@@ -174,9 +210,15 @@ function AppListView({ filteredApps }: AppListViewProps) {
             }
         },
         {
+            key: 'schedule',
+            label: 'Next Scheduled',
+            width: 'w-44',
+            render: (app) => <NextScheduledRun app={app} />
+        },
+        {
             key: 'updated',
             label: 'Last Updated',
-            width: 'w-36',
+            width: 'w-40',
             sortable: true,
             sortValue: (app) => new Date(app.updated_at),
             render: (app) => (

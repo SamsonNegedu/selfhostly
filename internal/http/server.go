@@ -21,25 +21,28 @@ import (
 	"github.com/selfhostly/internal/logger"
 	"github.com/selfhostly/internal/node"
 	"github.com/selfhostly/internal/routing"
+	"github.com/selfhostly/internal/scheduler"
 	"github.com/selfhostly/internal/service"
 )
 
 // Server wraps the HTTP server
 type Server struct {
-	config         *config.Config
-	database       *db.DB          // Kept temporarily for settings access
-	dockerManager  *docker.Manager // Kept temporarily for backward compatibility
-	appService     domain.AppService
-	tunnelService  domain.TunnelService
-	systemService  domain.SystemService
-	composeService domain.ComposeService
-	nodeService    domain.NodeService
-	jobWorker      *jobs.Worker // Background job processor
-	engine         *gin.Engine
-	authService    *auth.Service
-	httpServer     *http.Server
-	shutdownCtx    context.Context
-	shutdownCancel context.CancelFunc
+	config          *config.Config
+	database        *db.DB
+	dockerManager   *docker.Manager
+	appService      domain.AppService
+	tunnelService   domain.TunnelService
+	systemService   domain.SystemService
+	composeService  domain.ComposeService
+	nodeService     domain.NodeService
+	scheduleService domain.ScheduleService
+	jobWorker       *jobs.Worker
+	scheduler       *scheduler.Scheduler
+	engine          *gin.Engine
+	authService     *auth.Service
+	httpServer      *http.Server
+	shutdownCtx     context.Context
+	shutdownCancel  context.CancelFunc
 }
 
 // NewServer creates a new HTTP server
@@ -91,24 +94,32 @@ func NewServer(cfg *config.Config, database *db.DB) *Server {
 	jobProcessor := jobs.NewProcessor(database, dockerManager, appService, tunnelService, appLogger)
 	jobWorker := jobs.NewWorker(jobProcessor, database, constants.JobWorkerPollInterval, appLogger)
 
+	// Initialize schedule service
+	scheduleService := service.NewScheduleService(database, appLogger)
+
+	// Initialize scheduler
+	appScheduler := scheduler.NewScheduler(database, appService, appLogger)
+
 	// Create shutdown context
 	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
 
 	// Initialize server
 	server := &Server{
-		config:         cfg,
-		database:       database,
-		dockerManager:  dockerManager,
-		appService:     appService,
-		tunnelService:  tunnelService,
-		systemService:  systemService,
-		composeService: composeService,
-		nodeService:    nodeService,
-		jobWorker:      jobWorker,
-		engine:         engine,
-		authService:    authService,
-		shutdownCtx:    shutdownCtx,
-		shutdownCancel: shutdownCancel,
+		config:          cfg,
+		database:        database,
+		dockerManager:   dockerManager,
+		appService:      appService,
+		tunnelService:   tunnelService,
+		systemService:   systemService,
+		composeService:  composeService,
+		nodeService:     nodeService,
+		scheduleService: scheduleService,
+		jobWorker:       jobWorker,
+		scheduler:       appScheduler,
+		engine:          engine,
+		authService:     authService,
+		shutdownCtx:     shutdownCtx,
+		shutdownCancel:  shutdownCancel,
 	}
 
 	// Setup routes
@@ -337,7 +348,15 @@ func (s *Server) startBackgroundTasks() {
 		}
 	}()
 
-	slog.Info("background tasks started", "health_check_interval", "30s", "job_worker_enabled", true)
+	// Start scheduler for application scheduling
+	go func() {
+		slog.Info("starting scheduler")
+		if err := s.scheduler.Start(s.shutdownCtx); err != nil {
+			slog.Error("scheduler stopped with error", "error", err)
+		}
+	}()
+
+	slog.Info("background tasks started", "health_check_interval", "30s", "job_worker_enabled", true, "scheduler_enabled", true)
 }
 
 // runPeriodicHealthChecks performs health checks on all nodes every 30 seconds

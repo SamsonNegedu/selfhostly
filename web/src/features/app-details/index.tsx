@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom'
 import { useToast } from '@/shared/components/ui/Toast'
 import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/Card'
 import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog'
-import { Terminal, Settings, Cloud, Info, AlertTriangle } from 'lucide-react'
+import { Terminal, Settings, Cloud, Info, AlertTriangle, Clock } from 'lucide-react'
 import { Button } from '@/shared/components/ui/Button'
 import LogViewer from './components/LogViewer'
 import ComposeEditor from './components/ComposeEditor'
@@ -15,8 +15,9 @@ import { AppActions } from './components/AppActions'
 import AppBreadcrumb from '@/shared/components/layout/Breadcrumb'
 import { AppDetailsSkeleton } from '@/shared/components/ui/Skeleton'
 import AppOverview from './components/AppOverview'
+import { ScheduleEditor } from './components/ScheduleEditor'
 
-type TabType = 'overview' | 'compose' | 'logs' | 'cloudflare'
+type TabType = 'overview' | 'compose' | 'logs' | 'cloudflare' | 'schedule'
 
 function AppDetails() {
     const { id } = useParams<{ id: string }>()
@@ -168,6 +169,7 @@ function AppDetails() {
         { id: 'compose' as TabType, label: 'Compose Editor', icon: Settings },
         { id: 'logs' as TabType, label: 'Logs', icon: Terminal },
         { id: 'cloudflare' as TabType, label: 'Cloudflare', icon: Cloud },
+        { id: 'schedule' as TabType, label: 'Schedule', icon: Clock },
     ]
 
     return (
@@ -350,6 +352,16 @@ function AppDetails() {
                             </div>
                         ) : (
                             <CloudflareTab appId={app.id} nodeId={app.node_id} />
+                        )
+                    )}
+                    {activeTab === 'schedule' && (
+                        !app.node_id ? (
+                            <div className="flex items-center justify-center min-h-[200px] text-muted-foreground">
+                                <AlertTriangle className="h-5 w-5 mr-2" />
+                                Unable to load schedule: node_id is missing
+                            </div>
+                        ) : (
+                            <ScheduleEditor appId={app.id} nodeId={app.node_id} />
                         )
                     )}
                 </CardContent>

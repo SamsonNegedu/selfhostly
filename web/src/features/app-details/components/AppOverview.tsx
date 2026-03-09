@@ -7,12 +7,16 @@ import {
     Layers,
     HardDrive,
     RefreshCw,
-    Loader2
+    Loader2,
+    Calendar,
+    Play,
+    Pause
 } from 'lucide-react'
 import ActivityTimeline from './ActivityTimeline'
-import { useAppServices, useRestartAppService } from '@/shared/services/api'
+import { useAppServices, useRestartAppService, useScheduleNextRuns } from '@/shared/services/api'
 import { useToast } from '@/shared/components/ui/Toast'
 import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog'
+import { formatRelativeTimeDetailed } from '@/shared/lib/utils'
 import type { App } from '@/shared/types/api'
 
 interface AppOverviewProps {
@@ -27,6 +31,7 @@ interface ComposeInfo {
 function AppOverview({ app }: AppOverviewProps) {
     // Get services from backend endpoint for consistency with LogViewer
     const { data: services = [] } = useAppServices(app.id, app.node_id || '')
+    const { data: nextRuns } = useScheduleNextRuns(app.id, app.node_id || '')
     const restartService = useRestartAppService()
     const { toast } = useToast()
     const [serviceToRestart, setServiceToRestart] = useState<string | null>(null)
@@ -255,6 +260,49 @@ function AppOverview({ app }: AppOverviewProps) {
                             </div>
                         </CardContent>
                     </Card>
+
+                    {/* Schedule */}
+                    {app.schedule?.enabled && nextRuns && (
+                        <Card>
+                            <CardHeader>
+                                <CardTitle className="text-lg flex items-center gap-2">
+                                    <Calendar className="h-5 w-5 text-primary" />
+                                    Scheduled Actions
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="space-y-3">
+                                    {nextRuns.next_start && (
+                                        <div className="flex items-center justify-between p-3 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+                                            <div className="flex items-center gap-2">
+                                                <Play className="h-4 w-4 text-green-600 dark:text-green-400" />
+                                                <span className="text-sm font-medium text-green-900 dark:text-green-100">Next Start</span>
+                                            </div>
+                                            <span className="text-sm font-semibold text-green-700 dark:text-green-300">
+                                                {formatRelativeTimeDetailed(nextRuns.next_start)}
+                                            </span>
+                                        </div>
+                                    )}
+                                    {nextRuns.next_stop && (
+                                        <div className="flex items-center justify-between p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+                                            <div className="flex items-center gap-2">
+                                                <Pause className="h-4 w-4 text-gray-600 dark:text-gray-400" />
+                                                <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Next Stop</span>
+                                            </div>
+                                            <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                                                {formatRelativeTimeDetailed(nextRuns.next_stop)}
+                                            </span>
+                                        </div>
+                                    )}
+                                    {!nextRuns.next_start && !nextRuns.next_stop && (
+                                        <p className="text-sm text-muted-foreground text-center py-2">
+                                            No upcoming scheduled actions
+                                        </p>
+                                    )}
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
                 </div>
 
                 {/* Right Column - Activity Timeline */}

@@ -30,6 +30,10 @@ func NewProcessor(
 	// Register all handlers
 	registry.Register(constants.JobTypeAppCreate, NewAppCreateHandler(database, dockerMgr, appSvc, tunnelSvc, logger))
 	registry.Register(constants.JobTypeAppUpdate, NewAppUpdateHandler(database, dockerMgr, logger))
+	registry.Register(constants.JobTypeAppStart, NewAppStartHandler(database, dockerMgr, logger))
+	registry.Register(constants.JobTypeAppStop, NewAppStopHandler(database, dockerMgr, logger))
+	registry.Register(constants.JobTypeAppScheduledStart, NewAppScheduledStartHandler(database, dockerMgr, logger))
+	registry.Register(constants.JobTypeAppScheduledStop, NewAppScheduledStopHandler(database, dockerMgr, logger))
 	registry.Register(constants.JobTypeTunnelCreate, NewTunnelCreateHandler(database, dockerMgr, appSvc, tunnelSvc, logger))
 	registry.Register(constants.JobTypeTunnelDelete, NewTunnelDeleteHandler(database, dockerMgr, tunnelSvc, logger))
 	registry.Register(constants.JobTypeQuickTunnel, NewQuickTunnelHandler(database, dockerMgr, tunnelSvc, logger))

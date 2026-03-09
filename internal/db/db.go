@@ -299,6 +299,20 @@ func (db *DB) migrate() error {
 		`CREATE INDEX IF NOT EXISTS idx_jobs_app_status ON jobs(app_id, status) WHERE status IN ('pending', 'running')`,
 		`CREATE INDEX IF NOT EXISTS idx_jobs_hash ON jobs(job_hash, status) WHERE job_hash IS NOT NULL`,
 		`CREATE INDEX IF NOT EXISTS idx_jobs_claimed ON jobs(claimed_by, status) WHERE claimed_by IS NOT NULL`,
+		// App schedules table for automatic start/stop operations
+		`CREATE TABLE IF NOT EXISTS app_schedules (
+			id TEXT PRIMARY KEY,
+			app_id TEXT NOT NULL,
+			start_cron TEXT NOT NULL,
+			stop_cron TEXT NOT NULL,
+			timezone TEXT NOT NULL,
+			enabled INTEGER NOT NULL DEFAULT 1,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(app_id),
+			FOREIGN KEY (app_id) REFERENCES apps(id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_app_schedules_enabled ON app_schedules(enabled)`,
 	}
 
 	// Run migrations
@@ -337,25 +351,25 @@ func (db *DB) migrateJobsTableIfNeeded() error {
 	err := db.QueryRow(`
 		SELECT COUNT(*) FROM pragma_table_info('jobs') WHERE name = 'job_hash'
 	`).Scan(&count)
-	
+
 	if err != nil {
 		// Table might not exist yet, which is fine - CREATE TABLE IF NOT EXISTS handles it
 		return nil
 	}
-	
+
 	// If column exists, migration already done
 	if count > 0 {
 		return nil
 	}
-	
+
 	// Table exists but missing new columns - need to recreate
 	slog.Info("Jobs table missing new columns, recreating table...")
-	
+
 	// Drop old table
 	if _, err := db.Exec(`DROP TABLE IF EXISTS jobs`); err != nil {
 		return fmt.Errorf("failed to drop old jobs table: %w", err)
 	}
-	
+
 	// Recreate with new schema
 	recreateSQL := `CREATE TABLE jobs (
 		id TEXT PRIMARY KEY,
@@ -392,11 +406,11 @@ func (db *DB) migrateJobsTableIfNeeded() error {
 		
 		FOREIGN KEY (app_id) REFERENCES apps(id) ON DELETE CASCADE
 	)`
-	
+
 	if _, err := db.Exec(recreateSQL); err != nil {
 		return fmt.Errorf("failed to recreate jobs table: %w", err)
 	}
-	
+
 	// Recreate indexes
 	indexes := []string{
 		`CREATE INDEX IF NOT EXISTS idx_jobs_app_id ON jobs(app_id, created_at DESC)`,
@@ -405,13 +419,13 @@ func (db *DB) migrateJobsTableIfNeeded() error {
 		`CREATE INDEX IF NOT EXISTS idx_jobs_hash ON jobs(job_hash, status) WHERE job_hash IS NOT NULL`,
 		`CREATE INDEX IF NOT EXISTS idx_jobs_claimed ON jobs(claimed_by, status) WHERE claimed_by IS NOT NULL`,
 	}
-	
+
 	for _, indexSQL := range indexes {
 		if _, err := db.Exec(indexSQL); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
-	
+
 	slog.Info("Jobs table recreated successfully with new schema")
 	return nil
 }
@@ -491,7 +505,6 @@ func (db *DB) bootstrapSingleNode(cfg *config.Config) error {
 	return bootstrapSingleNode(db.DB, cfg)
 }
 
-
 // CreateApp creates a new app
 func (db *DB) CreateApp(app *App) error {
 	var errorMessage interface{}
@@ -541,6 +554,75 @@ func (db *DB) GetAllApps() ([]*App, error) {
 		} else {
 			app.NodeID = ""
 		}
+		apps = append(apps, app)
+	}
+
+	return apps, nil
+}
+
+// GetAllAppsWithSchedules retrieves all apps with their schedules using a LEFT JOIN
+func (db *DB) GetAllAppsWithSchedules() ([]*App, error) {
+	query := `
+		SELECT 
+			a.id, a.name, a.description, a.compose_content, a.tunnel_token, a.tunnel_id, 
+			a.tunnel_domain, a.public_url, a.status, a.error_message, a.node_id, a.tunnel_mode, 
+			a.created_at, a.updated_at,
+			s.id, s.app_id, s.start_cron, s.stop_cron, s.timezone, s.enabled, 
+			s.created_at, s.updated_at
+		FROM apps a
+		LEFT JOIN app_schedules s ON a.id = s.app_id
+		ORDER BY a.created_at DESC
+	`
+	
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var apps []*App
+	for rows.Next() {
+		app := &App{}
+		var errorMessage sql.NullString
+		var nodeID sql.NullString
+		
+		// Schedule fields (nullable since LEFT JOIN)
+		var scheduleID, scheduleAppID, startCron, stopCron, timezone sql.NullString
+		var scheduleEnabled sql.NullBool
+		var scheduleCreatedAt, scheduleUpdatedAt sql.NullTime
+		
+		err := rows.Scan(
+			&app.ID, &app.Name, &app.Description, &app.ComposeContent, &app.TunnelToken, 
+			&app.TunnelID, &app.TunnelDomain, &app.PublicURL, &app.Status, &errorMessage, 
+			&nodeID, &app.TunnelMode, &app.CreatedAt, &app.UpdatedAt,
+			&scheduleID, &scheduleAppID, &startCron, &stopCron, &timezone, &scheduleEnabled,
+			&scheduleCreatedAt, &scheduleUpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		
+		if errorMessage.Valid {
+			app.ErrorMessage = &errorMessage.String
+		}
+		if nodeID.Valid {
+			app.NodeID = nodeID.String
+		}
+		
+		// Construct schedule if it exists
+		if scheduleID.Valid {
+			app.Schedule = &AppSchedule{
+				ID:        scheduleID.String,
+				AppID:     scheduleAppID.String,
+				StartCron: startCron.String,
+				StopCron:  stopCron.String,
+				Timezone:  timezone.String,
+				Enabled:   scheduleEnabled.Bool,
+				CreatedAt: scheduleCreatedAt.Time,
+				UpdatedAt: scheduleUpdatedAt.Time,
+			}
+		}
+
 		apps = append(apps, app)
 	}
 
@@ -1417,7 +1499,7 @@ func (db *DB) GetActiveJobForApp(appID string) (*Job, error) {
 		 LIMIT 1`,
 		appID, constants.JobStatusPending, constants.JobStatusRunning,
 	)
-	
+
 	job, err := scanJobFromRow(row)
 	if err == sql.ErrNoRows {
 		return nil, nil // No active job found
@@ -1505,19 +1587,19 @@ func (db *DB) GetPendingJobs(limit int) ([]*Job, error) {
 // This prevents race conditions where multiple workers claim the same job
 func (db *DB) ClaimPendingJob(workerID string) (*Job, error) {
 	now := time.Now()
-	
+
 	// SQLite doesn't support UPDATE ... RETURNING, so we use a transaction-based approach:
 	// 1. Find a pending job that isn't claimed
 	// 2. Try to claim it atomically
 	// 3. Return the claimed job
-	
+
 	// Use a transaction to ensure atomicity
 	tx, err := db.BeginTx(context.Background())
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
-	
+
 	// Find a pending job that isn't claimed
 	var jobID string
 	err = tx.QueryRow(
@@ -1527,14 +1609,14 @@ func (db *DB) ClaimPendingJob(workerID string) (*Job, error) {
 		 LIMIT 1`,
 		constants.JobStatusPending,
 	).Scan(&jobID)
-	
+
 	if err == sql.ErrNoRows {
 		return nil, nil // No job available
 	}
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Try to claim it atomically
 	result, err := tx.Exec(
 		`UPDATE jobs
@@ -1546,23 +1628,23 @@ func (db *DB) ClaimPendingJob(workerID string) (*Job, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if rowsAffected == 0 {
 		// Another worker claimed it first, return nil
 		return nil, nil
 	}
-	
+
 	// Retrieve the claimed job
 	job := &Job{}
 	var payload, progressMessage, resultStr, errorMessage, claimedBy, jobHash sql.NullString
 	var startedAt, completedAt, claimedAt, retryAfter, cancelledAt sql.NullTime
 	var timeoutSeconds sql.NullInt64
-	
+
 	err = tx.QueryRow(
 		`SELECT id, type, app_id, status, payload, progress, progress_message, result, error_message,
 		        started_at, completed_at, created_at, updated_at,
@@ -1580,7 +1662,7 @@ func (db *DB) ClaimPendingJob(workerID string) (*Job, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Handle nullable fields
 	if payload.Valid {
 		job.Payload = &payload.String
@@ -1619,12 +1701,12 @@ func (db *DB) ClaimPendingJob(workerID string) (*Job, error) {
 	if jobHash.Valid {
 		job.JobHash = &jobHash.String
 	}
-	
+
 	// Commit the transaction
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	
+
 	return job, nil
 }
 
@@ -1728,4 +1810,86 @@ func (db *DB) CleanupAllOldCompletedJobs(keepCount int) error {
 		constants.JobStatusCompleted, constants.JobStatusFailed, keepCount,
 	)
 	return err
+}
+
+// GetScheduleByAppID retrieves a schedule by app ID
+func (db *DB) GetScheduleByAppID(appID string) (*AppSchedule, error) {
+	schedule := &AppSchedule{}
+	err := db.QueryRow(
+		`SELECT id, app_id, start_cron, stop_cron, timezone, enabled, created_at, updated_at
+		 FROM app_schedules
+		 WHERE app_id = ?`,
+		appID,
+	).Scan(&schedule.ID, &schedule.AppID, &schedule.StartCron, &schedule.StopCron,
+		&schedule.Timezone, &schedule.Enabled, &schedule.CreatedAt, &schedule.UpdatedAt)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil // No schedule exists for this app
+		}
+		return nil, err
+	}
+
+	return schedule, nil
+}
+
+// CreateSchedule creates a new schedule
+func (db *DB) CreateSchedule(schedule *AppSchedule) error {
+	_, err := db.Exec(
+		`INSERT INTO app_schedules (id, app_id, start_cron, stop_cron, timezone, enabled, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		schedule.ID, schedule.AppID, schedule.StartCron, schedule.StopCron,
+		schedule.Timezone, schedule.Enabled, schedule.CreatedAt, schedule.UpdatedAt,
+	)
+	return err
+}
+
+// UpdateSchedule updates an existing schedule
+func (db *DB) UpdateSchedule(schedule *AppSchedule) error {
+	_, err := db.Exec(
+		`UPDATE app_schedules
+		 SET start_cron = ?, stop_cron = ?, timezone = ?, enabled = ?, updated_at = ?
+		 WHERE id = ?`,
+		schedule.StartCron, schedule.StopCron, schedule.Timezone,
+		schedule.Enabled, schedule.UpdatedAt, schedule.ID,
+	)
+	return err
+}
+
+// DeleteSchedule deletes a schedule by app ID
+func (db *DB) DeleteSchedule(appID string) error {
+	_, err := db.Exec(
+		`DELETE FROM app_schedules WHERE app_id = ?`,
+		appID,
+	)
+	return err
+}
+
+// GetAllSchedules retrieves all schedules (for scheduler initialization)
+func (db *DB) GetAllSchedules() ([]*AppSchedule, error) {
+	rows, err := db.Query(
+		`SELECT id, app_id, start_cron, stop_cron, timezone, enabled, created_at, updated_at
+		 FROM app_schedules WHERE enabled = 1`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var schedules []*AppSchedule
+	for rows.Next() {
+		schedule := &AppSchedule{}
+		err := rows.Scan(&schedule.ID, &schedule.AppID, &schedule.StartCron, &schedule.StopCron,
+			&schedule.Timezone, &schedule.Enabled, &schedule.CreatedAt, &schedule.UpdatedAt)
+		if err != nil {
+			return nil, err
+		}
+		schedules = append(schedules, schedule)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return schedules, nil
 }

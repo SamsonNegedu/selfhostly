@@ -29,20 +29,21 @@ type Node struct {
 
 // App represents a self-hosted application
 type App struct {
-	ID             string    `json:"id" db:"id"`
-	Name           string    `json:"name" db:"name"`
-	Description    string    `json:"description" db:"description"`
-	ComposeContent string    `json:"compose_content" db:"compose_content"`
-	TunnelToken    string    `json:"tunnel_token" db:"tunnel_token"`
-	TunnelID       string    `json:"tunnel_id" db:"tunnel_id"`
-	TunnelDomain   string    `json:"tunnel_domain" db:"tunnel_domain"`
-	PublicURL      string    `json:"public_url" db:"public_url"`
-	Status         string    `json:"status" db:"status"`               // running, stopped, updating, error
-	ErrorMessage   *string   `json:"error_message" db:"error_message"` // Make nullable to handle NULL values
-	NodeID         string    `json:"node_id" db:"node_id"`             // Which node this app is deployed on
-	TunnelMode     string    `json:"tunnel_mode" db:"tunnel_mode"`     // "custom" | "quick" | "" (empty = no tunnel)
-	CreatedAt      time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at" db:"updated_at"`
+	ID             string        `json:"id" db:"id"`
+	Name           string        `json:"name" db:"name"`
+	Description    string        `json:"description" db:"description"`
+	ComposeContent string        `json:"compose_content" db:"compose_content"`
+	TunnelToken    string        `json:"tunnel_token" db:"tunnel_token"`
+	TunnelID       string        `json:"tunnel_id" db:"tunnel_id"`
+	TunnelDomain   string        `json:"tunnel_domain" db:"tunnel_domain"`
+	PublicURL      string        `json:"public_url" db:"public_url"`
+	Status         string        `json:"status" db:"status"`               // running, stopped, updating, error
+	ErrorMessage   *string       `json:"error_message" db:"error_message"` // Make nullable to handle NULL values
+	NodeID         string        `json:"node_id" db:"node_id"`             // Which node this app is deployed on
+	TunnelMode     string        `json:"tunnel_mode" db:"tunnel_mode"`     // "custom" | "quick" | "" (empty = no tunnel)
+	CreatedAt      time.Time     `json:"created_at" db:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at" db:"updated_at"`
+	Schedule       *AppSchedule  `json:"schedule,omitempty" db:"-"`         // Optional schedule (not stored in apps table)
 }
 
 // CloudflareTunnel represents Cloudflare tunnel configuration and metadata
@@ -199,6 +200,18 @@ type ComposeVersion struct {
 	RolledBackFrom *int       `json:"rolled_back_from" db:"rolled_back_from"` // Version number this was rolled back from (if applicable)
 }
 
+// AppSchedule represents a scheduling configuration for an app
+type AppSchedule struct {
+	ID        string    `json:"id" db:"id"`
+	AppID     string    `json:"app_id" db:"app_id"`
+	StartCron string    `json:"start_cron" db:"start_cron"`   // Cron expression for when to start
+	StopCron  string    `json:"stop_cron" db:"stop_cron"`     // Cron expression for when to stop
+	Timezone  string    `json:"timezone" db:"timezone"`       // IANA timezone (e.g., "America/New_York")
+	Enabled   bool      `json:"enabled" db:"enabled"`         // Whether the schedule is active
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+}
+
 // Job represents a background job/task for async operations
 type Job struct {
 	ID              string     `json:"id" db:"id"`
@@ -245,6 +258,21 @@ func NewComposeVersion(appID string, version int, composeContent string, changeR
 		ChangedBy:      changedBy,
 		IsCurrent:      true,
 		CreatedAt:      time.Now(),
+	}
+}
+
+// NewAppSchedule creates a new AppSchedule with a generated UUID
+func NewAppSchedule(appID, startCron, stopCron, timezone string, enabled bool) *AppSchedule {
+	now := time.Now()
+	return &AppSchedule{
+		ID:        uuid.New().String(),
+		AppID:     appID,
+		StartCron: startCron,
+		StopCron:  stopCron,
+		Timezone:  timezone,
+		Enabled:   enabled,
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
 }
 

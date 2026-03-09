@@ -26,6 +26,37 @@ export interface App {
   tunnel_mode?: '' | 'custom' | 'quick'; // '' = none, custom = named tunnel, quick = trycloudflare.com
   created_at: string;
   updated_at: string;
+  schedule?: AppSchedule; // Optional schedule for this app
+}
+
+export interface AppSchedule {
+  id: string;
+  app_id: string;
+  start_cron: string;
+  stop_cron: string;
+  timezone: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ScheduleNextRuns {
+  app_id: string;
+  next_start?: string; // ISO date string
+  next_stop?: string;  // ISO date string
+}
+
+export interface UpdateScheduleRequest {
+  start_cron: string;
+  stop_cron: string;
+  timezone: string;
+  enabled: boolean;
+}
+
+export interface TimezoneOption {
+  value: string;
+  label: string;
+  offset: string;
 }
 
 export interface Job {

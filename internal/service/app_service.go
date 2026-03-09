@@ -1374,3 +1374,186 @@ func (s *appService) SwitchAppToCustomTunnelAsync(ctx context.Context, appID str
 	s.logger.InfoContext(ctx, "created switch to custom tunnel job", "appID", appID, "jobID", job.ID)
 	return job, nil
 }
+
+// StartAppAsync creates a background job to start an app
+func (s *appService) StartAppAsync(ctx context.Context, appID string) (*db.Job, error) {
+	s.logger.InfoContext(ctx, "creating async job to start app", "appID", appID)
+
+	// Verify app exists
+	app, err := s.database.GetApp(appID)
+	if err != nil {
+		return nil, domain.WrapAppNotFound(appID, err)
+	}
+
+	// Check for existing pending/running job for this app (concurrency control)
+	existingJob, err := s.database.GetActiveJobForApp(appID)
+	if err != nil {
+		s.logger.WarnContext(ctx, "failed to check for existing job", "appID", appID, "error", err)
+	}
+
+	if existingJob != nil {
+		// Check if it's a start or update job
+		if existingJob.Type == constants.JobTypeAppUpdate || existingJob.Type == constants.JobTypeAppCreate {
+			return nil, fmt.Errorf("app %s already has a pending job: %s", appID, existingJob.Type)
+		}
+	}
+
+	// RECOVERY: If app directory doesn't exist, recreate it from database
+	appPath := filepath.Join(s.config.AppsDir, app.Name)
+	if _, err := os.Stat(appPath); os.IsNotExist(err) {
+		s.logger.WarnContext(ctx, "app directory missing, recreating from database",
+			"app", app.Name, "appPath", appPath)
+
+		// Recreate directory with compose file from database
+		if err := s.dockerManager.CreateAppDirectory(app.Name, app.ComposeContent); err != nil {
+			return nil, fmt.Errorf("failed to recover app directory: %w", err)
+		}
+
+		s.logger.InfoContext(ctx, "app directory recovered", "app", app.Name)
+	}
+
+	// Create app_start job
+	payload := map[string]interface{}{
+		"name": app.Name,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal payload: %w", err)
+	}
+	str := string(payloadBytes)
+	payloadStr := &str
+
+	job := db.NewJob(constants.JobTypeAppStart, appID, payloadStr)
+	if err := s.database.CreateJob(job); err != nil {
+		return nil, fmt.Errorf("failed to create job: %w", err)
+	}
+
+	s.logger.InfoContext(ctx, "created app start job", "appID", appID, "jobID", job.ID)
+	return job, nil
+}
+
+// StopAppAsync creates a background job to stop an app
+func (s *appService) StopAppAsync(ctx context.Context, appID string) (*db.Job, error) {
+	s.logger.InfoContext(ctx, "creating async job to stop app", "appID", appID)
+
+	// Verify app exists
+	app, err := s.database.GetApp(appID)
+	if err != nil {
+		return nil, domain.WrapAppNotFound(appID, err)
+	}
+
+	// Check for existing pending/running job for this app (concurrency control)
+	existingJob, err := s.database.GetActiveJobForApp(appID)
+	if err != nil {
+		s.logger.WarnContext(ctx, "failed to check for existing job", "appID", appID, "error", err)
+	}
+
+	if existingJob != nil {
+		// Allow stop even if there's a start or update job (helps with cleanup)
+		s.logger.InfoContext(ctx, "app has existing job, but allowing stop for cleanup", 
+			"appID", appID, "existingJobType", existingJob.Type)
+	}
+
+	payload := map[string]interface{}{
+		"name": app.Name,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal payload: %w", err)
+	}
+	str := string(payloadBytes)
+	payloadStr := &str
+
+	job := db.NewJob(constants.JobTypeAppStop, appID, payloadStr)
+	if err := s.database.CreateJob(job); err != nil {
+		return nil, fmt.Errorf("failed to create job: %w", err)
+	}
+
+	s.logger.InfoContext(ctx, "created app stop job", "appID", appID, "jobID", job.ID)
+	return job, nil
+}
+
+// CreateStartJob creates a scheduled start job for an app (called by scheduler)
+func (s *appService) CreateStartJob(ctx context.Context, appID string) error {
+	app, err := s.database.GetApp(appID)
+	if err != nil {
+		return fmt.Errorf("failed to get app: %w", err)
+	}
+
+	payload := map[string]interface{}{
+		"name": app.Name,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal payload: %w", err)
+	}
+	str := string(payloadBytes)
+	payloadStr := &str
+
+	job := db.NewJob(constants.JobTypeAppScheduledStart, appID, payloadStr)
+	if err := s.database.CreateJob(job); err != nil {
+		return fmt.Errorf("failed to create scheduled start job: %w", err)
+	}
+
+	s.logger.InfoContext(ctx, "created scheduled start job", "appID", appID, "jobID", job.ID)
+	return nil
+}
+
+// CreateStopJob creates a scheduled stop job for an app (called by scheduler)
+func (s *appService) CreateStopJob(ctx context.Context, appID string) error {
+	app, err := s.database.GetApp(appID)
+	if err != nil {
+		return fmt.Errorf("failed to get app: %w", err)
+	}
+
+	payload := map[string]interface{}{
+		"name": app.Name,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal payload: %w", err)
+	}
+	str := string(payloadBytes)
+	payloadStr := &str
+
+	job := db.NewJob(constants.JobTypeAppScheduledStop, appID, payloadStr)
+	if err := s.database.CreateJob(job); err != nil {
+		return fmt.Errorf("failed to create scheduled stop job: %w", err)
+	}
+
+	s.logger.InfoContext(ctx, "created scheduled stop job", "appID", appID, "jobID", job.ID)
+	return nil
+}
+
+// GetAppWithSchedule gets an app with its schedule information
+func (s *appService) GetAppWithSchedule(ctx context.Context, appID string, nodeID string) (*db.App, error) {
+	// Get the app
+	app, err := s.GetApp(ctx, appID, nodeID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get the schedule for this app
+	schedule, err := s.database.GetScheduleByAppID(appID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get schedule: %w", err)
+	}
+
+	app.Schedule = schedule
+	return app, nil
+}
+
+// ListAppsWithSchedules lists all apps with their schedule information
+func (s *appService) ListAppsWithSchedules(ctx context.Context, nodeIDs []string) ([]*db.App, error) {
+	// Get all apps with schedules
+	apps, err := s.database.GetAllAppsWithSchedules()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get apps with schedules: %w", err)
+	}
+
+	return apps, nil
+}
