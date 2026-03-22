@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { Calendar, Save, Trash2, Power, AlertCircle, Clock, PlayCircle, StopCircle, Info } from 'lucide-react';
-import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/Card';
 import { Button } from '@/shared/components/ui/Button';
 import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog';
 import { TimezoneSelector, CronBuilder } from '@/features/schedules/components';
@@ -110,11 +109,9 @@ export function ScheduleEditor({ appId, nodeId }: ScheduleEditorProps) {
 
   if (isLoading) {
     return (
-      <Card>
-        <CardContent className="flex items-center justify-center p-12">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-        </CardContent>
-      </Card>
+      <div className="flex items-center justify-center p-12">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
     );
   }
 
@@ -125,57 +122,48 @@ export function ScheduleEditor({ appId, nodeId }: ScheduleEditorProps) {
   const isScheduleEnabled = schedule?.enabled ?? false;
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Clock className="h-5 w-5 text-muted-foreground" />
-            <div>
-              <CardTitle>Application Schedule</CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">
-                Automatically start and stop this application on a schedule
-              </p>
-            </div>
+    <div className="space-y-4">
+      {!hasSchedule && !formData.enabled ? (
+        <div className="flex flex-col items-center justify-center py-12 px-4 text-center border-2 border-dashed rounded-lg">
+          <div className="rounded-full bg-muted p-3 mb-4">
+            <Calendar className="h-6 w-6 text-muted-foreground" />
           </div>
-          <div className="flex items-center gap-2">
-            {hasSchedule && (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium bg-muted">
-                <Power className={`h-4 w-4 ${isScheduleEnabled ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`} />
-                {isScheduleEnabled ? 'Enabled' : 'Disabled'}
-              </div>
-            )}
-            {hasSchedule && (
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => setShowDeleteConfirm(true)}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
+          <h3 className="text-lg font-semibold mb-2">No schedule configured</h3>
+          <p className="text-sm text-muted-foreground max-w-md mb-4">
+            Create a schedule to automatically start and stop this application based on cron expressions.
+            Perfect for development environments, cost optimization, or maintenance windows.
+          </p>
+          <Button onClick={handleCreateSchedule}>
+            <Power className="h-4 w-4 mr-2" />
+            Create Schedule
+          </Button>
         </div>
-      </CardHeader>
-
-      <CardContent className="space-y-6">
-        {!hasSchedule && !formData.enabled ? (
-          <div className="flex flex-col items-center justify-center py-12 px-4 text-center border-2 border-dashed rounded-lg">
-            <div className="rounded-full bg-muted p-3 mb-4">
-              <Calendar className="h-6 w-6 text-muted-foreground" />
+      ) : (
+        <div className="space-y-4">
+          {/* Status Badge */}
+          {hasSchedule && (
+            <div className="flex items-center justify-between pb-4 border-b">
+              <div className="flex items-center gap-2">
+                <Clock className="h-5 w-5 text-muted-foreground" />
+                <span className="text-sm font-medium">Schedule Status</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium bg-muted">
+                  <Power className={`h-4 w-4 ${isScheduleEnabled ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`} />
+                  {isScheduleEnabled ? 'Enabled' : 'Disabled'}
+                </div>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setShowDeleteConfirm(true)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
-            <h3 className="text-lg font-semibold mb-2">No schedule configured</h3>
-            <p className="text-sm text-muted-foreground max-w-md mb-4">
-              Create a schedule to automatically start and stop this application based on cron expressions.
-              Perfect for development environments, cost optimization, or maintenance windows.
-            </p>
-            <Button onClick={handleCreateSchedule}>
-              <Power className="h-4 w-4 mr-2" />
-              Create Schedule
-            </Button>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {/* Start and Stop Schedules - Side by Side */}
+          )}
+
+          {/* Start and Stop Schedules - Side by Side */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {/* Start Schedule */}
               <div className="space-y-2">
@@ -290,28 +278,27 @@ export function ScheduleEditor({ appId, nodeId }: ScheduleEditorProps) {
               </div>
             )}
 
-            {/* Save Button */}
-            <div className="flex justify-end pt-2">
-              <Button
-                onClick={handleSave}
-                disabled={updateScheduleMutation.isPending || !canSave}
-              >
-                {updateScheduleMutation.isPending ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2" />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <Save className="h-4 w-4 mr-2" />
-                    Save Schedule
-                  </>
-                )}
-              </Button>
-            </div>
+          {/* Save Button */}
+          <div className="flex justify-end pt-2">
+            <Button
+              onClick={handleSave}
+              disabled={updateScheduleMutation.isPending || !canSave}
+            >
+              {updateScheduleMutation.isPending ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4 mr-2" />
+                  Save Schedule
+                </>
+              )}
+            </Button>
           </div>
-        )}
-      </CardContent>
+        </div>
+      )}
 
       {/* Delete Confirmation Dialog */}
       <ConfirmationDialog
@@ -324,6 +311,6 @@ export function ScheduleEditor({ appId, nodeId }: ScheduleEditorProps) {
         isLoading={deleteScheduleMutation.isPending}
         variant="destructive"
       />
-    </Card>
+    </div>
   );
 }

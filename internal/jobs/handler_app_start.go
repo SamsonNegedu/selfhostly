@@ -51,16 +51,37 @@ func (h *AppStartHandler) Handle(ctx context.Context, job *db.Job, progress *Pro
 		return nil
 	}
 
-	if err := h.dockerManager.StartApp(app.Name); err != nil {
-		app.Status = constants.AppStatusError
-		errorMsg := err.Error()
+	var dockerLog func(string)
+	if jl := progress.JobLog(); jl != nil {
+		dockerLog = jl.WriteLine
+	}
+
+	if err := h.dockerManager.StartAppWithLogs(ctx, app.Name, dockerLog); err != nil {
+		// Check actual container status to determine if start partially succeeded
+		status, statusErr := h.dockerManager.GetAppStatus(app.Name)
+		if statusErr != nil {
+			h.logger.Warn("failed to check app status after start failure", "app", app.Name, "error", statusErr)
+			// Can't determine status, mark as error
+			app.Status = constants.AppStatusError
+		} else if status == constants.AppStatusRunning {
+			// Containers are running despite error, mark as running
+			h.logger.Info("start reported error but containers are running", "app", app.Name)
+			app.Status = constants.AppStatusRunning
+		} else {
+			// Containers not running, mark as error
+			app.Status = constants.AppStatusError
+		}
+
+		errorMsg := fmt.Sprintf("Start failed: %s", err.Error())
 		app.ErrorMessage = &errorMsg
 
 		if updateErr := h.database.UpdateApp(app); updateErr != nil {
-			h.logger.Warn("Failed to update app to error state", "app_id", app.ID, "error", updateErr)
+			h.logger.Warn("Failed to update app state after start failure", "app_id", app.ID, "error", updateErr)
 		}
 
-		return fmt.Errorf("failed to start app: %w", err)
+		// Log full error for debugging
+		h.logger.ErrorContext(ctx, "docker start failed", "app", app.Name, "error", err, "final_status", app.Status)
+		return fmt.Errorf("Docker start failed: %w", err)
 	}
 
 	progress.Update(60, "Application started")

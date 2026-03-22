@@ -52,15 +52,35 @@ func (h *AppStopHandler) Handle(ctx context.Context, job *db.Job, progress *Prog
 	}
 
 	if err := h.dockerManager.StopApp(app.Name); err != nil {
-		app.Status = constants.AppStatusError
-		errorMsg := err.Error()
+		// Check actual container status to determine if stop partially succeeded
+		status, statusErr := h.dockerManager.GetAppStatus(app.Name)
+		if statusErr != nil {
+			h.logger.Warn("failed to check app status after stop failure", "app", app.Name, "error", statusErr)
+			// Can't determine status, mark as error
+			app.Status = constants.AppStatusError
+		} else if status == constants.AppStatusStopped {
+			// Containers are stopped despite error, mark as stopped
+			h.logger.Info("stop reported error but containers are stopped", "app", app.Name)
+			app.Status = constants.AppStatusStopped
+		} else if status == constants.AppStatusRunning {
+			// Containers still running, keep running status
+			h.logger.Info("stop failed and containers still running", "app", app.Name)
+			app.Status = constants.AppStatusRunning
+		} else {
+			// Unknown state, mark as error
+			app.Status = constants.AppStatusError
+		}
+
+		errorMsg := fmt.Sprintf("Stop failed: %s", err.Error())
 		app.ErrorMessage = &errorMsg
 
 		if updateErr := h.database.UpdateApp(app); updateErr != nil {
-			h.logger.Warn("Failed to update app to error state", "app_id", app.ID, "error", updateErr)
+			h.logger.Warn("Failed to update app state after stop failure", "app_id", app.ID, "error", updateErr)
 		}
 
-		return fmt.Errorf("failed to stop app: %w", err)
+		// Log full error for debugging
+		h.logger.ErrorContext(ctx, "docker stop failed", "app", app.Name, "error", err, "final_status", app.Status)
+		return fmt.Errorf("Docker stop failed: %w", err)
 	}
 
 	progress.Update(60, "Application stopped")

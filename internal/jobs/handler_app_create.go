@@ -62,8 +62,13 @@ func (h *AppCreateHandler) Handle(ctx context.Context, job *db.Job, progress *Pr
 
 	progress.Update(10, "Starting containers...")
 
+	var dockerLog func(string)
+	if jl := progress.JobLog(); jl != nil {
+		dockerLog = jl.WriteLine
+	}
+
 	// Start app (SLOW: docker pull/build/up)
-	if err := h.dockerManager.StartApp(app.Name); err != nil {
+	if err := h.dockerManager.StartAppWithLogs(ctx, app.Name, dockerLog); err != nil {
 		// Update app to error state
 		app.Status = constants.AppStatusError
 		errorMsg := err.Error()
@@ -71,7 +76,9 @@ func (h *AppCreateHandler) Handle(ctx context.Context, job *db.Job, progress *Pr
 		if updateErr := h.db.UpdateApp(app); updateErr != nil {
 			h.logger.Warn("failed to update app to error state", "app_id", app.ID, "error", updateErr)
 		}
-		return fmt.Errorf("failed to start app: %w", err)
+		// Log full error for debugging
+		h.logger.ErrorContext(ctx, "docker start failed", "app", app.Name, "error", err)
+		return fmt.Errorf("Docker deployment failed: %w", err)
 	}
 
 	progress.Update(60, "Containers started")

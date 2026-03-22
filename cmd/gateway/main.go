@@ -58,12 +58,13 @@ func main() {
 	router := gateway.NewRouter(registry, appLogger)
 	proxy := gateway.NewProxy(router, registry, cfg, appLogger)
 
+	// Write/idle timeouts must allow long-lived SSE streams (deployment logs during docker pull/build).
 	server := &http.Server{
 		Addr:         cfg.ListenAddress,
 		Handler:      proxy,
 		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 120 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		WriteTimeout: 2 * time.Hour,
+		IdleTimeout:  2 * time.Hour,
 	}
 
 	go func() {

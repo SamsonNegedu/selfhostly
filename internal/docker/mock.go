@@ -1,5 +1,10 @@
 package docker
 
+import (
+	"context"
+	"strings"
+)
+
 // MockCommandExecutor is a test implementation that doesn't actually execute commands
 type MockCommandExecutor struct {
 	// Map of command to mock output
@@ -34,6 +39,28 @@ func (m *MockCommandExecutor) ExecuteCommand(name string, args ...string) ([]byt
 // ExecuteCommandInDir records the command and returns mocked output/error
 func (m *MockCommandExecutor) ExecuteCommandInDir(dir, name string, args ...string) ([]byte, error) {
 	return m.executeCommand(dir, name, args)
+}
+
+// ExecuteCommandInDirStream records the command and streams mocked output line-by-line.
+func (m *MockCommandExecutor) ExecuteCommandInDirStream(ctx context.Context, dir, name string, args []string, onLine func(string)) error {
+	out, err := m.executeCommand(dir, name, args)
+	if err != nil {
+		return err
+	}
+	if onLine == nil {
+		return nil
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		if line != "" {
+			onLine(line)
+		}
+	}
+	return nil
 }
 
 // executeCommand is the internal method that handles both execution types

@@ -12,15 +12,23 @@ type ProgressTracker struct {
 	jobID  string
 	db     *db.DB
 	logger *slog.Logger
+	jobLog *JobLogWriter // optional: merged into deployment log stream as [step] lines
 }
 
-// NewProgressTracker creates a new progress tracker for a job
-func NewProgressTracker(jobID string, database *db.DB, logger *slog.Logger) *ProgressTracker {
+// NewProgressTracker creates a new progress tracker for a job.
+// jobLog may be nil (tests); when set, Update/UpdateMessage also append "[step] …" lines for the deployment log UI.
+func NewProgressTracker(jobID string, database *db.DB, logger *slog.Logger, jobLog *JobLogWriter) *ProgressTracker {
 	return &ProgressTracker{
 		jobID:  jobID,
 		db:     database,
 		logger: logger,
+		jobLog: jobLog,
 	}
+}
+
+// JobLog returns the shared job log writer, or nil.
+func (pt *ProgressTracker) JobLog() *JobLogWriter {
+	return pt.jobLog
 }
 
 // Update updates the job's progress and message
@@ -37,6 +45,9 @@ func (pt *ProgressTracker) Update(progress int, message string) {
 		pt.logger.Error("failed to update job progress", "job_id", pt.jobID, "error", err)
 	} else {
 		pt.logger.Debug("job progress updated", "job_id", pt.jobID, "progress", progress, "message", message)
+		if pt.jobLog != nil && message != "" {
+			pt.jobLog.WriteLine("[step] " + message)
+		}
 	}
 }
 
@@ -51,5 +62,7 @@ func (pt *ProgressTracker) UpdateMessage(message string) {
 
 	if err := pt.db.UpdateJobStatus(pt.jobID, constants.JobStatusRunning, job.Progress, &message); err != nil {
 		pt.logger.Error("failed to update job message", "job_id", pt.jobID, "error", err)
+	} else if pt.jobLog != nil && message != "" {
+		pt.jobLog.WriteLine("[step] " + message)
 	}
 }

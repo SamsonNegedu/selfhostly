@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"github.com/selfhostly/internal/db"
@@ -39,7 +40,7 @@ func (h *TunnelDeleteHandler) Handle(ctx context.Context, job *db.Job, progress 
 	// Get app
 	app, err := h.db.GetApp(job.AppID)
 	if err != nil {
-		return err
+		return fmt.Errorf("Failed to get app: %w", err)
 	}
 
 	// Check if app has a tunnel to delete
@@ -61,7 +62,7 @@ func (h *TunnelDeleteHandler) Handle(ctx context.Context, job *db.Job, progress 
 	// 5. Database cleanup
 	// 6. Compose file updates
 	if err := h.tunnelService.DeleteTunnel(ctx, app.ID, app.NodeID); err != nil {
-		return err
+		return fmt.Errorf("Tunnel deletion failed: %w", err)
 	}
 
 	progress.Update(90, "Cleaning up configuration...")

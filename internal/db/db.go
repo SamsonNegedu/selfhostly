@@ -313,6 +313,15 @@ func (db *DB) migrate() error {
 			FOREIGN KEY (app_id) REFERENCES apps(id) ON DELETE CASCADE
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_app_schedules_enabled ON app_schedules(enabled)`,
+		// Deployment log lines for async jobs (compose pull/build/up output)
+		`CREATE TABLE IF NOT EXISTS job_logs (
+			job_id TEXT NOT NULL,
+			seq INTEGER NOT NULL,
+			line TEXT NOT NULL,
+			PRIMARY KEY (job_id, seq),
+			FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_job_logs_job_seq ON job_logs(job_id, seq)`,
 	}
 
 	// Run migrations

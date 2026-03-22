@@ -59,9 +59,20 @@ export interface TimezoneOption {
   offset: string;
 }
 
+export interface JobLogLine {
+  seq: number;
+  text: string;
+}
+
+export interface JobLogsResponse {
+  lines: JobLogLine[];
+  next_after: number;
+  job_status: string;
+}
+
 export interface Job {
   id: string;
-  type: 'app_create' | 'app_update' | 'tunnel_create' | 'tunnel_delete' | 'quick_tunnel';
+  type: 'app_create' | 'app_update' | 'app_start' | 'tunnel_create' | 'tunnel_delete' | 'quick_tunnel';
   app_id: string;
   status: 'pending' | 'running' | 'completed' | 'failed';
   payload?: string;

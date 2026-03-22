@@ -52,14 +52,21 @@ func (p *Processor) ProcessJob(ctx context.Context, job *db.Job) error {
 
 	// Job is already marked as running by ClaimPendingJob, so we can proceed directly
 
-	// Create progress tracker
-	progress := NewProgressTracker(job.ID, p.db, p.logger)
+	jobLog := NewJobLogWriter(p.db, job.ID)
+	defer jobLog.Flush()
+
+	jobLog.WriteLine("[step] Job started (" + job.Type + ")")
+
+	// Create progress tracker (shared writer for [step] lines and handler docker streaming)
+	progress := NewProgressTracker(job.ID, p.db, p.logger, jobLog)
 
 	// Get handler from registry
 	handler, err := p.registry.GetHandler(job.Type)
 	if err != nil {
+		jobLog.WriteLine("[step] Failed: unknown job type")
+		jobLog.Flush()
 		p.logger.ErrorContext(ctx, "unknown job type", "job_id", job.ID, "type", job.Type, "error", err)
-		errorMsg := err.Error()
+		errorMsg := "Unknown job type"
 		return p.db.UpdateJobCompleted(job.ID, constants.JobStatusFailed, nil, &errorMsg)
 	}
 
@@ -68,7 +75,11 @@ func (p *Processor) ProcessJob(ctx context.Context, job *db.Job) error {
 
 	// Update job status based on result
 	if err != nil {
+		jobLog.WriteLine("[step] Failed: " + err.Error())
+		jobLog.Flush()
+		// Log full error with context for debugging
 		p.logger.ErrorContext(ctx, "job failed", "job_id", job.ID, "type", job.Type, "error", err)
+		// Store the raw error message for users - handlers should return user-friendly errors
 		errorMsg := err.Error()
 		return p.db.UpdateJobCompleted(job.ID, constants.JobStatusFailed, nil, &errorMsg)
 	}

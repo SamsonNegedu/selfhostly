@@ -120,6 +120,9 @@ func (s *Server) setupAppRoutes(api *gin.RouterGroup) {
 func (s *Server) setupJobRoutes(api *gin.RouterGroup) {
 	jobs := api.Group("/jobs")
 	{
+		// More specific paths first (Gin matches in registration order)
+		jobs.GET("/:id/logs/stream", s.resolveNodeMiddleware(), s.streamJobLogs)
+		jobs.GET("/:id/logs", s.resolveNodeMiddleware(), s.getJobLogs)
 		// Job-specific operations require node_id (from query when user auth)
 		jobs.GET("/:id", s.resolveNodeMiddleware(), s.getJob)
 	}

@@ -64,7 +64,7 @@ func (h *TunnelCreateHandler) Handle(ctx context.Context, job *db.Job, progress 
 	// Note: We pass app.NodeID since we're on the same node
 	updatedApp, _, err := h.appService.CreateTunnelForApp(ctx, app.ID, app.NodeID, nil)
 	if err != nil {
-		return fmt.Errorf("failed to create tunnel: %w", err)
+		return fmt.Errorf("Tunnel creation failed: %w", err)
 	}
 
 	// If ingress rules were provided, apply them now

@@ -247,6 +247,12 @@ type Job struct {
 	JobHash *string `json:"job_hash,omitempty" db:"job_hash"`
 }
 
+// JobLogLine is one line of deployment output for a job (compose pull/build/up).
+type JobLogLine struct {
+	Seq  int64  `json:"seq"`
+	Text string `json:"text"`
+}
+
 // NewComposeVersion creates a new ComposeVersion with a generated UUID
 func NewComposeVersion(appID string, version int, composeContent string, changeReason *string, changedBy *string) *ComposeVersion {
 	return &ComposeVersion{

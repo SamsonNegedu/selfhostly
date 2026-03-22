@@ -50,7 +50,7 @@ function LogViewer({ appId, nodeId }: { appId: string; nodeId: string }) {
         <Card>
             <CardHeader>
                 <div className="flex items-center justify-between gap-4">
-                    <CardTitle className="text-xl">Logs</CardTitle>
+                    <CardTitle className="text-xl">Container logs</CardTitle>
                     <div className="flex items-center gap-2">
                         {services.length > 0 && (
                             <SimpleDropdown

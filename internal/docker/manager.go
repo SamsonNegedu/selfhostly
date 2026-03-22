@@ -102,10 +102,33 @@ func (m *Manager) StartApp(name string) error {
 	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, cmd[0], cmd[1:]...)
 	if err != nil {
 		slog.Error("failed to start app", "app", name, "error", err, "output", string(output))
-		return fmt.Errorf("failed to start app: %w\nOutput: %s", err, string(output))
+		// Return error with docker output for user context
+		return fmt.Errorf("%w\nDocker output: %s", err, string(output))
 	}
 
 	slog.Info("app started successfully", "app", name, "output", string(output))
+	return nil
+}
+
+// StartAppWithLogs starts the app using docker compose and streams stdout/stderr lines to logLine when non-nil.
+func (m *Manager) StartAppWithLogs(ctx context.Context, name string, logLine func(string)) error {
+	appPath := filepath.Join(m.appsDir, name)
+
+	if !m.directoryExists(appPath) {
+		slog.Error("app directory does not exist", "app", name, "appPath", appPath)
+		return fmt.Errorf("app directory not found: %s", appPath)
+	}
+
+	slog.Info("starting app", "app", name, "appPath", appPath, "command", "docker compose up -d")
+
+	cmd := ComposeUpCommand()
+	err := m.commandExecutor.ExecuteCommandInDirStream(ctx, appPath, cmd[0], cmd[1:], logLine)
+	if err != nil {
+		slog.Error("failed to start app", "app", name, "error", err)
+		return err
+	}
+
+	slog.Info("app started successfully", "app", name)
 	return nil
 }
 
@@ -127,7 +150,7 @@ func (m *Manager) ReconcileApp(name string) error {
 	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, cmd[0], cmd[1:]...)
 	if err != nil {
 		slog.Error("failed to reconcile app", "app", name, "error", err, "output", string(output))
-		return fmt.Errorf("failed to reconcile app: %w\nOutput: %s", err, string(output))
+		return fmt.Errorf("%w\nDocker output: %s", err, string(output))
 	}
 
 	slog.Info("app reconciled successfully", "app", name, "output", string(output))
@@ -150,7 +173,7 @@ func (m *Manager) StopApp(name string) error {
 	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, cmd[0], cmd[1:]...)
 	if err != nil {
 		slog.Error("failed to stop app", "app", name, "error", err, "output", string(output))
-		return fmt.Errorf("failed to stop app: %w\nOutput: %s", err, string(output))
+		return fmt.Errorf("%w\nDocker output: %s", err, string(output))
 	}
 
 	slog.Info("app stopped successfully", "app", name, "output", string(output))
@@ -203,15 +226,16 @@ func (m *Manager) UpdateApp(name string) error {
 			"error", upErr,
 			"output", string(upOutput),
 			"exitCode", upErr.Error())
-		return fmt.Errorf("failed to update app: %w\nCommand: docker compose -f %s up -d --build\nOutput: %s", upErr, composeFile, string(upOutput))
+		return fmt.Errorf("%w\nDocker output: %s", upErr, string(upOutput))
 	}
 
 	slog.Info("app updated successfully", "app", name, "output", string(upOutput))
 	return nil
 }
 
-// UpdateAppWithProgress performs zero-downtime update with progress callbacks
-func (m *Manager) UpdateAppWithProgress(ctx context.Context, name string, progressCb ProgressCallback) error {
+// UpdateAppWithProgress performs zero-downtime update with progress callbacks.
+// logLine receives compose output lines when non-nil; pull lines are prefixed with "[pull] ", up/build with "[up] ".
+func (m *Manager) UpdateAppWithProgress(ctx context.Context, name string, progressCb ProgressCallback, logLine func(string)) error {
 	appPath := filepath.Join(m.appsDir, name)
 	composeFile := "docker-compose.yml"
 	composePath := filepath.Join(appPath, composeFile)
@@ -239,15 +263,27 @@ func (m *Manager) UpdateAppWithProgress(ctx context.Context, name string, progre
 
 	slog.Info("pulling latest images", "app", name, "command", "docker compose pull --ignore-buildable")
 	pullCmd := ComposePullCommand()
-	pullOutput, pullErr := m.commandExecutor.ExecuteCommandInDir(appPath, pullCmd[0], pullCmd[1:]...)
-	if pullErr != nil {
-		// If pull fails, log but continue
-		slog.Warn("failed to pull images, continuing with update",
-			"app", name,
-			"error", pullErr,
-			"output", string(pullOutput))
+	var pullErr error
+	if logLine != nil {
+		pullErr = m.commandExecutor.ExecuteCommandInDirStream(ctx, appPath, pullCmd[0], pullCmd[1:], func(line string) {
+			logLine("[pull] " + line)
+		})
+		if pullErr != nil {
+			slog.Warn("failed to pull images, continuing with update", "app", name, "error", pullErr)
+		} else {
+			slog.Info("images pulled successfully", "app", name)
+		}
 	} else {
-		slog.Info("images pulled successfully", "app", name)
+		var pullOutput []byte
+		pullOutput, pullErr = m.commandExecutor.ExecuteCommandInDir(appPath, pullCmd[0], pullCmd[1:]...)
+		if pullErr != nil {
+			slog.Warn("failed to pull images, continuing with update",
+				"app", name,
+				"error", pullErr,
+				"output", string(pullOutput))
+		} else {
+			slog.Info("images pulled successfully", "app", name)
+		}
 	}
 
 	if progressCb != nil {
@@ -257,13 +293,25 @@ func (m *Manager) UpdateAppWithProgress(ctx context.Context, name string, progre
 	// Step 2: Update app services with --build flag
 	slog.Info("updating app services", "app", name, "command", "docker compose up -d --build")
 	upCmd := ComposeUpWithBuildCommand()
-	upOutput, upErr := m.commandExecutor.ExecuteCommandInDir(appPath, upCmd[0], upCmd[1:]...)
+	var upErr error
+	if logLine != nil {
+		upErr = m.commandExecutor.ExecuteCommandInDirStream(ctx, appPath, upCmd[0], upCmd[1:], func(line string) {
+			logLine("[up] " + line)
+		})
+	} else {
+		var upOutput []byte
+		upOutput, upErr = m.commandExecutor.ExecuteCommandInDir(appPath, upCmd[0], upCmd[1:]...)
+		if upErr != nil {
+			slog.Error("failed to update app services",
+				"app", name,
+				"error", upErr,
+				"output", string(upOutput))
+			return fmt.Errorf("%w\nDocker output: %s", upErr, string(upOutput))
+		}
+	}
 	if upErr != nil {
-		slog.Error("failed to update app services",
-			"app", name,
-			"error", upErr,
-			"output", string(upOutput))
-		return fmt.Errorf("failed to update app: %w\nOutput: %s", upErr, string(upOutput))
+		slog.Error("failed to update app services", "app", name, "error", upErr)
+		return upErr
 	}
 
 	if progressCb != nil {
@@ -450,7 +498,7 @@ func (m *Manager) RestartCloudflared(name string) error {
 	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, cmd[0], cmd[1:]...)
 	if err != nil {
 		slog.Error("failed to restart cloudflared", "app", name, "error", err, "output", string(output))
-		return fmt.Errorf("failed to restart cloudflared: %w\nOutput: %s", err, string(output))
+		return fmt.Errorf("%w\nDocker output: %s", err, string(output))
 	}
 
 	slog.Info("cloudflared service restarted successfully", "app", name, "output", string(output))
@@ -467,7 +515,7 @@ func (m *Manager) RestartTunnelService(name string) error {
 	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, cmd[0], cmd[1:]...)
 	if err != nil {
 		slog.Error("failed to restart tunnel service", "app", name, "error", err, "output", string(output))
-		return fmt.Errorf("failed to restart tunnel service: %w\nOutput: %s", err, string(output))
+		return fmt.Errorf("%w\nDocker output: %s", err, string(output))
 	}
 
 	slog.Info("tunnel service restarted successfully", "app", name, "output", string(output))
@@ -554,7 +602,7 @@ func (m *Manager) RestartContainer(containerID string) error {
 	output, err := m.commandExecutor.ExecuteCommand(cmd[0], cmd[1:]...)
 	if err != nil {
 		slog.Error("failed to restart container", "containerID", containerID, "error", err, "output", string(output))
-		return fmt.Errorf("failed to restart container: %w\nOutput: %s", err, string(output))
+		return fmt.Errorf("%w\nDocker output: %s", err, string(output))
 	}
 
 	slog.Info("container restarted successfully", "containerID", containerID, "output", string(output))
@@ -569,7 +617,7 @@ func (m *Manager) StopContainer(containerID string) error {
 	output, err := m.commandExecutor.ExecuteCommand(cmd[0], cmd[1:]...)
 	if err != nil {
 		slog.Error("failed to stop container", "containerID", containerID, "error", err, "output", string(output))
-		return fmt.Errorf("failed to stop container: %w\nOutput: %s", err, string(output))
+		return fmt.Errorf("%w\nDocker output: %s", err, string(output))
 	}
 
 	slog.Info("container stopped successfully", "containerID", containerID, "output", string(output))
@@ -584,7 +632,7 @@ func (m *Manager) DeleteContainer(containerID string) error {
 	output, err := m.commandExecutor.ExecuteCommand(cmd[0], cmd[1:]...)
 	if err != nil {
 		slog.Error("failed to delete container", "containerID", containerID, "error", err, "output", string(output))
-		return fmt.Errorf("failed to delete container: %w\nOutput: %s", err, string(output))
+		return fmt.Errorf("%w\nDocker output: %s", err, string(output))
 	}
 
 	slog.Info("container deleted successfully", "containerID", containerID, "output", string(output))

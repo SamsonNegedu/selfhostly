@@ -8,7 +8,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui
 import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog'
 import { Terminal, Settings, Cloud, Info, AlertTriangle, Clock } from 'lucide-react'
 import { Button } from '@/shared/components/ui/Button'
-import LogViewer from './components/LogViewer'
+import { AppLogsPanel } from './components/AppLogsPanel'
 import ComposeEditor from './components/ComposeEditor'
 import CloudflareTab from './components/CloudflareTab'
 import { AppActions } from './components/AppActions'
@@ -21,7 +21,7 @@ type TabType = 'overview' | 'compose' | 'logs' | 'cloudflare' | 'schedule'
 
 function AppDetails() {
     const { id } = useParams<{ id: string }>()
-    const [searchParams] = useSearchParams()
+    const [searchParams, setSearchParams] = useSearchParams()
     const appId = id ?? undefined
     const navigate = useNavigate()
 
@@ -110,7 +110,20 @@ function AppDetails() {
         }
     }
 
-    const [activeTab, setActiveTab] = React.useState<TabType>('overview')
+    // Get active tab from URL, default to 'overview'
+    const tabFromUrl = searchParams.get('tab') as TabType | null
+    const activeTab = (tabFromUrl && ['overview', 'compose', 'logs', 'cloudflare', 'schedule'].includes(tabFromUrl)) 
+        ? tabFromUrl 
+        : 'overview'
+
+    // Update URL when tab changes
+    const setActiveTab = (tab: TabType) => {
+        setSearchParams(prev => {
+            const newParams = new URLSearchParams(prev)
+            newParams.set('tab', tab)
+            return newParams
+        }, { replace: true }) // Use replace to avoid cluttering browser history
+    }
 
     if (isLoading) {
         return <AppDetailsSkeleton />
@@ -341,7 +354,7 @@ function AppDetails() {
                                 Unable to load logs: node_id is missing
                             </div>
                         ) : (
-                            <LogViewer appId={app.id} nodeId={app.node_id} />
+                            <AppLogsPanel appId={app.id} nodeId={app.node_id} />
                         )
                     )}
                     {activeTab === 'cloudflare' && (

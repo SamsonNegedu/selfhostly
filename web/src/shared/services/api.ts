@@ -766,11 +766,11 @@ export function useAppJobs(appId: string, nodeId: string) {
 }
 
 // Get list of services for an app
-export function useAppServices(appId: string, nodeId: string) {
+export function useAppServices(appId: string, nodeId: string, queryEnabled = true) {
   return useQuery<string[]>({
     queryKey: ['app-services', appId, nodeId],
     queryFn: () => apiClient.get<string[]>(`/api/apps/${appId}/services`, { node_id: nodeId }),
-    enabled: !!appId && !!nodeId,
+    enabled: !!appId && !!nodeId && queryEnabled,
   });
 }
 

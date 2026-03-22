@@ -17,6 +17,9 @@ const (
 	JobStatusRunning   = "running"
 	JobStatusCompleted = "completed"
 	JobStatusFailed    = "failed"
+
+	// JobLogMaxBytes is the maximum total size of deployment log lines stored per job (SQLite).
+	JobLogMaxBytes = 1024 * 1024 // 1 MiB
 )
 
 // Job type values
@@ -100,11 +103,12 @@ const (
 	// ServerReadTimeout is the HTTP server read timeout
 	ServerReadTimeout = 30 * time.Second
 
-	// ServerWriteTimeout is the HTTP server write timeout
-	ServerWriteTimeout = 120 * time.Second
+	// ServerWriteTimeout is the HTTP server write timeout for a single response.
+	// Long-running endpoints (e.g. SSE deployment logs during docker pull/build) need a high value.
+	ServerWriteTimeout = 2 * time.Hour
 
 	// ServerIdleTimeout is the HTTP server idle timeout
-	ServerIdleTimeout = 120 * time.Second
+	ServerIdleTimeout = 2 * time.Hour
 
 	// HealthCheckInterval is the interval for periodic health checks
 	HealthCheckInterval = 30 * time.Second
