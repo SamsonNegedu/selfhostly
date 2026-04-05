@@ -81,13 +81,13 @@ function ContainerLogsToolbar({
   isLoading: boolean
 }) {
   return (
-    <div className="flex items-center gap-2 flex-wrap justify-end sm:ml-auto">
+    <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-end sm:ml-auto">
       {services.length > 0 && (
         <SimpleDropdown
           trigger={
-            <Button variant="outline" size="sm" className="gap-2">
-              <span>{selectedService || 'All Services'}</span>
-              <ChevronDown className="h-4 w-4" />
+            <Button variant="outline" size="sm" className="gap-1.5 h-8 text-xs sm:text-sm px-2 sm:px-3">
+              <span className="max-w-[100px] sm:max-w-none truncate">{selectedService || 'All Services'}</span>
+              <ChevronDown className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" />
             </Button>
           }
         >
@@ -101,11 +101,11 @@ function ContainerLogsToolbar({
           </div>
         </SimpleDropdown>
       )}
-      <Button variant="outline" size="icon" onClick={onRefresh} disabled={isLoading}>
-        <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+      <Button variant="outline" size="icon" onClick={onRefresh} disabled={isLoading} className="h-8 w-8">
+        <RefreshCw className={`h-3.5 w-3.5 sm:h-4 sm:w-4 ${isLoading ? 'animate-spin' : ''}`} />
       </Button>
-      <Button variant="outline" size="icon" onClick={onDownload}>
-        <Download className="h-4 w-4" />
+      <Button variant="outline" size="icon" onClick={onDownload} className="h-8 w-8">
+        <Download className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
       </Button>
     </div>
   )
@@ -150,10 +150,10 @@ export function AppLogsPanel({ appId, nodeId }: AppLogsPanelProps) {
 
   return (
     <Card>
-      <CardHeader className="pb-0 pt-3 px-4 sm:px-6">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+      <CardHeader className="pb-0 pt-3 px-3 sm:px-6">
+        <div className="flex items-center justify-between gap-2 sm:gap-3">
           <div
-            className="flex rounded-lg border border-border p-0.5 bg-muted/30 w-fit max-w-full overflow-x-auto"
+            className="flex rounded-lg border border-border p-0.5 bg-muted/30 w-fit overflow-x-auto scrollbar-hide"
             role="tablist"
             aria-label="Log type"
           >
@@ -163,28 +163,28 @@ export function AppLogsPanel({ appId, nodeId }: AppLogsPanelProps) {
               aria-selected={subTab === 'deployment'}
               disabled={!hasDeploy}
               onClick={() => setSubTab('deployment')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md whitespace-nowrap transition-colors ${
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs sm:text-sm font-medium rounded-md whitespace-nowrap transition-colors ${
                 subTab === 'deployment'
                   ? 'bg-background text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
               } ${!hasDeploy ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               <Terminal className="h-3.5 w-3.5 shrink-0" />
-              Deployment
+              <span className="hidden xs:inline">Deployment</span>
             </button>
             <button
               type="button"
               role="tab"
               aria-selected={subTab === 'containers'}
               onClick={() => setSubTab('containers')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md whitespace-nowrap transition-colors ${
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs sm:text-sm font-medium rounded-md whitespace-nowrap transition-colors ${
                 subTab === 'containers'
                   ? 'bg-background text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               <Container className="h-3.5 w-3.5 shrink-0" />
-              Containers
+              <span className="hidden xs:inline">Containers</span>
             </button>
           </div>
 
@@ -200,7 +200,7 @@ export function AppLogsPanel({ appId, nodeId }: AppLogsPanelProps) {
           )}
         </div>
       </CardHeader>
-      <CardContent className="pt-2 px-4 pb-4 sm:px-6 sm:pt-3">
+      <CardContent className="pt-2 px-3 pb-3 sm:px-6 sm:pb-4 sm:pt-3">
         {subTab === 'deployment' && (
           <>
             {hasDeploy && jobForDeploy ? (

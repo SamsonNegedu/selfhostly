@@ -214,13 +214,12 @@ function AppDetails() {
             />
 
             <Card className="overflow-hidden">
-                <CardHeader className="pb-3 sm:pb-4 p-4 sm:p-6">
-                    <div className="flex flex-col gap-3 sm:gap-4">
-                        <div className="flex items-start sm:items-center justify-between gap-3 sm:gap-4">
-                            <div className="flex flex-col gap-2">
-                                <div className="flex items-center gap-3">
-                                    <CardTitle className="text-2xl sm:text-3xl font-bold">{app.name}</CardTitle>
-                                </div>
+                <CardHeader className="pb-0 p-4 sm:p-6">
+                    <div className="flex flex-col gap-3">
+                        {/* Title and Actions Row */}
+                        <div className="flex items-start justify-between gap-3">
+                            <div className="flex flex-col gap-2 min-w-0 flex-1">
+                                <CardTitle className="text-xl sm:text-2xl md:text-3xl font-bold truncate">{app.name}</CardTitle>
                                 <div className="flex flex-wrap items-center gap-2">
                                     <div
                                         className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold ${getStatusColor(app.status)}`}
@@ -233,14 +232,14 @@ function AppDetails() {
                                             href={app.public_url}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors max-w-[180px] sm:max-w-[250px]"
                                         >
-                                            <Cloud className="h-3 w-3" />
-                                            <span className="max-w-[200px] truncate">{app.public_url.replace(/^https?:\/\//, '')}</span>
+                                            <Cloud className="h-3 w-3 flex-shrink-0" />
+                                            <span className="truncate">{app.public_url.replace(/^https?:\/\//, '')}</span>
                                         </a>
                                     )}
                                     {app.node_id && (
-                                        <span className="text-xs text-muted-foreground">
+                                        <span className="hidden sm:inline text-xs text-muted-foreground truncate max-w-[150px]" title={`Node: ${app.node_id}`}>
                                             Node: {app.node_id}
                                         </span>
                                     )}
@@ -287,26 +286,26 @@ function AppDetails() {
                                     onDelete={handleDelete}
                                 />
                             </div>
+                        </div>
 
-                            {/* Enhanced Tab Navigation */}
-                            <div className="flex overflow-x-auto border-b -mx-4 sm:-mx-6 px-4 sm:px-6 scrollbar-hide">
-                                {tabs.map((tab) => {
-                                    const Icon = tab.icon
-                                    return (
-                                        <button
-                                            key={tab.id}
-                                            className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-sm font-medium whitespace-nowrap border-b-2 transition-colors interactive-element ${activeTab === tab.id
-                                                ? 'border-primary text-primary'
-                                                : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted'
-                                                }`}
-                                            onClick={() => setActiveTab(tab.id)}
-                                        >
-                                            <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                                            <span className="hidden xs:inline">{tab.label}</span>
-                                        </button>
-                                    )
-                                })}
-                            </div>
+                        {/* Tab Navigation */}
+                        <div className="flex overflow-x-auto border-b -mx-4 sm:-mx-6 px-4 sm:px-6 scrollbar-hide">
+                            {tabs.map((tab) => {
+                                const Icon = tab.icon
+                                return (
+                                    <button
+                                        key={tab.id}
+                                        className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-sm font-medium whitespace-nowrap border-b-2 transition-colors interactive-element ${activeTab === tab.id
+                                            ? 'border-primary text-primary'
+                                            : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted'
+                                            }`}
+                                        onClick={() => setActiveTab(tab.id)}
+                                    >
+                                        <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                                        <span className="hidden xs:inline">{tab.label}</span>
+                                    </button>
+                                )
+                            })}
                         </div>
                     </div>
                 </CardHeader>

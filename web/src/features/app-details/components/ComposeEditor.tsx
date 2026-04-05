@@ -164,7 +164,8 @@ function ComposeEditor({ appId, nodeId, initialComposeContent }: ComposeEditorPr
             setShowUpdateDialog(true)
         } catch (error) {
             console.error('Failed to update compose file:', error)
-            toast.error('Failed to save', 'Could not update compose configuration')
+            const errorMessage = error instanceof Error ? error.message : 'Could not update compose configuration'
+            toast.error('Failed to save', errorMessage)
         } finally {
             setIsSaving(false)
         }

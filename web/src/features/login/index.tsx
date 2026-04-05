@@ -38,8 +38,8 @@ function Login() {
   };
 
   return (
-    <div className="h-screen overflow-hidden bg-gradient-to-br from-background via-muted/20 to-background flex items-center justify-center p-3 sm:p-4">
-      <div className="w-full max-w-md max-h-full overflow-y-auto scrollbar-hide">
+    <div className="h-screen bg-gradient-to-br from-background via-muted/20 to-background flex items-center justify-center p-3 sm:p-4">
+      <div className="w-full max-w-md">
         {/* Error Alert */}
         {showError && errorMessage && (
           <div className="mb-4 sm:mb-6 bg-destructive/10 border border-destructive/50 rounded-xl p-3 sm:p-4 backdrop-blur-sm fade-in">
