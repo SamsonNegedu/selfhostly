@@ -17,6 +17,15 @@ import (
 type ErrorResponse struct {
 	Error   string `json:"error"`
 	Details string `json:"details,omitempty"`
+	// Code is stable and machine-readable, so the client can react to it without matching text.
+	Code string `json:"code,omitempty"`
+	// Field names the request field the error is about, when there is one.
+	Field string `json:"field,omitempty"`
+}
+
+// errorBody builds the response for an error, carrying its code and field when it has them.
+func errorBody(message string, err error) ErrorResponse {
+	return ErrorResponse{Error: message, Details: detailForError(err), Code: domain.ErrorCode(err), Field: domain.ErrorField(err)}
 }
 
 // detailForError returns a short, user-facing detail string. Uses only domain message (never Cause) to avoid leaking DB/driver internals.
@@ -27,17 +36,22 @@ func detailForError(err error) string {
 // handleServiceError handles errors from service layer
 func (s *Server) handleServiceError(c *gin.Context, operation string, err error) {
 	if domain.IsNotFoundError(err) {
-		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Resource not found", Details: detailForError(err)})
+		c.JSON(http.StatusNotFound, errorBody("Resource not found", err))
+		return
+	}
+
+	if domain.IsConflictError(err) {
+		c.JSON(http.StatusConflict, errorBody("Conflict", err))
 		return
 	}
 
 	if domain.IsValidationError(err) {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Validation error", Details: detailForError(err)})
+		c.JSON(http.StatusBadRequest, errorBody("Validation error", err))
 		return
 	}
 
 	slog.ErrorContext(c.Request.Context(), "service error", "operation", operation, "error", err)
-	c.JSON(http.StatusInternalServerError, ErrorResponse{Error: fmt.Sprintf("Failed to %s", operation), Details: detailForError(err)})
+	c.JSON(http.StatusInternalServerError, errorBody(fmt.Sprintf("Failed to %s", operation), err))
 }
 
 // getNodeIDFromContext extracts node_id from context, checking both possible keys
@@ -90,6 +104,7 @@ func (s *Server) createApp(c *gin.Context) {
 		return
 	}
 
+	setAuditTarget(c, targetApp, app.ID, app.Name)
 	c.JSON(http.StatusCreated, app)
 }
 

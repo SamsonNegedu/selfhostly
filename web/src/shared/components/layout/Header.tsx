@@ -1,94 +1,75 @@
 import { Link } from 'react-router-dom';
-import { Server, LogOut, Menu, Sun, Moon, Monitor } from 'lucide-react';
-import { Button } from '../ui/Button';
-import SmartAvatar from '../ui/SmartAvatar';
+import { ChevronLeft, Search, Server } from 'lucide-react';
+import { Kbd } from '../ui/Kbd';
+import { useCommandPalette } from './CommandPaletteContext';
 import { useAuth } from '../auth/AuthProvider';
-import { logout } from '@/shared/services/api';
-import {
-    SimpleDropdown,
-    SimpleDropdownItem,
-} from '../ui/SimpleDropdown';
-import { useTheme } from '../theme/ThemeProvider';
+import NotificationsMenu from './NotificationsMenu';
+import ScopeSwitcher from './ScopeSwitcher';
+import TopbarBreadcrumbs from './TopbarBreadcrumbs';
+import { useCrumbs } from './useCrumbs';
+import UserMenu from './UserMenu';
 
-interface HeaderProps {
-    onMenuToggle: () => void;
-}
+const isApplePlatform = () => /Mac|iPhone|iPad/.test(navigator.platform);
 
-function Header({ onMenuToggle }: HeaderProps) {
-    const { user, isAuthenticated } = useAuth();
-    const { setTheme, theme } = useTheme();
+function Header() {
+    const { isAuthenticated } = useAuth();
+    const { setOpen: openPalette } = useCommandPalette();
+    const crumbs = useCrumbs();
 
     if (!isAuthenticated) {
         return null;
     }
 
+    // On a phone a deep page shows a back arrow to its parent, and a top level page shows the logo.
+    const title = crumbs[crumbs.length - 1]?.label ?? 'Selfhostly';
+    // The back arrow goes to the nearest earlier crumb that links somewhere (a node name has no page).
+    const parent = crumbs.slice(0, -1).reverse().find((crumb) => crumb.to);
+
     return (
-        <header className="border-b bg-background flex-shrink-0 z-50">
-            <div className="px-3 sm:px-4 py-3 sm:py-4 flex items-center justify-between">
-                {/* Mobile hamburger menu */}
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={onMenuToggle}
-                    className="md:hidden h-9 w-9"
-                    aria-label="Open menu"
+        <header className="flex h-[60px] shrink-0 items-center gap-2 border-b border-border bg-background px-2 sm:gap-3 sm:px-8 md:px-8 z-30">
+            {parent?.to ? (
+                <Link
+                    to={parent.to}
+                    className="flex h-[44px] w-[44px] items-center justify-center rounded-lg hover:bg-accent md:hidden"
+                    aria-label={`Back to ${parent.label}`}
                 >
-                    <Menu className="h-5 w-5" />
-                </Button>
-
-                {/* Logo */}
-                <Link to="/apps" className="flex items-center space-x-2 hover:opacity-80 transition-opacity">
-                    <Server className="h-6 w-6 text-primary" />
-                    <span className="font-bold text-lg sm:text-xl">Selfhostly</span>
+                    <ChevronLeft className="h-5 w-5" />
                 </Link>
+            ) : (
+                <Link to="/apps" className="flex h-[44px] w-[44px] items-center justify-center md:hidden" aria-label="Selfhostly home">
+                    <span className="flex h-[30px] w-[30px] items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                        <Server className="h-[17px] w-[17px]" />
+                    </span>
+                </Link>
+            )}
+            <p className="min-w-0 flex-1 truncate text-base font-semibold md:hidden">{title}</p>
 
-                {/* User Menu */}
-                <div className="flex items-center">
-                    <SimpleDropdown
-                        trigger={
-                            <Button variant="ghost" size="icon" className="relative">
-                                <SmartAvatar user={user} size="sm" />
-                            </Button>
-                        }
-                    >
-                        <div className="py-1 min-w-[200px]">
-                            <div className="px-3 py-2 border-b">
-                                <p className="font-medium text-sm">{user?.name}</p>
-                            </div>
-                            <div className="px-2 py-1">
-                                <p className="text-xs font-medium text-muted-foreground px-2 py-1">Theme</p>
-                                <SimpleDropdownItem onClick={() => setTheme('light')}>
-                                    <div className="flex items-center w-full">
-                                        <Sun className="mr-2 h-4 w-4" />
-                                        <span>Light</span>
-                                        {theme === 'light' && <span className="ml-auto text-primary">✓</span>}
-                                    </div>
-                                </SimpleDropdownItem>
-                                <SimpleDropdownItem onClick={() => setTheme('dark')}>
-                                    <div className="flex items-center w-full">
-                                        <Moon className="mr-2 h-4 w-4" />
-                                        <span>Dark</span>
-                                        {theme === 'dark' && <span className="ml-auto text-primary">✓</span>}
-                                    </div>
-                                </SimpleDropdownItem>
-                                <SimpleDropdownItem onClick={() => setTheme('system')}>
-                                    <div className="flex items-center w-full">
-                                        <Monitor className="mr-2 h-4 w-4" />
-                                        <span>System</span>
-                                        {theme === 'system' && <span className="ml-auto text-primary">✓</span>}
-                                    </div>
-                                </SimpleDropdownItem>
-                            </div>
-                            <div className="border-t mt-1 pt-1">
-                                <SimpleDropdownItem onClick={() => logout()}>
-                                    <div className="flex items-center text-destructive">
-                                        <LogOut className="h-4 w-4 mr-2" />
-                                        Logout
-                                    </div>
-                                </SimpleDropdownItem>
-                            </div>
-                        </div>
-                    </SimpleDropdown>
+            <TopbarBreadcrumbs className="hidden min-w-0 md:block" />
+
+            <div className="ml-auto flex items-center gap-2 max-md:ml-0">
+                <button
+                    type="button"
+                    onClick={() => openPalette(true)}
+                    aria-haspopup="dialog"
+                    className="hidden h-9 w-[340px] items-center gap-2.5 rounded-lg border border-input bg-card px-3 text-[13px] text-muted-foreground ring-offset-background transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 lg:flex"
+                >
+                    <Search className="h-[15px] w-[15px]" />
+                    <span className="flex-1 text-left">Search apps, actions, pages</span>
+                    <Kbd>{isApplePlatform() ? 'Cmd K' : 'Ctrl K'}</Kbd>
+                </button>
+                <button
+                    type="button"
+                    onClick={() => openPalette(true)}
+                    aria-label="Search"
+                    aria-haspopup="dialog"
+                    className="flex h-[44px] w-[44px] items-center justify-center rounded-lg border border-input bg-card text-muted-foreground hover:bg-accent md:h-9 md:w-9 lg:hidden"
+                >
+                    <Search className="h-4 w-4" />
+                </button>
+                <ScopeSwitcher />
+                <NotificationsMenu />
+                <div className="hidden md:block">
+                    <UserMenu />
                 </div>
             </div>
         </header>

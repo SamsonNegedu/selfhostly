@@ -1,0 +1,22 @@
+# =============================================================================
+# Secondary node, direct mode (overlay for docker-compose.secondary.yml)
+# =============================================================================
+# The older way to connect a secondary: the PRIMARY (and the gateway) call this machine, so its API
+# listens on the network and its port is published. Prefer the default tunnel mode, which needs no
+# open port. Use this only when you cannot let the machine dial out, and keep the port on a private
+# network (LAN or VPN): a directly reached secondary serves its API without user login.
+#
+#   docker compose -p selfhostly-node --env-file .env.node \
+#     -f docker-compose.secondary.yml -f docker-compose.secondary-direct.yml up -d
+#
+# Also needs NODE_API_ENDPOINT in .env.node: the address the primary uses to reach this machine.
+# =============================================================================
+
+services:
+  node:
+    environment:
+      NODE_TRANSPORT: direct
+      SERVER_ADDRESS: ":8082"
+    ports:
+      # The primary and gateway connect here. Set NODE_BIND to this machine's LAN or VPN address.
+      - "${NODE_BIND:-0.0.0.0}:${NODE_PORT:-8082}:8082"

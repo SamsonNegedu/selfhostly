@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/selfhostly/internal/cloudflare"
@@ -77,6 +78,15 @@ func setupTestCleanupManager(t *testing.T, mockExecutor docker.CommandExecutor, 
 	return manager, database, cleanup
 }
 
+// makeAppDir creates the app's folder: stopping an app whose folder is gone is a no-op by design, so
+// the tests that expect "docker compose down" need the folder to exist.
+func makeAppDir(t *testing.T, m *CleanupManager, app *db.App) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(m.dockerManager.AppsDir(), app.Name), 0o755); err != nil {
+		t.Fatalf("create app dir: %v", err)
+	}
+}
+
 func TestCleanupManager_CleanupApp(t *testing.T) {
 	mockExecutor := docker.NewMockCommandExecutor()
 	mockHTTPClient := cloudflare.NewMockHTTPClient()
@@ -107,6 +117,8 @@ func TestCleanupManager_CleanupApp(t *testing.T) {
 		t.Fatalf("Failed to create tunnel: %v", err)
 	}
 
+	makeAppDir(t, manager, app)
+
 	// Mock Docker stop command
 	mockExecutor.SetMockOutput("docker", []string{"compose", "-f", "docker-compose.yml", "down"}, []byte("success"))
 
@@ -136,7 +148,7 @@ func TestCleanupManager_CleanupApp(t *testing.T) {
 	}
 
 	// Mock tunnel deletion
-	deleteTunnelURL := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/test-account-id/cfd_tunnel/%s", app.TunnelID)
+	deleteTunnelURL := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/test-account-id/cfd_tunnel/%s?cascade=true", app.TunnelID)
 	mockHTTPClient.SetMockResponse(deleteTunnelURL, cloudflare.MockResponse{
 		StatusCode: http.StatusOK,
 		Body:       `{"success": true}`,
@@ -193,6 +205,8 @@ func TestCleanupManager_CleanupApp_NoTunnel(t *testing.T) {
 		t.Fatalf("Failed to create app: %v", err)
 	}
 
+	makeAppDir(t, manager, app)
+
 	// Mock Docker stop command
 	mockExecutor.SetMockOutput("docker", []string{"compose", "-f", "docker-compose.yml", "down"}, []byte("success"))
 
@@ -234,6 +248,8 @@ func TestCleanupManager_CleanupApp_PartialFailure(t *testing.T) {
 		t.Fatalf("Failed to create app: %v", err)
 	}
 
+	makeAppDir(t, manager, app)
+
 	// Mock Docker stop command failure
 	dockerError := fmt.Errorf("docker compose down failed")
 	mockExecutor.SetMockError("docker", []string{"compose", "-f", "docker-compose.yml", "down"}, dockerError)
@@ -248,7 +264,7 @@ func TestCleanupManager_CleanupApp_PartialFailure(t *testing.T) {
 		t.Fatalf("Failed to set mock response: %v", err)
 	}
 
-	deleteTunnelURL := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/test-account-id/cfd_tunnel/%s", app.TunnelID)
+	deleteTunnelURL := fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/test-account-id/cfd_tunnel/%s?cascade=true", app.TunnelID)
 	mockHTTPClient.SetMockResponse(deleteTunnelURL, cloudflare.MockResponse{
 		StatusCode: http.StatusOK,
 		Body:       `{"success": true}`,
@@ -290,6 +306,8 @@ func TestCleanupManager_GetSummary(t *testing.T) {
 	if err := database.CreateApp(app); err != nil {
 		t.Fatalf("Failed to create app: %v", err)
 	}
+
+	makeAppDir(t, manager, app)
 
 	// Mock Docker stop command
 	mockExecutor.SetMockOutput("docker", []string{"compose", "-f", "docker-compose.yml", "down"}, []byte("success"))
@@ -336,6 +354,8 @@ func TestCleanupManager_GetResults(t *testing.T) {
 	if err := database.CreateApp(app); err != nil {
 		t.Fatalf("Failed to create app: %v", err)
 	}
+
+	makeAppDir(t, manager, app)
 
 	// Mock Docker stop command
 	mockExecutor.SetMockOutput("docker", []string{"compose", "-f", "docker-compose.yml", "down"}, []byte("success"))

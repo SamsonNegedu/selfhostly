@@ -52,3 +52,15 @@ automaton
 /bin
 
 server
+
+# state saved by selfhostlyctl upgrade (rollback points, database copies)
+.upgrade/
+
+# working copies made while upgrading an existing install (docs/operations/upgrade.md)
+docker-compose.live.yml
+docker-compose.yml.before-upgrade
+docker-compose.prod.yml.before-upgrade
+.env.node
+node-data/
+node-apps/
+bin/

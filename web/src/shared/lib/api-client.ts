@@ -12,6 +12,23 @@ interface RequestConfig extends RequestInit {
   params?: Record<string, string | number | boolean>;
 }
 
+/**
+ * A failed API call. `code` is stable and machine-readable, and `field` names the request field the error is
+ * about, so a form can show it next to the input. `details` is written for people and is safe to show.
+ */
+export class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code?: string,
+    readonly field?: string,
+    readonly details?: string
+  ) {
+    super(message);
+    this.name = 'ApiRequestError';
+  }
+}
+
 class ApiClient {
   private baseURL: string;
 
@@ -46,27 +63,34 @@ class ApiClient {
       throw new Error('UNAUTHORIZED');
     }
 
-    // Handle 404 Not Found (e.g., when auth is disabled)
+    // Handle 404 Not Found (e.g., when auth is disabled). A 404 that carries a code is the API saying a specific
+    // thing was not found, so it is reported like any other error.
     if (response.status === 404) {
+      const body = await response.clone().json().catch(() => null);
+      if (body && typeof body === 'object' && 'code' in body) {
+        throw new ApiRequestError(body.error || 'Not found', response.status, body.code, body.field, body.details);
+      }
       throw new Error('NOT_FOUND');
     }
 
     // Handle non-OK responses
     if (!response.ok) {
       let errorMessage = `Request failed with status ${response.status}`;
+      let body: { code?: string; field?: string; details?: string } | null = null;
       
       try {
-        const errorData: ApiError = await response.json();
+        const errorData: ApiError & { code?: string; field?: string } = await response.json();
         errorMessage = errorData.error || errorMessage;
         if (errorData.details) {
           errorMessage += `: ${errorData.details}`;
         }
+        body = errorData;
       } catch {
         // If JSON parsing fails, use status text
         errorMessage = response.statusText || errorMessage;
       }
       
-      throw new Error(errorMessage);
+      throw new ApiRequestError(errorMessage, response.status, body?.code, body?.field, body?.details);
     }
 
     // Handle 204 No Content
@@ -161,6 +185,3 @@ class ApiClient {
 
 // Export singleton instance
 export const apiClient = new ApiClient();
-
-// Export class for testing or multiple instances
-export { ApiClient };

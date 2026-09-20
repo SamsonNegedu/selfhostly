@@ -1,547 +1,339 @@
-import React, { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useCreateApp } from '@/shared/services/api'
-import { Button } from '@/shared/components/ui'
-import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/Card'
-import { NodeSelector } from '@/shared/components/ui/NodeSelector'
-import ComposeEditor from './components/ComposeEditor'
-import PreviewCompose from './components/PreviewCompose'
-import ProgressIndicator from './components/ProgressIndicator'
-import ConfigurationChecklist from './components/ConfigurationChecklist'
-import IngressRulesEditor from './components/IngressRulesEditor'
-import AppBreadcrumb from '@/shared/components/layout/Breadcrumb'
-import { ArrowRight, ArrowLeft, Sparkles, Shield, CheckCircle2, Globe } from 'lucide-react'
-import type { IngressRule } from '@/shared/types/api'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { ClipboardPaste, LayoutGrid, Link2, Loader2, Rocket } from 'lucide-react'
+import { AppTile } from '@/shared/components/ui/AppTile'
+import { Button, buttonClasses } from '@/shared/components/ui/Button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/Card'
+import { EmptyState } from '@/shared/components/ui/EmptyState'
+import { Field } from '@/shared/components/ui/Field'
+import { Input } from '@/shared/components/ui/Input'
+import { RadioCard, RadioGroup } from '@/shared/components/ui/RadioGroup'
+import { SegmentedControl } from '@/shared/components/ui/SegmentedControl'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/Select'
+import { Textarea } from '@/shared/components/ui/Textarea'
+import { YamlEditor } from '@/shared/components/ui/YamlEditor'
+import { useToast } from '@/shared/components/ui/Toast'
+import { describeError } from '@/shared/lib/errors'
+import { appHref, ROUTES } from '@/shared/lib/routes'
+import { cn } from '@/shared/lib/utils'
+import { useApps, useCreateApp, useNodes } from '@/shared/services/api'
+import ComposeChecks from '@/features/app-details/components/ComposeChecks'
+import { checkCompose, type ComposeCheck } from '@/features/app-details/lib/compose-checks'
+import { collectHostPorts, suggestFreePort } from '@/features/app-details/lib/port-conflict'
+import { firstExposedService } from './lib/compose-access'
+import { TEMPLATES, templateCompose, toRawUrl } from './lib/templates'
 
-type StepType = 'information' | 'compose' | 'ingress' | 'review'
+type Mode = 'template' | 'paste' | 'link'
+type Access = 'none' | 'quick' | 'custom'
+type Fetch = { status: 'idle' } | { status: 'loading' } | { status: 'ok' } | { status: 'error'; message: string }
 
-function CreateApp() {
+const MODE_OPTIONS = [
+    { value: 'template', label: 'Templates', icon: <LayoutGrid className="h-4 w-4" /> },
+    { value: 'paste', label: 'Paste compose', icon: <ClipboardPaste className="h-4 w-4" /> },
+    { value: 'link', label: 'From a link', icon: <Link2 className="h-4 w-4" /> },
+]
+const NAME_PATTERN = /^[a-z0-9-]+$/
+const MIN_NAME = 3
+const MAX_NAME = 63
+
+function nameError(name: string): string | undefined {
+    if (name === '') return undefined
+    if (!NAME_PATTERN.test(name)) return 'Use lowercase letters, numbers and hyphens only.'
+    if (name.length < MIN_NAME) return `Use at least ${MIN_NAME} characters.`
+    if (name.length > MAX_NAME) return `Use ${MAX_NAME} characters or fewer.`
+    return undefined
+}
+
+function NewApp() {
     const navigate = useNavigate()
+    const { toast } = useToast()
     const createApp = useCreateApp()
-    const [currentStep, setCurrentStep] = useState<StepType>('information')
-    const [errors, setErrors] = useState<Record<string, string>>({})
-    const [touched, setTouched] = useState<Record<string, boolean>>({})
+    const { data: nodes = [] } = useNodes()
+    const { data: apps = [] } = useApps(undefined)
 
-    const [formData, setFormData] = useState({
-        name: '',
-        description: '',
-        compose_content: '',
-        ingress_rules: [] as IngressRule[],
-        node_id: '', // Target node for deployment (empty = current node)
-        tunnel_mode: '' as '' | 'custom' | 'quick',
-        quick_tunnel_service: '',
-        quick_tunnel_port: 80 as number | string,
-    })
+    const [mode, setMode] = useState<Mode>('template')
+    const [templateId, setTemplateId] = useState<string | null>(null)
+    const [hostPort, setHostPort] = useState('')
+    const [name, setName] = useState('')
+    const [description, setDescription] = useState('')
+    const [nodeId, setNodeId] = useState('')
+    const [pasted, setPasted] = useState('')
+    const [link, setLink] = useState('')
+    const [fetched, setFetched] = useState<Fetch>({ status: 'idle' })
+    const [access, setAccess] = useState<Access>('none')
+    const [hostname, setHostname] = useState('')
 
-    const showIngressStep = formData.tunnel_mode === 'custom'
-    const STEP_LABELS: Record<StepType, string> = {
-        information: 'Information',
-        compose: 'Compose',
-        ingress: 'Ingress (Optional)',
-        review: 'Review',
+    const onlineNodes = nodes.filter((node) => node.status === 'online')
+    useEffect(() => {
+        if (!nodeId && onlineNodes.length > 0) setNodeId((onlineNodes.find((node) => node.is_primary) ?? onlineNodes[0]).id)
+    }, [nodeId, onlineNodes])
+
+    const template = TEMPLATES.find((item) => item.id === templateId) ?? null
+    const nodeApps = useMemo(() => apps.filter((app) => app.node_id === nodeId), [apps, nodeId])
+    const usedPorts = useMemo(() => collectHostPorts(nodeApps.map((app) => app.compose_content)), [nodeApps])
+
+    // A template starts on its usual port, or the next one no other app on the node publishes.
+    useEffect(() => {
+        if (!template) return
+        const free = suggestFreePort(template.defaultHostPort - 1, usedPorts)
+        setHostPort(String(free ?? template.defaultHostPort))
+        // Only the template and the node choose the starting port. Typing in the field must not reset it.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [templateId, nodeId, apps.length])
+
+    const port = Number(hostPort)
+    const content = mode === 'template' ? (template ? templateCompose(template, name, Number.isInteger(port) && port > 0 ? port : template.defaultHostPort) : '') : pasted
+    const exposed = useMemo(() => firstExposedService(content), [content])
+    const composeResult = useMemo(() => (content.trim() === '' ? null : checkCompose(content, nodeApps)), [content, nodeApps])
+
+    const error = nameError(name)
+    const taken = name !== '' && !error && nodeApps.some((app) => app.name === name)
+    const nodeName = nodes.find((node) => node.id === nodeId)?.name ?? nodeId
+    const portError = mode === 'template' && (!Number.isInteger(port) || port < 1 || port > 65535) ? 'Enter a port from 1 to 65535.' : undefined
+    const portShared = mode === 'template' && !portError && usedPorts.has(port) ? `Another app on ${nodeName} already publishes ${port}.` : undefined
+
+    const checks: ComposeCheck[] = []
+    if (name !== '') {
+        checks.push(
+            error || taken
+                ? { id: 'name', level: 'err', title: taken ? 'Name already used' : 'Name is not valid', detail: taken ? `${nodeName} already has an app called ${name}.` : error }
+                : { id: 'name', level: 'ok', title: 'Name is available' }
+        )
     }
-    const stepOrder: StepType[] = showIngressStep
-        ? ['information', 'compose', 'ingress', 'review']
-        : ['information', 'compose', 'review']
-    const currentIndex = stepOrder.includes(currentStep)
-        ? stepOrder.indexOf(currentStep)
-        : stepOrder.length - 1
-    const steps = stepOrder.map((stepKey, i) => ({
-        id: i + 1,
-        label: STEP_LABELS[stepKey],
-        status: (i < currentIndex ? 'completed' : i === currentIndex ? 'current' : 'pending') as 'pending' | 'current' | 'completed',
-    }))
+    if (nodeId) checks.push({ id: 'node', level: 'ok', title: `Deploys to ${nodeName}` })
+    else checks.push({ id: 'node', level: 'err', title: 'No node is online', detail: 'Bring a node online to deploy.' })
+    if (portShared) checks.push({ id: 'port-shared', level: 'warn', title: 'Port already published', detail: portShared })
+    if (composeResult) checks.push(...composeResult.checks)
+    if (access === 'quick' && !exposed) checks.push({ id: 'quick', level: 'err', title: 'Quick Tunnel needs a published port', detail: 'Add a ports entry so the tunnel knows where to send visitors.' })
+    if (access === 'custom' && hostname.trim() === '') checks.push({ id: 'host', level: 'err', title: 'Custom domain needs a hostname' })
 
-    // Form validation
-    const validateField = (name: string, value: string): string | null => {
-        switch (name) {
-            case 'name':
-                if (!value.trim()) return 'App name is required'
-                if (!/^[a-z0-9-]+$/.test(value)) return 'Only lowercase letters, numbers, and hyphens allowed'
-                if (value.length < 3) return 'Name must be at least 3 characters'
-                if (value.length > 63) return 'Name must be less than 64 characters'
-                return null
-            case 'compose_content':
-                if (!value.trim()) return 'Docker Compose configuration is required'
-                return null
-            default:
-                return null
+    let blocked: string | undefined
+    if (mode === 'template' && !template) blocked = 'Choose a template'
+    else if (content.trim() === '') blocked = mode === 'link' ? 'Fetch a compose file first' : 'Add a compose file'
+    else if (name === '') blocked = 'Give the app a name'
+    else if (checks.some((check) => check.level === 'err') || portError) blocked = 'Fix the problems in the checks'
+    else if (!nodeId) blocked = 'No node is online'
+
+    const fetchLink = async () => {
+        setFetched({ status: 'loading' })
+        try {
+            const response = await fetch(toRawUrl(link))
+            if (!response.ok) throw new Error(`The address answered ${response.status}.`)
+            const text = await response.text()
+            if (text.trim() === '') throw new Error('The file is empty.')
+            setPasted(text)
+            setFetched({ status: 'ok' })
+        } catch (failure) {
+            const network = failure instanceof TypeError
+            setFetched({ status: 'error', message: network ? 'Could not reach that address. Check the link, or paste the file instead.' : describeError(failure) })
         }
     }
 
-    const validateForm = (): boolean => {
-        const newErrors: Record<string, string> = {}
-
-        if (validateField('name', formData.name)) {
-            newErrors.name = validateField('name', formData.name)!
-        }
-        if (validateField('compose_content', formData.compose_content)) {
-            newErrors.compose_content = validateField('compose_content', formData.compose_content)!
-        }
-
-        setErrors(newErrors)
-        return Object.keys(newErrors).length === 0
-    }
-
-    const handleFieldChange = (name: string, value: string | number | IngressRule[] | '' | 'custom' | 'quick') => {
-        setFormData(prev => ({ ...prev, [name]: value }))
-
-        if (touched[name] && (typeof value === 'string' || typeof value === 'number')) {
-            const error = typeof value === 'string' ? validateField(name, value) : null
-            setErrors(prev => ({
-                ...prev,
-                [name]: error || ''
-            }))
-        }
-    }
-
-    const handleFieldBlur = (name: string) => {
-        setTouched(prev => ({ ...prev, [name]: true }))
-        const value = formData[name as keyof typeof formData]
-        if (typeof value === 'string') {
-            const error = validateField(name, value)
-            setErrors(prev => ({
-                ...prev,
-                [name]: error || ''
-            }))
-        }
-    }
-
-    const handleNext = () => {
-        if (currentStep === 'information') {
-            const error = validateField('name', formData.name)
-            if (error) {
-                setErrors({ name: error })
-                setTouched({ name: true })
-                return
-            }
-            setCurrentStep('compose')
-        } else if (currentStep === 'compose') {
-            if (!validateForm()) return
-            setCurrentStep(showIngressStep ? 'ingress' : 'review')
-        } else if (currentStep === 'ingress') {
-            setCurrentStep('review')
-        }
-    }
-
-    const handleSkipIngress = () => {
-        setFormData({ ...formData, ingress_rules: [] })
-        setCurrentStep('review')
-    }
-
-    const handleBack = () => {
-        if (currentStep === 'compose') setCurrentStep('information')
-        else if (currentStep === 'ingress') setCurrentStep('compose')
-        else if (currentStep === 'review') setCurrentStep(formData.tunnel_mode === 'custom' ? 'ingress' : 'compose')
-    }
-
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault()
-        if (!validateForm()) return
-
-        // Filter out empty ingress rules
-        const validIngressRules = formData.ingress_rules.filter(rule => rule.service.trim() !== '')
-
-        const submitData = {
-            name: formData.name,
-            description: formData.description,
-            compose_content: formData.compose_content,
-            ingress_rules: validIngressRules.length > 0 ? validIngressRules : undefined,
-            node_id: formData.node_id || undefined,
-            tunnel_mode: formData.tunnel_mode || undefined,
-            quick_tunnel_service: formData.tunnel_mode === 'quick' ? formData.quick_tunnel_service.trim() : undefined,
-            quick_tunnel_port: formData.tunnel_mode === 'quick' ? Number(formData.quick_tunnel_port) : undefined,
-        }
-
-        createApp.mutate(submitData, {
-            onSuccess: (data) => {
-                // Redirect to the newly created app's details page
-                navigate(`/apps/${data.id}`)
+    const create = () => {
+        if (blocked) return
+        createApp.mutate(
+            {
+                name,
+                description,
+                compose_content: content,
+                node_id: nodeId,
+                tunnel_mode: access === 'none' ? undefined : access,
+                quick_tunnel_service: access === 'quick' ? exposed?.service : undefined,
+                quick_tunnel_port: access === 'quick' ? exposed?.port : undefined,
+                ingress_rules: access === 'custom' && exposed ? [{ hostname: hostname.trim(), service: `http://${exposed.service}:${exposed.port}`, path: null }] : undefined,
             },
-        })
+            {
+                onSuccess: (created) => {
+                    toast.success('App created', `${created.name} is being deployed`)
+                    navigate(appHref(created, 'logs'))
+                },
+            }
+        )
     }
 
-    // Configuration checklist for review step (depends on tunnel mode)
-    const hasValidIngressRules = formData.ingress_rules.some(rule => rule.service.trim() !== '')
-    const baseChecklist = [
-        { id: '1', label: 'App name provided', checked: !!formData.name && !errors.name },
-        { id: '2', label: 'Docker Compose configured', checked: !!formData.compose_content && !errors.compose_content },
-    ]
-    const tunnelChecklistItem =
-        formData.tunnel_mode === 'custom'
-            ? { id: '3', label: hasValidIngressRules ? 'Ingress rules configured' : 'Ingress rules will use default', checked: true }
-            : formData.tunnel_mode === 'quick'
-                ? { id: '3', label: `Quick Tunnel: ${formData.quick_tunnel_service || '?'}:${formData.quick_tunnel_port}`, checked: !!formData.quick_tunnel_service && typeof formData.quick_tunnel_port === 'number' && formData.quick_tunnel_port >= 1 }
-                : { id: '3', label: 'No tunnel', checked: true }
-    const checklist = [...baseChecklist, tunnelChecklistItem]
-
-    const canProceed = currentStep === 'information'
-        ? !!formData.name && !errors.name
-        : currentStep === 'compose'
-            ? !!formData.compose_content && !errors.compose_content
-            : currentStep === 'ingress'
-                ? true // Ingress is optional
-                : true
+    const showConfigure = mode === 'template' ? template !== null : content.trim() !== '' || mode === 'paste'
 
     return (
-        <div className="fade-in">
-            {/* Breadcrumb Navigation - Desktop only */}
-            <AppBreadcrumb
-                items={[
-                    { label: 'Home', path: '/apps' },
-                    { label: 'Apps', path: '/apps' },
-                    { label: 'New App', isCurrentPage: true }
-                ]}
-                className="mb-4 sm:mb-6"
-            />
-
-            <div className="mb-4 sm:mb-6">
-                <h1 className="text-2xl sm:text-3xl font-bold">Create New App</h1>
-                <p className="text-muted-foreground mt-1 sm:mt-2 text-sm sm:text-base">
-                    Deploy a new self-hosted application
-                </p>
+        <div className="flex flex-col gap-5">
+            <div className="flex items-start justify-between gap-4">
+                <div>
+                    <h1 className="text-2xl font-semibold tracking-tight">New app</h1>
+                    <p className="text-muted-foreground">Pick a template, or bring your own compose file.</p>
+                </div>
+                <Link to={ROUTES.fleet} className={buttonClasses({ variant: 'ghost' })}>
+                    Cancel
+                </Link>
             </div>
 
-            {/* Progress Indicator */}
-            <ProgressIndicator steps={steps} />
+            <SegmentedControl aria-label="How to start" options={MODE_OPTIONS} value={mode} onValueChange={(value) => setMode(value as Mode)} className="self-start" />
 
-            <div className={currentStep === 'review' ? 'w-full' : 'max-w-3xl'}>
-                {/* Step 1: App Information */}
-                {currentStep === 'information' && (
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <Sparkles className="h-5 w-5 text-primary" />
-                                App Information
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-6">
-                            <div>
-                                <label htmlFor="name" className="block text-sm font-medium mb-2">
-                                    App Name <span className="text-destructive">*</span>
-                                </label>
-                                <input
-                                    id="name"
-                                    type="text"
-                                    value={formData.name}
-                                    onChange={(e) => handleFieldChange('name', e.target.value)}
-                                    onBlur={() => handleFieldBlur('name')}
-                                    className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 transition-colors ${errors.name ? 'border-destructive focus:ring-destructive' : ''}`}
-                                    placeholder="my-awesome-app"
-                                />
-                                {errors.name && touched.name && (
-                                    <p className="text-sm text-red-600 dark:text-red-400 mt-1">{errors.name}</p>
-                                )}
-                                <p className="text-xs text-muted-foreground mt-1">
-                                    Use lowercase letters, numbers, and hyphens only. Max 63 characters.
-                                </p>
-                            </div>
-
-                            <div>
-                                <label htmlFor="description" className="block text-sm font-medium mb-2">
-                                    Description
-                                </label>
-                                <textarea
-                                    id="description"
-                                    value={formData.description}
-                                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                                    className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-y"
-                                    placeholder="A brief description of your app (optional)"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium mb-2">
-                                    Tunnel
-                                </label>
-                                <select
-                                    value={formData.tunnel_mode}
-                                    onChange={(e) => handleFieldChange('tunnel_mode', e.target.value as '' | 'custom' | 'quick')}
-                                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                >
-                                    <option value="">No tunnel</option>
-                                    <option value="custom">Custom domain (requires Cloudflare credentials)</option>
-                                    <option value="quick">Quick Tunnel (temporary trycloudflare.com URL)</option>
-                                </select>
-                                {formData.tunnel_mode === 'quick' && (
-                                    <div className="mt-4 p-4 rounded-lg border border-muted bg-muted/30 space-y-4">
-                                        <p className="text-sm text-muted-foreground">
-                                            Quick Tunnels are temporary and limited to 200 concurrent requests. No credentials required.
-                                        </p>
-                                        <div>
-                                            <label htmlFor="quick_tunnel_service" className="block text-sm font-medium mb-1">
-                                                Target service name <span className="text-destructive">*</span>
-                                            </label>
-                                            <input
-                                                id="quick_tunnel_service"
-                                                type="text"
-                                                value={formData.quick_tunnel_service}
-                                                onChange={(e) => handleFieldChange('quick_tunnel_service', e.target.value)}
-                                                onBlur={() => setTouched(prev => ({ ...prev, quick_tunnel_service: true }))}
-                                                className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ${errors.quick_tunnel_service ? 'border-destructive' : ''}`}
-                                                placeholder="web"
-                                            />
-                                            {errors.quick_tunnel_service && (
-                                                <p className="text-sm text-red-600 dark:text-red-400 mt-1">{errors.quick_tunnel_service}</p>
-                                            )}
-                                            <p className="text-xs text-muted-foreground mt-1">The service name from your docker-compose to expose.</p>
-                                        </div>
-                                        <div>
-                                            <label htmlFor="quick_tunnel_port" className="block text-sm font-medium mb-1">
-                                                Target port <span className="text-destructive">*</span>
-                                            </label>
-                                            <input
-                                                id="quick_tunnel_port"
-                                                type="number"
-                                                min={1}
-                                                max={65535}
-                                                value={formData.quick_tunnel_port}
-                                                onChange={(e) => handleFieldChange('quick_tunnel_port', e.target.value === '' ? '' : parseInt(e.target.value, 10))}
-                                                className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ${errors.quick_tunnel_port ? 'border-destructive' : ''}`}
-                                            />
-                                            {errors.quick_tunnel_port && (
-                                                <p className="text-sm text-red-600 dark:text-red-400 mt-1">{errors.quick_tunnel_port}</p>
-                                            )}
-                                            <p className="text-xs text-muted-foreground mt-1">The port your service listens on (1–65535).</p>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium mb-2">
-                                    Deployment Node
-                                </label>
-                                <NodeSelector
-                                    selectedNodeIds={formData.node_id ? [formData.node_id] : []}
-                                    onChange={(nodeIds) => setFormData(prev => ({ ...prev, node_id: nodeIds[0] || '' }))}
-                                    multiSelect={false}
-                                />
-                                <p className="text-xs text-muted-foreground mt-1">
-                                    Choose which node will host this app. Leave unselected to use current node.
-                                </p>
-                            </div>
-
-                            <div className="flex justify-end">
-                                <Button
-                                    onClick={handleNext}
-                                    disabled={!canProceed}
-                                    className="button-press"
-                                >
-                                    Next Step
-                                    <ArrowRight className="h-4 w-4 ml-2" />
-                                </Button>
-                            </div>
-                        </CardContent>
-                    </Card>
-                )}
-
-                {/* Step 2: Docker Compose */}
-                {currentStep === 'compose' && (
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <Shield className="h-5 w-5 text-primary" />
-                                Docker Compose Configuration
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-6">
-                            <div>
-                                <label className="block text-sm font-medium mb-2">
-                                    Compose File <span className="text-destructive">*</span>
-                                </label>
-                                <ComposeEditor
-                                    value={formData.compose_content}
-                                    onChange={(value) => handleFieldChange('compose_content', value)}
-                                />
-                                {errors.compose_content && (
-                                    <p className="text-sm text-red-600 dark:text-red-400 mt-1">{errors.compose_content}</p>
-                                )}
-                            </div>
-
-                            <div className="flex justify-between">
-                                <Button
-                                    variant="outline"
-                                    onClick={handleBack}
-                                    className="button-press"
-                                >
-                                    <ArrowLeft className="h-4 w-4 mr-2" />
-                                    Back
-                                </Button>
-                                <Button
-                                    onClick={handleNext}
-                                    disabled={!canProceed}
-                                    className="button-press"
-                                >
-                                    Review
-                                    <ArrowRight className="h-4 w-4 ml-2" />
-                                </Button>
-                            </div>
-                        </CardContent>
-                    </Card>
-                )}
-
-                {/* Step 3: Ingress Configuration (Optional) */}
-                {currentStep === 'ingress' && (
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <Globe className="h-5 w-5 text-primary" />
-                                Ingress Configuration (Optional)
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-6">
-                            <div className="text-sm text-muted-foreground">
-                                Configure how your app will be accessible via Cloudflare Tunnel.
-                                You can skip this step and configure it later from the app details page.
-                            </div>
-
-                            <IngressRulesEditor
-                                value={formData.ingress_rules}
-                                onChange={(rules) => setFormData({ ...formData, ingress_rules: rules })}
-                            />
-
-                            <div className="flex justify-between">
-                                <Button
-                                    variant="outline"
-                                    onClick={handleBack}
-                                    className="button-press"
-                                >
-                                    <ArrowLeft className="h-4 w-4 mr-2" />
-                                    Back
-                                </Button>
-                                <div className="flex gap-2">
-                                    <Button
-                                        variant="ghost"
-                                        onClick={handleSkipIngress}
-                                        className="button-press"
-                                    >
-                                        Skip for Now
-                                    </Button>
-                                    <Button
-                                        onClick={handleNext}
-                                        disabled={!canProceed}
-                                        className="button-press"
-                                    >
-                                        Review
-                                        <ArrowRight className="h-4 w-4 ml-2" />
-                                    </Button>
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
-                )}
-
-                {/* Step 4: Review & Deploy */}
-                {currentStep === 'review' && (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        {/* Left Pane - Configuration Details */}
-                        <Card className="h-fit">
-                            <CardHeader>
-                                <CardTitle className="flex items-center gap-2">
-                                    <CheckCircle2 className="h-5 w-5 text-primary" />
-                                    Review & Deploy
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-6">
-                                {/* Configuration Checklist */}
-                                <ConfigurationChecklist items={checklist} />
-
-                                {/* Summary */}
-                                <div className="space-y-4">
-                                    <div className="p-4 bg-muted/50 rounded-lg">
-                                        <h3 className="font-semibold mb-3">Summary</h3>
-                                        <div className="space-y-3 text-sm">
-                                            <div>
-                                                <span className="text-muted-foreground">Name:</span>
-                                                <p className="font-medium mt-1">{formData.name}</p>
-                                            </div>
-                                            {formData.description && (
-                                                <div>
-                                                    <span className="text-muted-foreground">Description:</span>
-                                                    <p className="font-medium mt-1">{formData.description}</p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {showIngressStep && hasValidIngressRules && (
-                                        <div>
-                                            <h3 className="font-semibold mb-3">Ingress Rules</h3>
-                                            <div className="p-4 bg-muted/50 rounded-lg space-y-2">
-                                                {formData.ingress_rules
-                                                    .filter(rule => rule.service.trim() !== '')
-                                                    .map((rule, index) => (
-                                                        <div key={index} className="flex items-center gap-2 text-sm">
-                                                            <Globe className="h-4 w-4 text-primary flex-shrink-0" />
-                                                            <span className="font-medium truncate">
-                                                                {rule.hostname || 'Default tunnel URL'}
-                                                            </span>
-                                                            <span className="text-muted-foreground">→</span>
-                                                            <span className="text-muted-foreground truncate">{rule.service}</span>
-                                                            {rule.path && (
-                                                                <span className="text-muted-foreground text-xs">({rule.path})</span>
-                                                            )}
-                                                        </div>
-                                                    ))}
-                                            </div>
-                                        </div>
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+                <div className="flex min-w-0 flex-col gap-5">
+                    {mode === 'template' && (
+                        <div role="group" aria-label="Templates" className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                            {TEMPLATES.map((item) => (
+                                <button
+                                    key={item.id}
+                                    type="button"
+                                    aria-pressed={item.id === templateId}
+                                    onClick={() => {
+                                        setTemplateId(item.id)
+                                        if (name === '' || TEMPLATES.some((other) => other.id === name)) setName(item.id)
+                                    }}
+                                    className={cn(
+                                        'flex min-h-[44px] items-start gap-3 rounded-xl border bg-card p-3.5 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                                        item.id === templateId ? 'border-primary ring-1 ring-primary' : 'border-border'
                                     )}
-                                </div>
+                                >
+                                    <AppTile name={item.name} size="md" />
+                                    <span className="flex min-w-0 flex-col">
+                                        <span className="text-[14px] font-semibold">{item.name}</span>
+                                        <span className="text-[12.5px] text-muted-foreground">{item.description}</span>
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
 
-                                {createApp.error && (
-                                    <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                                        <p className="text-sm text-red-600 dark:text-red-400">
-                                            {createApp.error.message}
-                                        </p>
-                                    </div>
-                                )}
-
-                                <div className="flex justify-between pt-4">
-                                    <Button
-                                        variant="outline"
-                                        onClick={handleBack}
-                                        disabled={createApp.isPending}
-                                        className="button-press"
-                                    >
-                                        <ArrowLeft className="h-4 w-4 mr-2" />
-                                        Back
-                                    </Button>
-                                    <Button
-                                        onClick={handleSubmit}
-                                        disabled={createApp.isPending || !checklist.every(i => i.checked)}
-                                        className="button-press"
-                                    >
-                                        {createApp.isPending ? (
-                                            <>
-                                                <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2" />
-                                                Deploying...
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Sparkles className="h-4 w-4 mr-2" />
-                                                Deploy App
-                                            </>
-                                        )}
-                                    </Button>
-                                </div>
+                    {mode === 'paste' && (
+                        <Card>
+                            <CardHeader>
+                                <CardTitle className="text-base">Compose file</CardTitle>
+                            </CardHeader>
+                            <CardContent className="flex flex-col gap-3">
+                                <YamlEditor value={pasted} onChange={setPasted} aria-label="Compose file" height={360} />
+                                {pasted.trim() === '' && <p className="text-[13px] text-muted-foreground">Paste a docker-compose.yml. It is checked as you type.</p>}
                             </CardContent>
                         </Card>
+                    )}
 
-                        {/* Right Pane - Docker Compose Preview */}
-                        <Card className="h-fit lg:sticky lg:top-6">
+                    {mode === 'link' && (
+                        <Card>
                             <CardHeader>
-                                <CardTitle className="text-lg">Docker Compose Preview</CardTitle>
+                                <CardTitle className="text-base">Fetch a compose file</CardTitle>
+                            </CardHeader>
+                            <CardContent className="flex flex-col gap-4">
+                                <form
+                                    className="flex flex-col gap-3 sm:flex-row sm:items-end"
+                                    onSubmit={(event) => {
+                                        event.preventDefault()
+                                        if (link.trim() !== '') void fetchLink()
+                                    }}
+                                >
+                                    <Field label="Link to the file" hint="A GitHub file page or a raw address, for example github.com/you/repo/blob/main/docker-compose.yml" className="flex-1">
+                                        <Input value={link} onChange={(event) => setLink(event.target.value)} placeholder="https://github.com/..." inputMode="url" />
+                                    </Field>
+                                    <Button type="submit" disabled={link.trim() === '' || fetched.status === 'loading'}>
+                                        {fetched.status === 'loading' && <Loader2 className="h-4 w-4 animate-spin" />}
+                                        Fetch
+                                    </Button>
+                                </form>
+                                {fetched.status === 'error' && (
+                                    <p role="alert" className="text-sm text-status-err-fg">
+                                        {fetched.message}
+                                    </p>
+                                )}
+                                {fetched.status === 'ok' && (
+                                    <>
+                                        <p role="status" className="text-sm text-status-ok-fg">Fetched. You can still edit it before deploying.</p>
+                                        <YamlEditor value={pasted} onChange={setPasted} aria-label="Fetched compose file" height={320} />
+                                    </>
+                                )}
+                                {fetched.status === 'idle' && (
+                                    <EmptyState title="Nothing fetched yet" description="Private repositories and links that need a login cannot be fetched from the browser. Paste the file instead." className="py-8" />
+                                )}
+                            </CardContent>
+                        </Card>
+                    )}
+
+                    {showConfigure && (
+                        <Card>
+                            <CardHeader>
+                                <CardTitle className="text-base">Configure</CardTitle>
+                            </CardHeader>
+                            <CardContent className="flex flex-col gap-5">
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                    <Field label="Name" error={error ?? (taken ? `${nodeName} already has an app called ${name}.` : undefined)} hint="Lowercase letters, numbers and hyphens.">
+                                        <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="my-app" autoComplete="off" />
+                                    </Field>
+                                    <Field label="Node">
+                                        <Select value={nodeId} onValueChange={setNodeId}>
+                                            <SelectTrigger aria-label="Node">
+                                                <SelectValue placeholder="No node is online" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {onlineNodes.map((node) => (
+                                                    <SelectItem key={node.id} value={node.id}>
+                                                        {node.name}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </Field>
+                                </div>
+                                {mode === 'template' && (
+                                    <Field label="Port on the node" error={portError} hint={portShared ?? 'The address you open it on inside your network.'} className="sm:max-w-[200px]">
+                                        <Input value={hostPort} onChange={(event) => setHostPort(event.target.value.replace(/\D/g, ''))} inputMode="numeric" className="font-mono" />
+                                    </Field>
+                                )}
+                                <Field label="Description">
+                                    <Textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={2} placeholder="Optional" />
+                                </Field>
+
+                                <fieldset className="flex flex-col gap-2">
+                                    <legend className="mb-1 text-[13px] font-medium">Who can reach it</legend>
+                                    <RadioGroup value={access} onValueChange={(value) => setAccess(value as Access)} aria-label="Who can reach it">
+                                        <RadioCard value="none" title="Only my network" description="No public address. You can add one later." />
+                                        <RadioCard value="quick" title="Quick Tunnel" description="A temporary public address on trycloudflare.com. No account needed." />
+                                        <RadioCard value="custom" title="Your own domain" description="A stable address through Cloudflare. Needs Cloudflare connected in Settings." />
+                                    </RadioGroup>
+                                    {access === 'custom' && (
+                                        <Field label="Hostname" hint={exposed ? `Sends visitors to ${exposed.service} on port ${exposed.port}.` : undefined} className="mt-2 sm:max-w-sm">
+                                            <Input value={hostname} onChange={(event) => setHostname(event.target.value)} placeholder="app.example.com" inputMode="url" />
+                                        </Field>
+                                    )}
+                                </fieldset>
+                            </CardContent>
+                        </Card>
+                    )}
+                </div>
+
+                <div className="flex min-w-0 flex-col gap-5 lg:sticky lg:top-4 lg:self-start">
+                    {mode === 'template' && template && (
+                        <Card>
+                            <CardHeader>
+                                <CardTitle className="text-base">Compose file</CardTitle>
                             </CardHeader>
                             <CardContent>
-                                <PreviewCompose content={formData.compose_content} height="500px" />
+                                <YamlEditor value={content} readOnly aria-label="Generated compose file" height={260} />
+                                <p className="mt-2 text-[13px] text-muted-foreground">Generated from the template. You can edit it after the app is created.</p>
                             </CardContent>
                         </Card>
-                    </div>
-                )}
+                    )}
+                    {checks.length > 0 && <ComposeChecks checks={checks} />}
+                </div>
+            </div>
+
+            {createApp.error && (
+                <p role="alert" className="rounded-lg bg-status-err-bg px-3.5 py-3 text-sm text-status-err-fg">
+                    Could not create the app. {describeError(createApp.error)}
+                </p>
+            )}
+
+            <div role="region" aria-label="Create" className="sticky bottom-[calc(var(--mobile-nav-h)+12px)] z-20 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-3 shadow-lg md:bottom-4">
+                <span className="text-sm font-medium">{blocked ?? `Ready to deploy ${name} to ${nodeName}`}</span>
+                <div className="flex items-center gap-2">
+                    <Link to={ROUTES.fleet} className={buttonClasses({ variant: 'ghost' })}>
+                        Cancel
+                    </Link>
+                    <Button onClick={create} disabled={!!blocked || createApp.isPending}>
+                        {createApp.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
+                        Create app
+                    </Button>
+                </div>
             </div>
         </div>
     )
 }
 
-export default CreateApp
+export default NewApp

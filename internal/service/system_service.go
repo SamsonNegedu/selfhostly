@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/selfhostly/internal/config"
 	"github.com/selfhostly/internal/constants"
@@ -195,6 +196,39 @@ func (s *systemService) GetAppServices(ctx context.Context, appID string, nodeID
 	return services, nil
 }
 
+// isManagedContainer reports whether the labels identify a container created from one of this
+// platform's app directories, or one explicitly marked as managed.
+func isManagedContainer(labels map[string]string, hostAppsDir string) bool {
+	if labels[constants.LabelManaged] == "true" {
+		return true
+	}
+	workDir := labels[constants.LabelComposeWorkingDir]
+	if workDir == "" || hostAppsDir == "" {
+		return false
+	}
+	root := strings.TrimSuffix(hostAppsDir, "/")
+	return workDir == root || strings.HasPrefix(workDir, root+"/")
+}
+
+// authorizeContainer stops UI and API container actions from reaching containers that are not part
+// of an app (the platform itself, the tunnel, or unrelated workloads on the host). In warn mode it
+// only logs, so existing habits keep working until the operator opts in.
+func (s *systemService) authorizeContainer(ctx context.Context, containerID string) error {
+	labels, err := s.dockerManager.ContainerLabels(containerID)
+	if err == nil && isManagedContainer(labels, s.config.Security.HostAppsDir) {
+		return nil
+	}
+	if !s.config.Enforcing() {
+		s.logger.WarnContext(ctx, "container is not managed by an app; would be refused in enforce mode",
+			"containerID", containerID, "inspectError", err)
+		return nil
+	}
+	if err != nil {
+		return domain.WrapValidationError("container", fmt.Errorf("cannot verify that %s belongs to an app: %w", containerID, err))
+	}
+	return domain.WrapValidationError("container", fmt.Errorf("container %s is not part of an app managed by this platform", containerID))
+}
+
 // RestartContainer restarts a specific container
 func (s *systemService) RestartContainer(ctx context.Context, containerID, nodeID string) error {
 	s.logger.InfoContext(ctx, "restarting container", "containerID", containerID, "nodeID", nodeID)
@@ -203,6 +237,10 @@ func (s *systemService) RestartContainer(ctx context.Context, containerID, nodeI
 	if err := validation.ValidateContainerID(containerID); err != nil {
 		s.logger.WarnContext(ctx, "invalid container ID", "containerID", containerID, "error", err)
 		return domain.WrapValidationError("container ID", err)
+	}
+
+	if err := s.authorizeContainer(ctx, containerID); err != nil {
+		return err
 	}
 
 	if err := s.dockerManager.RestartContainer(containerID); err != nil {
@@ -224,6 +262,10 @@ func (s *systemService) StopContainer(ctx context.Context, containerID, nodeID s
 		return domain.WrapValidationError("container ID", err)
 	}
 
+	if err := s.authorizeContainer(ctx, containerID); err != nil {
+		return err
+	}
+
 	if err := s.dockerManager.StopContainer(containerID); err != nil {
 		s.logger.ErrorContext(ctx, "failed to stop container", "containerID", containerID, "nodeID", nodeID, "error", err)
 		return domain.WrapContainerOperationFailed("stop container", err)
@@ -243,6 +285,10 @@ func (s *systemService) DeleteContainer(ctx context.Context, containerID, nodeID
 		return domain.WrapValidationError("container ID", err)
 	}
 
+	if err := s.authorizeContainer(ctx, containerID); err != nil {
+		return err
+	}
+
 	if err := s.dockerManager.DeleteContainer(containerID); err != nil {
 		s.logger.ErrorContext(ctx, "failed to delete container", "containerID", containerID, "nodeID", nodeID, "error", err)
 		return domain.WrapContainerOperationFailed("delete container", err)
@@ -250,4 +296,9 @@ func (s *systemService) DeleteContainer(ctx context.Context, containerID, nodeID
 
 	s.logger.InfoContext(ctx, "container deleted successfully", "containerID", containerID, "nodeID", nodeID)
 	return nil
+}
+
+// setSecurity replaces the security settings (used by tests to switch enforcement mode)
+func (s *systemService) setSecurity(sec config.SecurityConfig) {
+	s.config.Security = sec
 }

@@ -206,7 +206,7 @@ func TestDeleteTunnel(t *testing.T) {
 	}
 	
 	mockClient.SetJSONMockResponse(
-		"https://api.cloudflare.com/client/v4/accounts/test-account/cfd_tunnel/tunnel-123",
+		"https://api.cloudflare.com/client/v4/accounts/test-account/cfd_tunnel/tunnel-123?cascade=true",
 		http.StatusOK,
 		response,
 	)
@@ -217,7 +217,7 @@ func TestDeleteTunnel(t *testing.T) {
 	}
 	
 	// Verify the request was made correctly
-	if !mockClient.AssertRequestMade("DELETE", "https://api.cloudflare.com/client/v4/accounts/test-account/cfd_tunnel/tunnel-123") {
+	if !mockClient.AssertRequestMade("DELETE", "https://api.cloudflare.com/client/v4/accounts/test-account/cfd_tunnel/tunnel-123?cascade=true") {
 		t.Error("Expected DELETE request to delete tunnel")
 	}
 }

@@ -9,6 +9,7 @@ COPY package*.json ./
 # Install dependencies (no cache to ensure fresh install)
 RUN npm ci --prefer-offline --no-audit
 
-# Run Vite dev server
+# The compose file keeps node_modules in a volume that outlives image rebuilds, so sync dependencies on
+# every start (a no-op when nothing changed) before running Vite.
 # --host 0.0.0.0 allows access from outside the container
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+CMD ["sh", "-c", "npm install --no-audit --no-fund && npm run dev -- --host 0.0.0.0"]

@@ -1,23 +1,22 @@
 import { useMemo, useState } from 'react'
-import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/Card'
-import { Badge } from '@/shared/components/ui/Badge'
+import { Link } from 'react-router-dom'
+import { Activity, Calendar, Globe, HardDrive, Layers, Loader2, Play, RefreshCw, Square } from 'lucide-react'
 import { Button } from '@/shared/components/ui/Button'
-import {
-    Activity,
-    Layers,
-    HardDrive,
-    RefreshCw,
-    Loader2,
-    Calendar,
-    Play,
-    Pause
-} from 'lucide-react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/Card'
+import { StatusPill } from '@/shared/components/ui/StatusPill'
+import { useFleetMetrics } from '@/features/dashboard/hooks/useFleetMetrics'
+import { formatBytes, formatPercent, formatUntil } from '@/shared/lib/format'
+import { formatRunTime, upcomingRuns } from '@/shared/lib/schedule'
+import { appHref } from '@/shared/lib/routes'
 import ActivityTimeline from './ActivityTimeline'
-import { useAppServices, useRestartAppService, useScheduleNextRuns } from '@/shared/services/api'
+import FailedStartGuide from './FailedStartGuide'
+import { useAppServices, useNodes, useRestartAppService, useScheduleNextRuns } from '@/shared/services/api'
 import { useToast } from '@/shared/components/ui/Toast'
 import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog'
-import { formatRelativeTimeDetailed } from '@/shared/lib/utils'
 import type { App } from '@/shared/types/api'
+
+// How many upcoming runs the Overview lists. The Schedule tab lists more.
+const OVERVIEW_RUNS = 3
 
 interface AppOverviewProps {
     app: App
@@ -32,6 +31,8 @@ function AppOverview({ app }: AppOverviewProps) {
     // Get services from backend endpoint for consistency with LogViewer
     const { data: services = [] } = useAppServices(app.id, app.node_id || '')
     const { data: nextRuns } = useScheduleNextRuns(app.id, app.node_id || '')
+    const { data: nodes = [] } = useNodes()
+    const metrics = useFleetMetrics(nodes).forApp(app.node_id ?? '', app.name)
     const restartService = useRestartAppService()
     const { toast } = useToast()
     const [serviceToRestart, setServiceToRestart] = useState<string | null>(null)
@@ -104,7 +105,7 @@ function AppOverview({ app }: AppOverviewProps) {
             }
 
             // Also count bind mounts in services
-            const bindMounts = (app.compose_content.match(/- ['"]*[\/~]/g) || []).length
+            const bindMounts = (app.compose_content.match(/- ['"]*[/~]/g) || []).length
             if (bindMounts > 0 && info.volumes.length === 0) {
                 info.volumes = [`${bindMounts} bind mount${bindMounts > 1 ? 's' : ''}`]
             }
@@ -148,183 +149,177 @@ function AppOverview({ app }: AppOverviewProps) {
         )
     }
 
+    const upcoming = upcomingRuns(nextRuns)
+    const isRunning = app.status === 'running'
+    const tiles = [
+        { label: 'CPU', value: isRunning && metrics ? formatPercent(metrics.cpuPercent) : '-' },
+        { label: 'Memory', value: isRunning && metrics ? formatBytes(metrics.memoryBytes) : '-' },
+        { label: 'Containers', value: isRunning && metrics ? String(metrics.containers) : '-' },
+        { label: 'Restarts', value: isRunning && metrics ? String(metrics.restarts) : '-' },
+    ]
+
     return (
-        <div className="space-y-6">
-            {/* Main Info Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Left Column */}
-                <div className="space-y-6">
-                    {/* Services List */}
+        <div className="flex flex-col gap-5">
+            {app.status === 'error' && <FailedStartGuide app={app} />}
+
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                {tiles.map((tile) => (
+                    <Card key={tile.label} className="flex flex-col gap-1 p-4">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{tile.label}</span>
+                        <span className="text-2xl font-semibold tabular-nums">{tile.value}</span>
+                    </Card>
+                ))}
+            </div>
+
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+                <div className="flex flex-col gap-5">
                     <Card>
                         <CardHeader>
-                            <CardTitle className="text-lg flex items-center gap-2">
-                                <Layers className="h-5 w-5 text-primary" />
-                                Services
+                            <CardTitle className="flex items-center gap-2 text-base">
+                                <Layers className="h-4 w-4 text-muted-foreground" />
+                                Containers
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
                             {services.length > 0 ? (
-                                <div className="space-y-2">
+                                <ul className="flex flex-col gap-2">
                                     {services.map((service) => {
                                         const isRestarting = restartService.isPending && serviceToRestart === service
                                         return (
-                                            <div
-                                                key={service}
-                                                className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
-                                            >
+                                            <li key={service} className="flex items-center justify-between gap-3 rounded-lg bg-muted/50 px-3 py-2">
+                                                <span className="truncate font-mono text-sm font-medium">{service}</span>
                                                 <div className="flex items-center gap-2">
-                                                    <div
-                                                        className={`w-2 h-2 rounded-full ${
-                                                            app.status === 'running'
-                                                                ? 'bg-green-500'
-                                                                : 'bg-muted-foreground'
-                                                        }`}
-                                                    />
-                                                    <span className="font-mono text-sm font-medium">{service}</span>
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                    <Badge
-                                                        variant="outline"
-                                                        className={`text-xs ${
-                                                            app.status === 'running'
-                                                                ? 'text-green-600 dark:text-green-400 border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20'
-                                                                : 'text-muted-foreground border-muted'
-                                                        }`}
-                                                    >
-                                                        {app.status === 'running' ? 'active' : 'stopped'}
-                                                    </Badge>
-                                                    {app.status === 'running' && (
+                                                    <StatusPill kind={isRunning ? 'ok' : 'idle'} size="sm">
+                                                        {isRunning ? 'Running' : 'Stopped'}
+                                                    </StatusPill>
+                                                    {isRunning && (
                                                         <Button
                                                             variant="ghost"
-                                                            size="sm"
-                                                            className="h-7 px-2"
+                                                            size="icon"
+                                                            aria-label={`Restart ${service}`}
                                                             onClick={() => setServiceToRestart(service)}
                                                             disabled={isRestarting}
                                                         >
-                                                            {isRestarting ? (
-                                                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                                            ) : (
-                                                                <RefreshCw className="h-3.5 w-3.5" />
-                                                            )}
+                                                            {isRestarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                                                         </Button>
                                                     )}
                                                 </div>
-                                            </div>
+                                            </li>
                                         )
                                     })}
-                                </div>
+                                </ul>
                             ) : (
-                                <p className="text-sm text-muted-foreground text-center py-4">
-                                    No services found
-                                </p>
+                                <p className="py-4 text-center text-sm text-muted-foreground">No containers found</p>
                             )}
                         </CardContent>
                     </Card>
 
-                    {/* Resources */}
                     <Card>
                         <CardHeader>
-                            <CardTitle className="text-lg flex items-center gap-2">
-                                <HardDrive className="h-5 w-5 text-primary" />
-                                Resources
+                            <CardTitle className="flex items-center gap-2 text-base">
+                                <Globe className="h-4 w-4 text-muted-foreground" />
+                                Access
                             </CardTitle>
                         </CardHeader>
-                        <CardContent>
-                            <div className="space-y-3">
-                                <div className="flex items-center justify-between">
-                                    <span className="text-sm text-muted-foreground">Networks</span>
-                                    <div className="flex gap-1">
-                                        {composeInfo.networks.length > 0 ? (
-                                            composeInfo.networks.map((network, index) => (
-                                                <Badge key={index} variant="secondary" className="text-xs">
-                                                    {network}
-                                                </Badge>
-                                            ))
-                                        ) : (
-                                            <Badge variant="secondary" className="text-xs">
-                                                default
-                                            </Badge>
-                                        )}
-                                    </div>
+                        <CardContent className="flex flex-col gap-3">
+                            {app.public_url ? (
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <a href={app.public_url} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[44px] items-center break-all font-mono text-sm text-status-info-fg hover:underline md:min-h-0">
+                                        {app.public_url.replace(/^https?:\/\//, '')}
+                                    </a>
+                                    {app.tunnel_mode === 'quick' && <StatusPill kind="warn" size="sm">Temporary</StatusPill>}
                                 </div>
-                                <div className="flex items-center justify-between">
-                                    <span className="text-sm text-muted-foreground">Volumes</span>
-                                    <span className="text-sm font-medium">
-                                        {composeInfo.volumes.length > 0 ? composeInfo.volumes.join(', ') : 'None'}
-                                    </span>
-                                </div>
-                                <div className="flex items-center justify-between">
-                                    <span className="text-sm text-muted-foreground">Last Updated</span>
-                                    <span className="text-sm font-medium">{formatDate(app.updated_at)}</span>
-                                </div>
-                            </div>
+                            ) : (
+                                <p className="text-sm text-muted-foreground">Only reachable on your network. Add a public address when you want to share it.</p>
+                            )}
+                            <Link to={appHref(app, 'access')} className="inline-flex min-h-[44px] items-center text-sm font-medium hover:underline md:min-h-0">
+                                Manage access
+                            </Link>
                         </CardContent>
                     </Card>
 
-                    {/* Schedule */}
-                    {app.schedule?.enabled && nextRuns && (
-                        <Card>
-                            <CardHeader>
-                                <CardTitle className="text-lg flex items-center gap-2">
-                                    <Calendar className="h-5 w-5 text-primary" />
-                                    Scheduled Actions
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="space-y-3">
-                                    {nextRuns.next_start && (
-                                        <div className="flex items-center justify-between p-3 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
-                                            <div className="flex items-center gap-2">
-                                                <Play className="h-4 w-4 text-green-600 dark:text-green-400" />
-                                                <span className="text-sm font-medium text-green-900 dark:text-green-100">Next Start</span>
-                                            </div>
-                                            <span className="text-sm font-semibold text-green-700 dark:text-green-300">
-                                                {formatRelativeTimeDetailed(nextRuns.next_start)}
-                                            </span>
-                                        </div>
-                                    )}
-                                    {nextRuns.next_stop && (
-                                        <div className="flex items-center justify-between p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
-                                            <div className="flex items-center gap-2">
-                                                <Pause className="h-4 w-4 text-gray-600 dark:text-gray-400" />
-                                                <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Next Stop</span>
-                                            </div>
-                                            <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                                                {formatRelativeTimeDetailed(nextRuns.next_stop)}
-                                            </span>
-                                        </div>
-                                    )}
-                                    {!nextRuns.next_start && !nextRuns.next_stop && (
-                                        <p className="text-sm text-muted-foreground text-center py-2">
-                                            No upcoming scheduled actions
-                                        </p>
-                                    )}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2 text-base">
+                                <Calendar className="h-4 w-4 text-muted-foreground" />
+                                Schedule
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="flex flex-col gap-3">
+                            {app.schedule?.enabled && nextRuns ? (
+                                upcoming.length > 0 ? (
+                                    <ol className="flex flex-col gap-2.5">
+                                        {upcoming.slice(0, OVERVIEW_RUNS).map((run) => (
+                                            <li key={`${run.action}-${run.at}`} className="flex items-center justify-between gap-3 text-sm">
+                                                <span className="flex items-center gap-2">
+                                                    {run.action === 'start' ? <Play aria-hidden="true" className="h-4 w-4 text-status-ok-fg" /> : <Square aria-hidden="true" className="h-4 w-4 text-muted-foreground" />}
+                                                    <span>
+                                                        <span className="font-medium">{run.action === 'start' ? 'Starts' : 'Stops'}</span>{' '}
+                                                        <span className="text-muted-foreground">{formatRunTime(run.at, app.schedule?.timezone)}</span>
+                                                    </span>
+                                                </span>
+                                                <span className="shrink-0 text-[13px] tabular-nums text-muted-foreground">{formatUntil(run.at)}</span>
+                                            </li>
+                                        ))}
+                                    </ol>
+                                ) : (
+                                    <p className="text-sm text-muted-foreground">No upcoming scheduled actions</p>
+                                )
+                            ) : (
+                                <p className="text-sm text-muted-foreground">Runs all the time. Set a schedule to start and stop it automatically.</p>
+                            )}
+                            <Link to={appHref(app, 'schedule')} className="inline-flex min-h-[44px] items-center text-sm font-medium hover:underline md:min-h-0">
+                                {app.schedule?.enabled ? 'Edit schedule' : 'Set a schedule'}
+                            </Link>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2 text-base">
+                                <HardDrive className="h-4 w-4 text-muted-foreground" />
+                                Resources
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="flex flex-col gap-3 text-sm">
+                            <div className="flex items-center justify-between gap-3">
+                                <span className="text-muted-foreground">Networks</span>
+                                <div className="flex flex-wrap justify-end gap-1">
+                                    {(composeInfo.networks.length > 0 ? composeInfo.networks : ['default']).map((network) => (
+                                        <span key={network} className="rounded-full bg-muted px-2.5 py-0.5 font-mono text-xs">{network}</span>
+                                    ))}
                                 </div>
-                            </CardContent>
-                        </Card>
-                    )}
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                                <span className="text-muted-foreground">Volumes</span>
+                                <span className="text-right font-medium">{composeInfo.volumes.length > 0 ? composeInfo.volumes.join(', ') : 'None'}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                                <span className="text-muted-foreground">Last updated</span>
+                                <span className="font-medium">{formatDate(app.updated_at)}</span>
+                            </div>
+                        </CardContent>
+                    </Card>
                 </div>
 
-                {/* Right Column - Activity Timeline */}
-                <Card className="flex flex-col max-h-[600px]">
+                <Card className="flex max-h-[720px] flex-col">
                     <CardHeader className="flex-shrink-0">
-                        <CardTitle className="text-lg flex items-center gap-2">
-                            <Activity className="h-5 w-5 text-primary" />
-                            Recent Activity
+                        <CardTitle className="flex items-center gap-2 text-base">
+                            <Activity className="h-4 w-4 text-muted-foreground" />
+                            Recent activity
                         </CardTitle>
                     </CardHeader>
-                    <CardContent className="overflow-y-auto flex-1 min-h-0">
+                    <CardContent className="min-h-0 flex-1 overflow-y-auto">
                         <ActivityTimeline app={app} />
                     </CardContent>
                 </Card>
             </div>
 
-            {/* Restart Service Confirmation Dialog */}
             <ConfirmationDialog
                 open={!!serviceToRestart}
                 onOpenChange={(open: boolean) => !open && setServiceToRestart(null)}
-                title="Restart Service"
-                description={`Are you sure you want to restart the service "${serviceToRestart}"? This will cause a brief service interruption.`}
+                title={`Restart ${serviceToRestart ?? 'container'}?`}
+                description="It is unavailable for a moment while it restarts."
                 confirmText="Restart"
                 cancelText="Cancel"
                 onConfirm={handleRestartService}

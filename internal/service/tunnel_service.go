@@ -406,13 +406,13 @@ func (s *tunnelService) CreateDNSRecord(ctx context.Context, appID string, nodeI
 // DeleteTunnel deletes a tunnel (local only)
 func (s *tunnelService) DeleteTunnel(ctx context.Context, appID string, nodeID string) error {
 	s.logger.InfoContext(ctx, "deleting tunnel", "appID", appID, "nodeID", nodeID)
-	
+
 	// Get app details for tunnel operations
 	app, getErr := s.database.GetApp(appID)
 	if getErr != nil {
 		return fmt.Errorf("failed to get app: %w", getErr)
 	}
-	
+
 	// Step 1: Stop tunnel container first (to close connections gracefully)
 	if s.dockerManager != nil {
 		if stopErr := s.dockerManager.StopTunnelService(app.Name); stopErr != nil {
@@ -423,7 +423,7 @@ func (s *tunnelService) DeleteTunnel(ctx context.Context, appID string, nodeID s
 			time.Sleep(2 * time.Second)
 		}
 	}
-	
+
 	// Step 2: Delete from Cloudflare API
 	// Using cascade=true parameter which force-deletes even with active connections
 	// This is what the Cloudflare Zero Trust Dashboard uses
@@ -431,15 +431,15 @@ func (s *tunnelService) DeleteTunnel(ctx context.Context, appID string, nodeID s
 	if err != nil {
 		return fmt.Errorf("failed to get provider: %w", err)
 	}
-	
+
 	// Delete tunnel from Cloudflare (cascade=true handles active connections)
 	err = provider.DeleteTunnel(ctx, appID)
 	if err != nil {
 		return fmt.Errorf("failed to delete tunnel: %w", err)
 	}
-	
+
 	s.logger.InfoContext(ctx, "tunnel deleted from Cloudflare successfully", "appID", appID)
-	
+
 	// Step 3: Remove tunnel container (cleanup after successful Cloudflare deletion)
 	if s.dockerManager != nil {
 		if removeErr := s.dockerManager.RemoveTunnelService(app.Name); removeErr != nil {
@@ -448,7 +448,7 @@ func (s *tunnelService) DeleteTunnel(ctx context.Context, appID string, nodeID s
 			s.logger.InfoContext(ctx, "tunnel container removed after successful Cloudflare deletion", "app", app.Name)
 		}
 	}
-	
+
 	s.cleanupTunnelFromCompose(ctx, appID)
 	return nil
 }
@@ -458,31 +458,31 @@ func (s *tunnelService) cleanupTunnelFromCompose(ctx context.Context, appID stri
 	if s.dockerManager == nil {
 		return
 	}
-	
+
 	app, err := s.database.GetApp(appID)
 	if err != nil {
 		s.logger.WarnContext(ctx, "failed to get app for compose cleanup", "app_id", appID, "error", err)
 		return
 	}
-	
+
 	// Remove tunnel service from compose
 	compose, parseErr := docker.ParseCompose([]byte(app.ComposeContent))
 	if parseErr != nil {
 		s.logger.WarnContext(ctx, "failed to parse compose for cleanup", "app_id", appID, "error", parseErr)
 		return
 	}
-	
+
 	if !docker.RemoveTunnelService(compose) {
 		s.logger.InfoContext(ctx, "no tunnel service found in compose file (already removed)", "app_id", appID)
 		return
 	}
-	
+
 	composeBytes, marshalErr := docker.MarshalComposeFile(compose)
 	if marshalErr != nil {
 		s.logger.WarnContext(ctx, "failed to marshal compose after tunnel removal", "app_id", appID, "error", marshalErr)
 		return
 	}
-	
+
 	newContent := string(composeBytes)
 	app.ComposeContent = newContent
 	app.UpdatedAt = time.Now()
@@ -490,14 +490,14 @@ func (s *tunnelService) cleanupTunnelFromCompose(ctx context.Context, appID stri
 		s.logger.WarnContext(ctx, "failed to update app compose after tunnel removal", "app_id", appID, "error", updateErr)
 		return
 	}
-	
+
 	// Create version history
 	latestVersion, _ := s.database.GetLatestVersionNumber(appID)
 	_ = s.database.MarkAllVersionsAsNotCurrent(appID)
 	reason := "Tunnel removed"
 	newVersion := db.NewComposeVersion(appID, latestVersion+1, newContent, &reason, nil)
 	_ = s.database.CreateComposeVersion(newVersion)
-	
+
 	// Write updated compose file
 	if writeErr := s.dockerManager.WriteComposeFile(app.Name, newContent); writeErr != nil {
 		s.logger.WarnContext(ctx, "failed to write compose file after tunnel removal", "app", app.Name, "error", writeErr)

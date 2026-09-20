@@ -1,0 +1,105 @@
+# A production compose file as the project shipped it before the security work, with the hand edits
+# real installs accumulate (a hard-coded volume whitelist, log format, user id). Personal values are
+# replaced. scripts/test-upgrade-original.sh upgrades from this file, so the upgrade path is tested
+# against what people actually run, not only against the repository's current file.
+services:
+  gateway:
+    image: ghcr.io/samsonnegedu/selfhostly-gateway:latest
+    container_name: selfhostly-gateway
+    environment:
+      PRIMARY_BACKEND_URL: http://primary:8082
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY}
+      GATEWAY_LISTEN_ADDRESS: ":8080"
+      GATEWAY_REGISTRY_TTL_SEC: "60"
+      APP_ENV: "production"
+      LOG_JSON: "false"
+      AUTH_ENABLED: ${AUTH_ENABLED:-true}
+      JWT_SECRET: ${JWT_SECRET}
+    networks:
+      - selfhostly-network
+    restart: unless-stopped
+    depends_on:
+      primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+  frontend:
+    image: ghcr.io/samsonnegedu/selfhostly-frontend:latest
+    container_name: selfhostly-frontend
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
+    networks:
+      - selfhostly-network
+    restart: unless-stopped
+    expose:
+      - "80"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+  primary:
+    image: ghcr.io/samsonnegedu/selfhostly-backend:latest
+    container_name: selfhostly-primary
+    user: 1000:984
+    environment:
+      SERVER_ADDRESS: ":8082"
+      APP_ENV: "production"
+      LOG_JSON: "false"
+      DATABASE_PATH: /app/data/selfhostly.db
+      APPS_DIR: /app/apps
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
+      AUTH_ENABLED: ${AUTH_ENABLED:-true}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      JWT_SECRET: ${JWT_SECRET}
+      AUTH_BASE_URL: ${AUTH_BASE_URL:-https://selfhostly.example.com}
+      GITHUB_ALLOWED_USERS: ${GITHUB_ALLOWED_USERS:-}
+      AUTH_SECURE_COOKIE: ${AUTH_SECURE_COOKIE:-true}
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY}
+      NODE_IS_PRIMARY: "true"
+      NODE_ID: ${NODE_ID:-450359e5-52c3-47e8-a256-6ea537528a06}
+      NODE_NAME: ${NODE_NAME:-primary}
+      NODE_API_ENDPOINT: ${NODE_API_ENDPOINT:-http://primary:8082}
+      REGISTRATION_TOKEN: ${REGISTRATION_TOKEN}
+      ALLOWED_VOLUME_PATHS: /home/user/selfhosted
+    volumes:
+      - ${DATA_DIR:-./data}:/app/data
+      - ${APPS_DIR:-./apps}:/app/apps
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - selfhostly-network
+    restart: unless-stopped
+    expose:
+      - "8082"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8082/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: selfhostly-cloudflared
+    command: tunnel run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    networks:
+      - selfhostly-network
+    restart: unless-stopped
+    depends_on:
+      gateway:
+        condition: service_healthy
+networks:
+  selfhostly-network:
+    name: selfhostly-network
+    driver: bridge
+volumes:
+  selfhostly-data:
+  selfhostly-apps:

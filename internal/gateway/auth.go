@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/golang-jwt/jwt"
+	"github.com/selfhostly/internal/constants"
 )
 
 const jwtCookieName = "JWT"
@@ -21,10 +22,24 @@ func (c *Config) ValidateRequest(req *http.Request) bool {
 	if tokenStr == "" {
 		return false
 	}
-	_, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
+	return c.validToken(tokenStr)
+}
+
+// validToken accepts only HS256 tokens signed with the shared secret, issued by this platform,
+// and carrying an expiry. Pinning the algorithm stops downgrade and key-confusion tricks.
+func (c *Config) validToken(tokenStr string) bool {
+	parser := &jwt.Parser{ValidMethods: []string{jwt.SigningMethodHS256.Alg()}}
+	claims := jwt.MapClaims{}
+	tok, err := parser.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
 		return []byte(c.JWTSecret), nil
 	})
-	return err == nil
+	if err != nil || !tok.Valid {
+		return false
+	}
+	if _, ok := claims["exp"]; !ok {
+		return false
+	}
+	return claims.VerifyIssuer(constants.AuthIssuer, true)
 }
 
 func (c *Config) pathSkipsAuth(path string) bool {
@@ -35,6 +50,12 @@ func (c *Config) pathSkipsAuth(path string) bool {
 
 	// Health check - no auth needed
 	if path == "/api/health" {
+		return true
+	}
+
+	// A secondary's outbound link presents its own node credentials, which the primary checks: there
+	// is no user session to validate here.
+	if path == constants.LinkPath {
 		return true
 	}
 

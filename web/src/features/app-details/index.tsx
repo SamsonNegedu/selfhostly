@@ -1,23 +1,30 @@
-import React, { useState, useMemo, useEffect } from 'react'
+import React, { useMemo, useEffect } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { useApp, useStartApp, useStopApp, useUpdateAppContainers, useDeleteApp, useApps } from '@/shared/services/api'
+import { useApp, useApps, useNodes } from '@/shared/services/api'
 import { useAppStore } from '@/shared/stores/app-store'
 import { useNavigate } from 'react-router-dom'
-import { useToast } from '@/shared/components/ui/Toast'
-import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/Card'
-import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog'
-import { Terminal, Settings, Cloud, Info, AlertTriangle, Clock } from 'lucide-react'
+import { AlertTriangle, Globe } from 'lucide-react'
+import { AppTile } from '@/shared/components/ui/AppTile'
 import { Button } from '@/shared/components/ui/Button'
+import { ErrorState } from '@/shared/components/ui/ErrorState'
+import { StatusPill } from '@/shared/components/ui/StatusPill'
+import { Tabs, TabsList, TabsTrigger } from '@/shared/components/ui/Tabs'
+import { appStatusMeta } from '@/shared/lib/status'
+import { APP_TAB_LABELS, AVAILABLE_APP_TABS } from '@/shared/lib/routes'
+import { useFleetActions } from '@/features/dashboard/hooks/useFleetActions'
+import { useIsPhone } from '@/shared/hooks/useMediaQuery'
 import { AppLogsPanel } from './components/AppLogsPanel'
 import ComposeEditor from './components/ComposeEditor'
 import CloudflareTab from './components/CloudflareTab'
 import { AppActions } from './components/AppActions'
-import AppBreadcrumb from '@/shared/components/layout/Breadcrumb'
 import { AppDetailsSkeleton } from '@/shared/components/ui/Skeleton'
+import { resolveAppTab, type AppTab } from '@/shared/lib/routes'
 import AppOverview from './components/AppOverview'
+import EnvironmentTab from './components/EnvironmentTab'
+import HistoryTab from './components/HistoryTab'
 import { ScheduleEditor } from './components/ScheduleEditor'
 
-type TabType = 'overview' | 'compose' | 'logs' | 'cloudflare' | 'schedule'
+type TabType = Extract<AppTab, 'overview' | 'config' | 'environment' | 'logs' | 'access' | 'schedule' | 'history'>
 
 function AppDetails() {
     const { id } = useParams<{ id: string }>()
@@ -48,6 +55,7 @@ function AppDetails() {
     }, [nodeIdFromUrl, cachedApp?.node_id, appsList, appId])
 
     const { data: app, isLoading: isLoadingApp, refetch, isFetching } = useApp(appId!, nodeId || '')
+    const { data: nodes = [] } = useNodes()
 
     // Track if nodeId was previously undefined (query was disabled)
     const prevNodeIdRef = React.useRef<string | undefined>(undefined)
@@ -69,52 +77,11 @@ function AppDetails() {
 
     // Combined loading state: wait for apps list if we need it to find nodeId
     const isLoading = isLoadingApp || (shouldFetchApps && isLoadingApps)
-    const startApp = useStartApp()
-    const stopApp = useStopApp()
-    const updateApp = useUpdateAppContainers()
-    const deleteApp = useDeleteApp()
-    const { toast } = useToast()
-
-    // State for confirmation dialog
-    const [showDeleteDialog, setShowDeleteDialog] = useState(false)
-
-    const handleDelete = () => {
-        if (app) {
-            setShowDeleteDialog(true)
-        }
-    }
-
-    const confirmDelete = () => {
-        if (app) {
-            const appName = app.name
-
-            // Show immediate feedback that deletion started
-            toast.info('Deleting app', `Deleting "${appName}"...`)
-
-            // Trigger deletion
-            deleteApp.mutate({ id: app.id, nodeId: app.node_id }, {
-                onSuccess: () => {
-                    // Remove from local store on success
-                    useAppStore.getState().removeApp(app.id)
-                    toast.success('App deleted', `"${appName}" has been deleted successfully`)
-                    // Redirect to dashboard after deletion
-                    navigate('/apps')
-                },
-                onError: (error) => {
-                    toast.error('Failed to delete app', error.message)
-                }
-            })
-
-            // Close dialog
-            setShowDeleteDialog(false)
-        }
-    }
+    const actions = useFleetActions({ onDeleted: () => navigate('/apps') })
+    const phone = useIsPhone()
 
     // Get active tab from URL, default to 'overview'
-    const tabFromUrl = searchParams.get('tab') as TabType | null
-    const activeTab = (tabFromUrl && ['overview', 'compose', 'logs', 'cloudflare', 'schedule'].includes(tabFromUrl)) 
-        ? tabFromUrl 
-        : 'overview'
+    const activeTab = resolveAppTab(searchParams.get('tab')) as TabType
 
     // Update URL when tab changes
     const setActiveTab = (tab: TabType) => {
@@ -131,268 +98,94 @@ function AppDetails() {
 
     if (!app) {
         return (
-            <div className="flex items-center justify-center min-h-[400px]">
-                <div className="text-center max-w-md fade-in">
-                    <AlertTriangle className="h-12 w-12 text-destructive mx-auto mb-4" />
-                    <h2 className="text-xl font-semibold mb-2">App not found</h2>
-                    <p className="text-muted-foreground mb-4">
-                        The application you're looking for doesn't exist or has been deleted.
-                    </p>
-                    <Button
-                        onClick={() => navigate('/apps')}
-                        className="button-press"
-                    >
-                        Return to Dashboard
-                    </Button>
-                </div>
-            </div>
+            <ErrorState
+                title="App not found"
+                description="This app does not exist or has been deleted."
+            >
+                <Button onClick={() => navigate('/apps')}>Back to Fleet</Button>
+            </ErrorState>
         )
     }
 
-    const getStatusColor = (status: string) => {
-        switch (status) {
-            case 'running':
-                return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-            case 'stopped':
-                return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
-            case 'updating':
-                return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
-            case 'error':
-                return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-            default:
-                return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
-        }
-    }
-
-    const getStatusIcon = (status: string) => {
-        switch (status) {
-            case 'running':
-                return <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            case 'updating':
-                return <div className="w-2 h-2 bg-blue-500 rounded-full animate-spin"></div>
-            case 'error':
-                return <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-            default:
-                return null
-        }
-    }
-
-    const tabs = [
-        { id: 'overview' as TabType, label: 'Overview', icon: Info },
-        { id: 'compose' as TabType, label: 'Compose Editor', icon: Settings },
-        { id: 'logs' as TabType, label: 'Logs', icon: Terminal },
-        { id: 'cloudflare' as TabType, label: 'Cloudflare', icon: Cloud },
-        { id: 'schedule' as TabType, label: 'Schedule', icon: Clock },
-    ]
+    const meta = appStatusMeta(app.status)
+    const nodeName = nodes.find((node) => node.id === app.node_id)?.name ?? app.node_id
+    const tabs = AVAILABLE_APP_TABS.map((tab) => ({ id: tab as TabType, label: tab === 'overview' ? 'Overview' : APP_TAB_LABELS[tab] }))
+    const missingNode = (what: string) => (
+        <div className="flex min-h-[200px] items-center justify-center text-muted-foreground">
+            <AlertTriangle className="mr-2 h-5 w-5" />
+            Unable to load {what}: node_id is missing
+        </div>
+    )
 
     return (
-        <div className="space-y-4 sm:space-y-6 fade-in relative">
-            {/* Deletion Overlay */}
-            {deleteApp.isPending && (
-                <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center">
-                    <div className="bg-card border rounded-lg p-8 shadow-lg max-w-md w-full mx-4 fade-in">
-                        <div className="flex flex-col items-center text-center gap-4">
-                            <div className="h-16 w-16 border-4 border-destructive border-t-transparent rounded-full animate-spin"></div>
-                            <div>
-                                <h3 className="text-lg font-semibold mb-2">Deleting {app.name}</h3>
-                                <p className="text-sm text-muted-foreground">
-                                    Please wait while we remove the application and clean up resources...
-                                </p>
-                            </div>
+        <div className={`flex flex-col gap-5 ${phone && activeTab === 'overview' ? 'pb-28' : ''}`}>
+            <header className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                <div className="flex min-w-0 items-start gap-3.5">
+                    <AppTile name={app.name} size="lg" />
+                    <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2.5">
+                            <h1 className="truncate text-2xl font-semibold tracking-tight">{app.name}</h1>
+                            <StatusPill kind={meta.kind}>{meta.label}</StatusPill>
                         </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-muted-foreground">
+                            {app.public_url && (
+                                <a
+                                    href={app.public_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex min-h-[44px] items-center gap-1.5 font-mono text-status-info-fg hover:underline md:min-h-0"
+                                >
+                                    <Globe className="h-3.5 w-3.5 shrink-0" />
+                                    <span className="truncate">{app.public_url.replace(/^https?:\/\//, '')}</span>
+                                </a>
+                            )}
+                            {nodeName && <span>on {nodeName}</span>}
+                        </div>
+                        {app.description && <p className="mt-1 text-sm text-muted-foreground">{app.description}</p>}
                     </div>
                 </div>
-            )}
-
-            {/* Breadcrumb Navigation - Desktop only */}
-            <AppBreadcrumb
-                items={[
-                    { label: 'Home', path: '/apps' },
-                    { label: 'Apps', path: '/apps' },
-                    { label: app.name, isCurrentPage: true }
-                ]}
-            />
-
-            <Card className="overflow-hidden">
-                <CardHeader className="pb-0 p-4 sm:p-6">
-                    <div className="flex flex-col gap-3">
-                        {/* Title and Actions Row */}
-                        <div className="flex items-start justify-between gap-3">
-                            <div className="flex flex-col gap-2 min-w-0 flex-1">
-                                <CardTitle className="text-xl sm:text-2xl md:text-3xl font-bold truncate">{app.name}</CardTitle>
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <div
-                                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold ${getStatusColor(app.status)}`}
-                                    >
-                                        {getStatusIcon(app.status)}
-                                        <span className="uppercase tracking-wide">{app.status}</span>
-                                    </div>
-                                    {app.public_url && (
-                                        <a
-                                            href={app.public_url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors max-w-[180px] sm:max-w-[250px]"
-                                        >
-                                            <Cloud className="h-3 w-3 flex-shrink-0" />
-                                            <span className="truncate">{app.public_url.replace(/^https?:\/\//, '')}</span>
-                                        </a>
-                                    )}
-                                    {app.node_id && (
-                                        <span className="hidden sm:inline text-xs text-muted-foreground truncate max-w-[150px]" title={`Node: ${app.node_id}`}>
-                                            Node: {app.node_id}
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-                            <div className="flex-shrink-0">
-                                <AppActions
-                                    appId={app.id}
-                                    nodeId={app.node_id}
-                                    appStatus={app.status}
-                                    isStartPending={startApp.isPending}
-                                    isStopPending={stopApp.isPending}
-                                    isUpdatePending={updateApp.isPending}
-                                    isDeletePending={deleteApp.isPending}
-                                    isRefreshing={isFetching}
-                                    onRefresh={() => refetch()}
-                                    onStart={() => startApp.mutate({ id: app.id, nodeId: app.node_id }, {
-                                        onSuccess: () => {
-                                            toast.success('App started', `${app.name} has been started successfully`)
-                                            refetch()
-                                        },
-                                        onError: (error) => {
-                                            toast.error('Failed to start app', error.message)
-                                        }
-                                    })}
-                                    onStop={() => stopApp.mutate({ id: app.id, nodeId: app.node_id }, {
-                                        onSuccess: () => {
-                                            toast.success('App stopped', `${app.name} has been stopped successfully`)
-                                            refetch()
-                                        },
-                                        onError: (error) => {
-                                            toast.error('Failed to stop app', error.message)
-                                        }
-                                    })}
-                                    onUpdate={() => updateApp.mutate({ id: app.id, nodeId: app.node_id }, {
-                                        onSuccess: () => {
-                                            toast.info('Update started', `${app.name} update is running in background`)
-                                            refetch()
-                                        },
-                                        onError: (error) => {
-                                            toast.error('Failed to start update', error.message)
-                                        }
-                                    })}
-                                    onDelete={handleDelete}
-                                />
-                            </div>
-                        </div>
-
-                        {/* Tab Navigation */}
-                        <div className="flex overflow-x-auto border-b -mx-4 sm:-mx-6 px-4 sm:px-6 scrollbar-hide">
-                            {tabs.map((tab) => {
-                                const Icon = tab.icon
-                                return (
-                                    <button
-                                        key={tab.id}
-                                        className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-sm font-medium whitespace-nowrap border-b-2 transition-colors interactive-element ${activeTab === tab.id
-                                            ? 'border-primary text-primary'
-                                            : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted'
-                                            }`}
-                                        onClick={() => setActiveTab(tab.id)}
-                                    >
-                                        <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                                        <span className="hidden xs:inline">{tab.label}</span>
-                                    </button>
-                                )
-                            })}
-                        </div>
-                    </div>
-                </CardHeader>
-                <CardContent className="pt-4 sm:pt-6 p-4 sm:p-6 relative">
-                    {/* Refresh Loading Overlay */}
-                    {isFetching && (
-                        <div className="absolute inset-0 bg-background/60 backdrop-blur-[2px] z-10 flex items-center justify-center rounded-b-lg">
-                            <div className="flex flex-col items-center gap-3">
-                                <div className="h-10 w-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-                                <p className="text-sm text-muted-foreground font-medium">Refreshing...</p>
-                            </div>
-                        </div>
-                    )}
-                    {app.description && (
-                        <p className="text-xs sm:text-sm text-muted-foreground mb-3 sm:mb-4">
-                            {app.description}
-                        </p>
-                    )}
-                    {app.status === 'error' && app.error_message && (
-                        <div className="text-sm text-red-600 dark:text-red-400 mb-4 p-3 bg-red-50 dark:bg-red-900/20 rounded border border-red-200 dark:border-red-800">
-                            <span className="font-medium">Error:</span> {app.error_message}
-                        </div>
-                    )}
-                    {activeTab === 'overview' && (
-                        <AppOverview app={app} />
-                    )}
-                    {activeTab === 'compose' && (
-                        !app.node_id ? (
-                            <div className="flex items-center justify-center min-h-[200px] text-muted-foreground">
-                                <AlertTriangle className="h-5 w-5 mr-2" />
-                                Unable to load compose editor: node_id is missing
-                            </div>
-                        ) : (
-                            <ComposeEditor
-                                appId={app.id}
-                                nodeId={app.node_id}
-                                initialComposeContent={app.compose_content}
-                            />
-                        )
-                    )}
-                    {activeTab === 'logs' && (
-                        !app.node_id ? (
-                            <div className="flex items-center justify-center min-h-[200px] text-muted-foreground">
-                                <AlertTriangle className="h-5 w-5 mr-2" />
-                                Unable to load logs: node_id is missing
-                            </div>
-                        ) : (
-                            <AppLogsPanel appId={app.id} nodeId={app.node_id} />
-                        )
-                    )}
-                    {activeTab === 'cloudflare' && (
-                        !app.node_id ? (
-                            <div className="flex items-center justify-center min-h-[200px] text-muted-foreground">
-                                <AlertTriangle className="h-5 w-5 mr-2" />
-                                Unable to load tunnel info: node_id is missing
-                            </div>
-                        ) : (
-                            <CloudflareTab appId={app.id} nodeId={app.node_id} />
-                        )
-                    )}
-                    {activeTab === 'schedule' && (
-                        !app.node_id ? (
-                            <div className="flex items-center justify-center min-h-[200px] text-muted-foreground">
-                                <AlertTriangle className="h-5 w-5 mr-2" />
-                                Unable to load schedule: node_id is missing
-                            </div>
-                        ) : (
-                            <ScheduleEditor appId={app.id} nodeId={app.node_id} />
-                        )
-                    )}
-                </CardContent>
-            </Card>
-
-            {/* Confirmation Dialog */}
-            {app && (
-                <ConfirmationDialog
-                    open={showDeleteDialog}
-                    onOpenChange={(open: boolean) => !open && setShowDeleteDialog(false)}
-                    title="Delete App"
-                    description={`Are you sure you want to delete "${app.name}"? This action cannot be undone.`}
-                    confirmText="Delete"
-                    cancelText="Cancel"
-                    onConfirm={confirmDelete}
-                    isLoading={deleteApp.isPending}
-                    variant="destructive"
+                <AppActions
+                    appId={app.id}
+                    nodeId={app.node_id}
+                    appStatus={app.status}
+                    publicUrl={app.public_url}
+                    isBusy={actions.isBusy(app.id)}
+                    isRefreshing={isFetching}
+                    sticky={phone && activeTab === 'overview'}
+                    onRefresh={() => refetch()}
+                    onStart={() => actions.start(app)}
+                    onStop={() => actions.requestStop(app)}
+                    onUpdate={() => actions.requestUpdate(app)}
+                    onDelete={() => actions.requestDelete(app)}
                 />
-            )}
+            </header>
+
+            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as TabType)}>
+                <TabsList aria-label="App sections">
+                    {tabs.map((tab) => (
+                        <TabsTrigger key={tab.id} value={tab.id}>
+                            {tab.label}
+                        </TabsTrigger>
+                    ))}
+                </TabsList>
+            </Tabs>
+
+            <div>
+                {activeTab === 'overview' && <AppOverview app={app} />}
+                {activeTab === 'config' &&
+                    (app.node_id ? (
+                        <ComposeEditor appId={app.id} nodeId={app.node_id} initialComposeContent={app.compose_content} />
+                    ) : (
+                        missingNode('the compose editor')
+                    ))}
+                {activeTab === 'environment' && (app.node_id ? <EnvironmentTab app={app} /> : missingNode('the environment'))}
+                {activeTab === 'logs' && (app.node_id ? <AppLogsPanel appId={app.id} nodeId={app.node_id} /> : missingNode('logs'))}
+                {activeTab === 'access' && (app.node_id ? <CloudflareTab appId={app.id} nodeId={app.node_id} composeContent={app.compose_content} /> : missingNode('tunnel info'))}
+                {activeTab === 'history' && (app.node_id ? <HistoryTab app={app} /> : missingNode('the history'))}
+                {activeTab === 'schedule' && (app.node_id ? <ScheduleEditor appId={app.id} nodeId={app.node_id} /> : missingNode('the schedule'))}
+            </div>
+
+            {actions.dialog}
         </div>
     )
 }

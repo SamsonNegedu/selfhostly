@@ -1,0 +1,31 @@
+# Documentation
+
+Folders group docs by what you are doing. File names are lowercase kebab-case.
+
+| Folder | For |
+| --- | --- |
+| `development/` | Running and changing the project locally |
+| `operations/` | Deploying, upgrading, restarting and running it |
+| `security/` | The security model and the allowlists that relax or gate it |
+| `design/` | Architecture, UI and API design decisions, known backend gaps |
+| `rfcs/` | Proposals, one file each |
+| `dev-fixtures/` | Sample data and scripts for running the UI without real infrastructure |
+
+## Index
+
+- `development/getting-started.md`: local setup, live reload, debugging
+- `operations/deploy.md`: new server, secondary nodes, backups, moving servers
+- `operations/upgrade.md`: step-by-step upgrade of an existing install
+- `operations/safe-restart.md`: what a restart touches, rollback, troubleshooting
+- `operations/multi-node.md`, `operations/gateway-deployment.md`: distributed setups
+- `operations/monitoring.md`: metrics, container monitoring, alerts
+- `operations/cloudflare-zero-trust.md`: recommended authentication and tunnel setup
+- `security/overview.md`: security model, every setting, known limitations
+- `security/github-allowlist.md`: GitHub OAuth user allowlist
+- `security/volume-allowlist.md`: allowed host paths for volumes
+- `design/architecture.md`: system design
+- `design/compose-versioning.md`: version history and rollback
+- `design/ui.md`: UI decisions and where the design tokens and components live
+- `design/backend-gaps.md`: what the UI needs that the backend does not do yet
+- `design/realtime-and-audit.md`: change stream, audit log, error codes, migrations
+- `rfcs/`: proposals

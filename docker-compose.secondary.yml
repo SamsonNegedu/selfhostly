@@ -1,0 +1,82 @@
+# =============================================================================
+# Selfhostly secondary node
+# =============================================================================
+# One extra machine that runs apps for the primary. It has no UI, no gateway and no tunnel: it is a
+# single backend container that dials OUT to the primary and then takes instructions over that
+# connection. It publishes no port and its API listens on loopback only, so nothing has to reach it.
+#
+#   selfhostlyctl join            # guided; writes .env.node and runs this file
+#
+# Or by hand:
+#   docker compose -p selfhostly-node --env-file .env.node -f docker-compose.secondary.yml up -d
+#
+# Required in .env.node: PRIMARY_NODE_URL (the primary's public https address, or any address this
+# machine can reach) and REGISTRATION_TOKEN (a join token from `selfhostly join-token` on the primary).
+# `selfhostly join` fills these in and checks them.
+#
+# The older "direct" mode, where the primary calls this machine, is a second file on top of this one:
+#   docker compose -p selfhostly-node --env-file .env.node -f docker-compose.secondary.yml \
+#     -f docker-compose.secondary-direct.yml up -d
+# In that mode keep the port on a private network: a directly reached secondary serves its API without
+# user login and trusts whatever can reach it.
+# =============================================================================
+
+services:
+  node:
+    image: ${BACKEND_IMAGE:-ghcr.io/samsonnegedu/selfhostly-backend:${SELFHOSTLY_VERSION:-latest}}
+    container_name: selfhostly-node
+    user: ${APP_UID:-1000}:${DOCKER_GID:-984}
+    environment:
+      # Loopback only: in tunnel mode the primary's requests arrive over the outbound link, not the network
+      SERVER_ADDRESS: ${NODE_SERVER_ADDRESS:-127.0.0.1:8082}
+      DATABASE_PATH: /app/data/selfhostly.db
+      APPS_DIR: /app/apps
+
+      NODE_IS_PRIMARY: "false"
+      NODE_TRANSPORT: ${NODE_TRANSPORT:-tunnel}
+      NODE_NAME: ${NODE_NAME:-}
+      # Left empty on purpose: the ID and API key are generated once and saved in the data directory
+      NODE_ID: ${NODE_ID:-}
+      NODE_API_KEY: ${NODE_API_KEY:-}
+      # Only used in direct mode: the address the primary calls this machine on
+      NODE_API_ENDPOINT: ${NODE_API_ENDPOINT:-}
+      PRIMARY_NODE_URL: ${PRIMARY_NODE_URL}
+      REGISTRATION_TOKEN: ${REGISTRATION_TOKEN}
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY:-}
+
+      SECURITY_MODE: ${SECURITY_MODE:-}
+      HOST_APPS_DIR: ${HOST_APPS_DIR:-}
+      ALLOWED_VOLUME_PATHS: ${ALLOWED_VOLUME_PATHS:-}
+      NODE_ENDPOINT_ALLOWED_CIDRS: ${NODE_ENDPOINT_ALLOWED_CIDRS:-}
+      NODE_ENDPOINT_ALLOW_LOOPBACK: ${NODE_ENDPOINT_ALLOW_LOOPBACK:-}
+      ENCRYPT_SECRETS_AT_REST: ${ENCRYPT_SECRETS_AT_REST:-}
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-}
+
+      HOME: /tmp
+      DOCKER_CONFIG: /tmp/.docker
+    volumes:
+      - ${DATA_DIR:-./node-data}:/app/data
+      - ${APPS_DIR:-./node-apps}:/app/apps
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - selfhostly-network
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    stop_grace_period: 45s
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8082/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  # Apps' tunnel containers join this network to be reachable by the backend
+  selfhostly-network:
+    name: ${SELFHOSTLY_NETWORK:-selfhostly-network}
+    driver: bridge

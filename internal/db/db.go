@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/selfhostly/internal/events"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/selfhostly/internal/config"
 	"github.com/selfhostly/internal/constants"
+	"github.com/selfhostly/internal/secrets"
 	_ "modernc.org/sqlite"
 )
 
@@ -20,11 +22,24 @@ import (
 type DB struct {
 	*sql.DB
 	dbPath string
+	box    *secrets.Box
+	// notify is told about changes that a browser would want to see. It may be nil.
+	notify func(events.Event)
+}
+
+// SetNotifier registers the function called after apps, jobs and nodes change.
+func (db *DB) SetNotifier(fn func(events.Event)) { db.notify = fn }
+
+func (db *DB) changed(kind, id string) {
+	if db.notify != nil {
+		db.notify(events.Event{Kind: kind, ID: id})
+	}
 }
 
 // Tx wraps a database transaction
 type Tx struct {
 	*sql.Tx
+	box *secrets.Box
 }
 
 // Init initializes the database connection and runs migrations
@@ -41,7 +56,7 @@ func Init(dbPath string) (*DB, error) {
 		return nil, err
 	}
 
-	db := &DB{sqlDB, dbPath}
+	db := &DB{DB: sqlDB, dbPath: dbPath}
 
 	// Configure SQLite for reliability and performance
 	if err := db.configureSQLite(); err != nil {
@@ -126,7 +141,7 @@ func (db *DB) BeginTx(ctx context.Context) (*Tx, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Tx{tx}, nil
+	return &Tx{tx, db.box}, nil
 }
 
 // CreateAppTx creates a new app within a transaction
@@ -138,9 +153,13 @@ func (tx *Tx) CreateApp(app *App) error {
 		errorMessage = nil
 	}
 
-	_, err := tx.Exec(
+	token, err := tx.box.Seal(app.TunnelToken)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(
 		"INSERT INTO apps (id, name, description, compose_content, tunnel_token, tunnel_id, tunnel_domain, public_url, status, error_message, node_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		app.ID, app.Name, app.Description, app.ComposeContent, app.TunnelToken, app.TunnelID, app.TunnelDomain, app.PublicURL, app.Status, errorMessage, app.NodeID, app.CreatedAt, time.Now(),
+		app.ID, app.Name, app.Description, app.ComposeContent, token, app.TunnelID, app.TunnelDomain, app.PublicURL, app.Status, errorMessage, app.NodeID, app.CreatedAt, time.Now(),
 	)
 	return err
 }
@@ -154,9 +173,13 @@ func (tx *Tx) UpdateApp(app *App) error {
 		errorMessage = nil
 	}
 
-	_, err := tx.Exec(
+	token, err := tx.box.Seal(app.TunnelToken)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(
 		"UPDATE apps SET name = ?, description = ?, compose_content = ?, tunnel_token = ?, tunnel_id = ?, tunnel_domain = ?, public_url = ?, status = ?, error_message = ?, tunnel_mode = ?, updated_at = ? WHERE id = ?",
-		app.Name, app.Description, app.ComposeContent, app.TunnelToken, app.TunnelID, app.TunnelDomain, app.PublicURL, app.Status, errorMessage, app.TunnelMode, time.Now(), app.ID,
+		app.Name, app.Description, app.ComposeContent, token, app.TunnelID, app.TunnelDomain, app.PublicURL, app.Status, errorMessage, app.TunnelMode, time.Now(), app.ID,
 	)
 	return err
 }
@@ -249,6 +272,7 @@ func (db *DB) migrate() error {
 		// Add health check tracking columns to nodes table
 		`ALTER TABLE nodes ADD COLUMN consecutive_failures INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE nodes ADD COLUMN last_health_check DATETIME`,
+		`ALTER TABLE nodes ADD COLUMN last_latency_ms INTEGER NOT NULL DEFAULT 0`,
 		// Add multi-provider tunnel support to settings table
 		`ALTER TABLE settings ADD COLUMN active_tunnel_provider TEXT DEFAULT 'cloudflare'`,
 		`ALTER TABLE settings ADD COLUMN tunnel_provider_config TEXT`,
@@ -256,9 +280,9 @@ func (db *DB) migrate() error {
 		`ALTER TABLE cloudflare_tunnels ADD COLUMN public_url TEXT`,
 		// Quick Tunnel support: app tunnel type (custom = named tunnel, quick = trycloudflare.com, empty = none)
 		`ALTER TABLE apps ADD COLUMN tunnel_mode TEXT DEFAULT ''`,
-		// Jobs table for background async operations
-		// Drop existing table if it exists (for dev environments - allows schema updates)
-		`DROP TABLE IF EXISTS jobs`,
+		// Jobs table for background async operations. An outdated schema is recreated by
+		// migrateJobsTableIfNeeded before this list runs; current tables (and their pending jobs)
+		// are kept across restarts.
 		`CREATE TABLE IF NOT EXISTS jobs (
 			id TEXT PRIMARY KEY,
 			type TEXT NOT NULL,
@@ -324,6 +348,11 @@ func (db *DB) migrate() error {
 		`CREATE INDEX IF NOT EXISTS idx_job_logs_job_seq ON job_logs(job_id, seq)`,
 	}
 
+	// Bring an outdated jobs table up to date first; it is a no-op for current schemas
+	if err := db.migrateJobsTableIfNeeded(); err != nil {
+		return err
+	}
+
 	// Run migrations
 	for _, migration := range migrations {
 		if _, err := db.Exec(migration); err != nil {
@@ -337,8 +366,8 @@ func (db *DB) migrate() error {
 		}
 	}
 
-	// One-time migration: Check if jobs table needs to be recreated with new columns
-	return db.migrateJobsTableIfNeeded()
+	// Versioned migrations (with an automatic backup when they change an existing database)
+	return db.runVersionedMigrations()
 }
 
 // isDuplicateColumnError checks if error is about duplicate column
@@ -516,22 +545,32 @@ func (db *DB) bootstrapSingleNode(cfg *config.Config) error {
 
 // CreateApp creates a new app
 func (db *DB) CreateApp(app *App) error {
-	var errorMessage interface{}
-	if app.ErrorMessage != nil {
-		errorMessage = *app.ErrorMessage
-	} else {
-		errorMessage = nil
-	}
+	err := func() error {
+		var errorMessage interface{}
+		if app.ErrorMessage != nil {
+			errorMessage = *app.ErrorMessage
+		} else {
+			errorMessage = nil
+		}
 
-	_, err := db.Exec(
-		"INSERT INTO apps (id, name, description, compose_content, tunnel_token, tunnel_id, tunnel_domain, public_url, status, error_message, node_id, tunnel_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		app.ID, app.Name, app.Description, app.ComposeContent, app.TunnelToken, app.TunnelID, app.TunnelDomain, app.PublicURL, app.Status, errorMessage, app.NodeID, app.TunnelMode, app.CreatedAt, time.Now(),
-	)
-	if err != nil {
-		return err
-	}
+		token, err := db.seal(app.TunnelToken)
+		if err != nil {
+			return err
+		}
+		_, err = db.Exec(
+			"INSERT INTO apps (id, name, description, compose_content, tunnel_token, tunnel_id, tunnel_domain, public_url, status, error_message, node_id, tunnel_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			app.ID, app.Name, app.Description, app.ComposeContent, token, app.TunnelID, app.TunnelDomain, app.PublicURL, app.Status, errorMessage, app.NodeID, app.TunnelMode, app.CreatedAt, time.Now(),
+		)
+		if err != nil {
+			return err
+		}
 
-	return nil
+		return nil
+	}()
+	if err == nil {
+		db.changed(events.KindApps, app.ID)
+	}
+	return err
 }
 
 // GetAllApps retrieves all apps
@@ -551,6 +590,9 @@ func (db *DB) GetAllApps() ([]*App, error) {
 		var nodeID sql.NullString
 		err := rows.Scan(&app.ID, &app.Name, &app.Description, &app.ComposeContent, &app.TunnelToken, &app.TunnelID, &app.TunnelDomain, &app.PublicURL, &app.Status, &errorMessage, &nodeID, &app.TunnelMode, &app.CreatedAt, &app.UpdatedAt)
 		if err != nil {
+			return nil, err
+		}
+		if err := db.openAppToken(app); err != nil {
 			return nil, err
 		}
 		if errorMessage.Valid {
@@ -582,7 +624,7 @@ func (db *DB) GetAllAppsWithSchedules() ([]*App, error) {
 		LEFT JOIN app_schedules s ON a.id = s.app_id
 		ORDER BY a.created_at DESC
 	`
-	
+
 	rows, err := db.Query(query)
 	if err != nil {
 		return nil, err
@@ -594,15 +636,15 @@ func (db *DB) GetAllAppsWithSchedules() ([]*App, error) {
 		app := &App{}
 		var errorMessage sql.NullString
 		var nodeID sql.NullString
-		
+
 		// Schedule fields (nullable since LEFT JOIN)
 		var scheduleID, scheduleAppID, startCron, stopCron, timezone sql.NullString
 		var scheduleEnabled sql.NullBool
 		var scheduleCreatedAt, scheduleUpdatedAt sql.NullTime
-		
+
 		err := rows.Scan(
-			&app.ID, &app.Name, &app.Description, &app.ComposeContent, &app.TunnelToken, 
-			&app.TunnelID, &app.TunnelDomain, &app.PublicURL, &app.Status, &errorMessage, 
+			&app.ID, &app.Name, &app.Description, &app.ComposeContent, &app.TunnelToken,
+			&app.TunnelID, &app.TunnelDomain, &app.PublicURL, &app.Status, &errorMessage,
 			&nodeID, &app.TunnelMode, &app.CreatedAt, &app.UpdatedAt,
 			&scheduleID, &scheduleAppID, &startCron, &stopCron, &timezone, &scheduleEnabled,
 			&scheduleCreatedAt, &scheduleUpdatedAt,
@@ -610,14 +652,17 @@ func (db *DB) GetAllAppsWithSchedules() ([]*App, error) {
 		if err != nil {
 			return nil, err
 		}
-		
+		if err := db.openAppToken(app); err != nil {
+			return nil, err
+		}
+
 		if errorMessage.Valid {
 			app.ErrorMessage = &errorMessage.String
 		}
 		if nodeID.Valid {
 			app.NodeID = nodeID.String
 		}
-		
+
 		// Construct schedule if it exists
 		if scheduleID.Valid {
 			app.Schedule = &AppSchedule{
@@ -649,6 +694,9 @@ func (db *DB) GetApp(id string) (*App, error) {
 	).Scan(&app.ID, &app.Name, &app.Description, &app.ComposeContent, &app.TunnelToken, &app.TunnelID, &app.TunnelDomain, &app.PublicURL, &app.Status, &errorMessage, &nodeID, &app.TunnelMode, &app.CreatedAt, &app.UpdatedAt)
 
 	if err == nil {
+		err = db.openAppToken(app)
+	}
+	if err == nil {
 		if errorMessage.Valid {
 			app.ErrorMessage = &errorMessage.String
 		} else {
@@ -665,23 +713,39 @@ func (db *DB) GetApp(id string) (*App, error) {
 
 // UpdateApp updates an app
 func (db *DB) UpdateApp(app *App) error {
-	var errorMessage interface{}
-	if app.ErrorMessage != nil {
-		errorMessage = *app.ErrorMessage
-	} else {
-		errorMessage = nil
-	}
+	err := func() error {
+		var errorMessage interface{}
+		if app.ErrorMessage != nil {
+			errorMessage = *app.ErrorMessage
+		} else {
+			errorMessage = nil
+		}
 
-	_, err := db.Exec(
-		"UPDATE apps SET name = ?, description = ?, compose_content = ?, tunnel_token = ?, tunnel_id = ?, tunnel_domain = ?, public_url = ?, status = ?, error_message = ?, tunnel_mode = ?, updated_at = ? WHERE id = ?",
-		app.Name, app.Description, app.ComposeContent, app.TunnelToken, app.TunnelID, app.TunnelDomain, app.PublicURL, app.Status, errorMessage, app.TunnelMode, time.Now(), app.ID,
-	)
+		token, err := db.seal(app.TunnelToken)
+		if err != nil {
+			return err
+		}
+		_, err = db.Exec(
+			"UPDATE apps SET name = ?, description = ?, compose_content = ?, tunnel_token = ?, tunnel_id = ?, tunnel_domain = ?, public_url = ?, status = ?, error_message = ?, tunnel_mode = ?, updated_at = ? WHERE id = ?",
+			app.Name, app.Description, app.ComposeContent, token, app.TunnelID, app.TunnelDomain, app.PublicURL, app.Status, errorMessage, app.TunnelMode, time.Now(), app.ID,
+		)
+		return err
+	}()
+	if err == nil {
+		db.changed(events.KindApps, app.ID)
+	}
 	return err
 }
 
 // DeleteApp deletes an app
 func (db *DB) DeleteApp(id string) error {
-	_, err := db.Exec("DELETE FROM apps WHERE id = ?", id)
+	err := func() error {
+		_, err := db.Exec("DELETE FROM apps WHERE id = ?", id)
+		return err
+	}()
+	if err == nil {
+		db.changed(events.KindApps, id)
+	}
 	return err
 }
 
@@ -697,7 +761,12 @@ func (db *DB) GetSettings() (*Settings, error) {
 		// If no settings exist, create default settings
 		if strings.Contains(err.Error(), "no rows in result set") {
 			settings = NewSettings()
-			if err := db.UpdateSettings(settings); err != nil {
+			// A fresh database has no settings row, so UPDATE would silently match nothing
+			// and later saves would never persist.
+			if _, err := db.Exec(
+				"INSERT INTO settings (id, auto_start_apps, updated_at) VALUES (?, ?, ?)",
+				settings.ID, settings.AutoStartApps, settings.UpdatedAt,
+			); err != nil {
 				return nil, err
 			}
 			return settings, nil
@@ -707,7 +776,11 @@ func (db *DB) GetSettings() (*Settings, error) {
 
 	// Convert sql.NullString to *string
 	if apiToken.Valid {
-		settings.CloudflareAPIToken = &apiToken.String
+		plain, err := db.open(apiToken.String)
+		if err != nil {
+			return nil, err
+		}
+		settings.CloudflareAPIToken = &plain
 	}
 	if accountID.Valid {
 		settings.CloudflareAccountID = &accountID.String
@@ -716,7 +789,11 @@ func (db *DB) GetSettings() (*Settings, error) {
 		settings.ActiveTunnelProvider = &activeTunnelProvider.String
 	}
 	if tunnelProviderConfig.Valid {
-		settings.TunnelProviderConfig = &tunnelProviderConfig.String
+		plain, err := db.open(tunnelProviderConfig.String)
+		if err != nil {
+			return nil, err
+		}
+		settings.TunnelProviderConfig = &plain
 	}
 
 	return settings, nil
@@ -726,7 +803,11 @@ func (db *DB) GetSettings() (*Settings, error) {
 func (db *DB) UpdateSettings(settings *Settings) error {
 	var apiToken, accountID, activeTunnelProvider, tunnelProviderConfig interface{}
 	if settings.CloudflareAPIToken != nil {
-		apiToken = *settings.CloudflareAPIToken
+		sealed, err := db.seal(*settings.CloudflareAPIToken)
+		if err != nil {
+			return err
+		}
+		apiToken = sealed
 	} else {
 		apiToken = nil
 	}
@@ -741,7 +822,11 @@ func (db *DB) UpdateSettings(settings *Settings) error {
 		activeTunnelProvider = nil
 	}
 	if settings.TunnelProviderConfig != nil {
-		tunnelProviderConfig = *settings.TunnelProviderConfig
+		sealed, err := db.seal(*settings.TunnelProviderConfig)
+		if err != nil {
+			return err
+		}
+		tunnelProviderConfig = sealed
 	} else {
 		tunnelProviderConfig = nil
 	}
@@ -795,9 +880,13 @@ func (db *DB) CreateCloudflareTunnel(tunnel *CloudflareTunnel) error {
 		ingressRules = nil
 	}
 
-	_, err := db.Exec(
+	token, err := db.seal(tunnel.TunnelToken)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(
 		"INSERT INTO cloudflare_tunnels (id, app_id, tunnel_id, tunnel_name, tunnel_token, account_id, is_active, status, ingress_rules, created_at, updated_at, last_synced_at, error_details) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		tunnel.ID, tunnel.AppID, tunnel.TunnelID, tunnel.TunnelName, tunnel.TunnelToken, tunnel.AccountID, tunnel.IsActive, tunnel.Status, ingressRules, tunnel.CreatedAt, time.Now(), tunnel.LastSyncedAt, errorDetails,
+		tunnel.ID, tunnel.AppID, tunnel.TunnelID, tunnel.TunnelName, token, tunnel.AccountID, tunnel.IsActive, tunnel.Status, ingressRules, tunnel.CreatedAt, time.Now(), tunnel.LastSyncedAt, errorDetails,
 	)
 	if err != nil {
 		return err
@@ -816,6 +905,9 @@ func (db *DB) GetCloudflareTunnelByAppID(appID string) (*CloudflareTunnel, error
 		"SELECT id, app_id, tunnel_id, tunnel_name, tunnel_token, account_id, is_active, status, ingress_rules, public_url, created_at, updated_at, last_synced_at, error_details FROM cloudflare_tunnels WHERE app_id = ?",
 		appID,
 	).Scan(&tunnel.ID, &tunnel.AppID, &tunnel.TunnelID, &tunnel.TunnelName, &tunnel.TunnelToken, &tunnel.AccountID, &tunnel.IsActive, &tunnel.Status, &ingressRules, &publicURL, &tunnel.CreatedAt, &tunnel.UpdatedAt, &lastSyncedAt, &errorDetails)
+	if err == nil {
+		err = db.openTunnelToken(tunnel)
+	}
 	if err == nil && publicURL.Valid {
 		tunnel.PublicURL = publicURL.String
 	}
@@ -903,6 +995,9 @@ func (db *DB) GetCloudflareTunnelByTunnelID(tunnelID string) (*CloudflareTunnel,
 		"SELECT id, app_id, tunnel_id, tunnel_name, tunnel_token, account_id, is_active, status, ingress_rules, public_url, created_at, updated_at, last_synced_at, error_details FROM cloudflare_tunnels WHERE tunnel_id = ?",
 		tunnelID,
 	).Scan(&tunnel.ID, &tunnel.AppID, &tunnel.TunnelID, &tunnel.TunnelName, &tunnel.TunnelToken, &tunnel.AccountID, &tunnel.IsActive, &tunnel.Status, &ingressRules, &publicURL, &tunnel.CreatedAt, &tunnel.UpdatedAt, &lastSyncedAt, &errorDetails)
+	if err == nil {
+		err = db.openTunnelToken(tunnel)
+	}
 	if err == nil && publicURL.Valid {
 		tunnel.PublicURL = publicURL.String
 	}
@@ -963,6 +1058,9 @@ func (db *DB) ListActiveCloudflareTunnels() ([]*CloudflareTunnel, error) {
 		var errorDetails, publicURL sql.NullString
 		err := rows.Scan(&tunnel.ID, &tunnel.AppID, &tunnel.TunnelID, &tunnel.TunnelName, &tunnel.TunnelToken, &tunnel.AccountID, &tunnel.IsActive, &tunnel.Status, &ingressRules, &publicURL, &tunnel.CreatedAt, &tunnel.UpdatedAt, &lastSyncedAt, &errorDetails)
 		if err != nil {
+			return nil, err
+		}
+		if err := db.openTunnelToken(tunnel); err != nil {
 			return nil, err
 		}
 		if publicURL.Valid {
@@ -1175,13 +1273,23 @@ func (db *DB) DeleteComposeVersionsByAppID(appID string) error {
 
 // CreateNode creates a new node
 func (db *DB) CreateNode(node *Node) error {
-	_, err := db.Exec(
-		`INSERT INTO nodes (id, name, api_endpoint, api_key, is_primary, status, last_seen, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		node.ID, node.Name, node.APIEndpoint, node.APIKey,
-		node.IsPrimary, node.Status, node.LastSeen,
-		node.CreatedAt, node.UpdatedAt,
-	)
+	err := func() error {
+		storedKey, err := db.seal(node.APIKey)
+		if err != nil {
+			return err
+		}
+		_, err = db.Exec(
+			`INSERT INTO nodes (id, name, api_endpoint, api_key, is_primary, status, last_seen, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			node.ID, node.Name, node.APIEndpoint, storedKey,
+			node.IsPrimary, node.Status, node.LastSeen,
+			node.CreatedAt, node.UpdatedAt,
+		)
+		return err
+	}()
+	if err == nil {
+		db.changed(events.KindNodes, node.ID)
+	}
 	return err
 }
 
@@ -1191,11 +1299,11 @@ func (db *DB) GetNode(id string) (*Node, error) {
 	var lastSeen sql.NullTime
 	var lastHealthCheck sql.NullTime
 	err := db.QueryRow(
-		`SELECT id, name, api_endpoint, api_key, is_primary, status, last_seen, consecutive_failures, last_health_check, created_at, updated_at 
+		`SELECT id, name, api_endpoint, api_key, is_primary, status, last_seen, consecutive_failures, last_health_check, last_latency_ms, created_at, updated_at 
 		 FROM nodes WHERE id = ?`,
 		id,
 	).Scan(&node.ID, &node.Name, &node.APIEndpoint, &node.APIKey,
-		&node.IsPrimary, &node.Status, &lastSeen, &node.ConsecutiveFailures, &lastHealthCheck,
+		&node.IsPrimary, &node.Status, &lastSeen, &node.ConsecutiveFailures, &lastHealthCheck, &node.LastLatencyMs,
 		&node.CreatedAt, &node.UpdatedAt)
 
 	if err == nil {
@@ -1207,13 +1315,13 @@ func (db *DB) GetNode(id string) (*Node, error) {
 		}
 	}
 
-	return node, err
+	return db.openNodeKey(node, err)
 }
 
 // GetAllNodes retrieves all nodes
 func (db *DB) GetAllNodes() ([]*Node, error) {
 	rows, err := db.Query(
-		`SELECT id, name, api_endpoint, api_key, is_primary, status, last_seen, consecutive_failures, last_health_check, created_at, updated_at 
+		`SELECT id, name, api_endpoint, api_key, is_primary, status, last_seen, consecutive_failures, last_health_check, last_latency_ms, created_at, updated_at 
 		 FROM nodes ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -1227,7 +1335,7 @@ func (db *DB) GetAllNodes() ([]*Node, error) {
 		var lastSeen sql.NullTime
 		var lastHealthCheck sql.NullTime
 		err := rows.Scan(&node.ID, &node.Name, &node.APIEndpoint, &node.APIKey,
-			&node.IsPrimary, &node.Status, &lastSeen, &node.ConsecutiveFailures, &lastHealthCheck,
+			&node.IsPrimary, &node.Status, &lastSeen, &node.ConsecutiveFailures, &lastHealthCheck, &node.LastLatencyMs,
 			&node.CreatedAt, &node.UpdatedAt)
 		if err != nil {
 			return nil, err
@@ -1240,6 +1348,9 @@ func (db *DB) GetAllNodes() ([]*Node, error) {
 			node.LastHealthCheck = &lastHealthCheck.Time
 		}
 
+		if _, err := db.openNodeKey(node, nil); err != nil {
+			return nil, err
+		}
 		nodes = append(nodes, node)
 	}
 
@@ -1252,10 +1363,10 @@ func (db *DB) GetPrimaryNode() (*Node, error) {
 	var lastSeen sql.NullTime
 	var lastHealthCheck sql.NullTime
 	err := db.QueryRow(
-		`SELECT id, name, api_endpoint, api_key, is_primary, status, last_seen, consecutive_failures, last_health_check, created_at, updated_at 
+		`SELECT id, name, api_endpoint, api_key, is_primary, status, last_seen, consecutive_failures, last_health_check, last_latency_ms, created_at, updated_at 
 		 FROM nodes WHERE is_primary = 1 LIMIT 1`,
 	).Scan(&node.ID, &node.Name, &node.APIEndpoint, &node.APIKey,
-		&node.IsPrimary, &node.Status, &lastSeen, &node.ConsecutiveFailures, &lastHealthCheck,
+		&node.IsPrimary, &node.Status, &lastSeen, &node.ConsecutiveFailures, &lastHealthCheck, &node.LastLatencyMs,
 		&node.CreatedAt, &node.UpdatedAt)
 
 	if err == nil {
@@ -1267,23 +1378,39 @@ func (db *DB) GetPrimaryNode() (*Node, error) {
 		}
 	}
 
-	return node, err
+	return db.openNodeKey(node, err)
 }
 
 // UpdateNode updates a node
 func (db *DB) UpdateNode(node *Node) error {
-	_, err := db.Exec(
-		`UPDATE nodes SET name = ?, api_endpoint = ?, api_key = ?, is_primary = ?, status = ?, last_seen = ?, consecutive_failures = ?, last_health_check = ?, updated_at = ? 
-		 WHERE id = ?`,
-		node.Name, node.APIEndpoint, node.APIKey, node.IsPrimary,
-		node.Status, node.LastSeen, node.ConsecutiveFailures, node.LastHealthCheck, time.Now(), node.ID,
-	)
+	err := func() error {
+		storedKey, err := db.seal(node.APIKey)
+		if err != nil {
+			return err
+		}
+		_, err = db.Exec(
+			`UPDATE nodes SET name = ?, api_endpoint = ?, api_key = ?, is_primary = ?, status = ?, last_seen = ?, consecutive_failures = ?, last_health_check = ?, last_latency_ms = ?, updated_at = ? 
+			 WHERE id = ?`,
+			node.Name, node.APIEndpoint, storedKey, node.IsPrimary,
+			node.Status, node.LastSeen, node.ConsecutiveFailures, node.LastHealthCheck, node.LastLatencyMs, time.Now(), node.ID,
+		)
+		return err
+	}()
+	if err == nil {
+		db.changed(events.KindNodes, node.ID)
+	}
 	return err
 }
 
 // DeleteNode deletes a node
 func (db *DB) DeleteNode(id string) error {
-	_, err := db.Exec("DELETE FROM nodes WHERE id = ?", id)
+	err := func() error {
+		_, err := db.Exec("DELETE FROM nodes WHERE id = ?", id)
+		return err
+	}()
+	if err == nil {
+		db.changed(events.KindNodes, id)
+	}
 	return err
 }
 
@@ -1293,11 +1420,11 @@ func (db *DB) GetNodeByName(name string) (*Node, error) {
 	var lastSeen sql.NullTime
 	var lastHealthCheck sql.NullTime
 	err := db.QueryRow(
-		`SELECT id, name, api_endpoint, api_key, is_primary, status, last_seen, consecutive_failures, last_health_check, created_at, updated_at 
+		`SELECT id, name, api_endpoint, api_key, is_primary, status, last_seen, consecutive_failures, last_health_check, last_latency_ms, created_at, updated_at 
 		 FROM nodes WHERE name = ?`,
 		name,
 	).Scan(&node.ID, &node.Name, &node.APIEndpoint, &node.APIKey,
-		&node.IsPrimary, &node.Status, &lastSeen, &node.ConsecutiveFailures, &lastHealthCheck,
+		&node.IsPrimary, &node.Status, &lastSeen, &node.ConsecutiveFailures, &lastHealthCheck, &node.LastLatencyMs,
 		&node.CreatedAt, &node.UpdatedAt)
 
 	if err == nil {
@@ -1309,7 +1436,7 @@ func (db *DB) GetNodeByName(name string) (*Node, error) {
 		}
 	}
 
-	return node, err
+	return db.openNodeKey(node, err)
 }
 
 // ============================================================================
@@ -1443,12 +1570,18 @@ func scanJobFromRow(row *sql.Row) (*Job, error) {
 
 // CreateJob creates a new job
 func (db *DB) CreateJob(job *Job) error {
-	_, err := db.Exec(
-		`INSERT INTO jobs (id, type, app_id, status, payload, progress, progress_message, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		job.ID, job.Type, job.AppID, job.Status, job.Payload, job.Progress, job.ProgressMessage,
-		job.CreatedAt, job.UpdatedAt,
-	)
+	err := func() error {
+		_, err := db.Exec(
+			`INSERT INTO jobs (id, type, app_id, status, payload, progress, progress_message, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			job.ID, job.Type, job.AppID, job.Status, job.Payload, job.Progress, job.ProgressMessage,
+			job.CreatedAt, job.UpdatedAt,
+		)
+		return err
+	}()
+	if err == nil {
+		db.changed(events.KindJobs, job.ID)
+	}
 	return err
 }
 
@@ -1518,47 +1651,59 @@ func (db *DB) GetActiveJobForApp(appID string) (*Job, error) {
 
 // UpdateJobStatus updates a job's status and progress
 func (db *DB) UpdateJobStatus(id, status string, progress int, message *string) error {
-	now := time.Now()
+	err := func() error {
+		now := time.Now()
 
-	// If transitioning to running, set started_at
-	if status == constants.JobStatusRunning {
+		// If transitioning to running, set started_at
+		if status == constants.JobStatusRunning {
+			_, err := db.Exec(
+				`UPDATE jobs
+				 SET status = ?, progress = ?, progress_message = ?, started_at = COALESCE(started_at, ?), updated_at = ?
+				 WHERE id = ?`,
+				status, progress, message, now, now, id,
+			)
+			return err
+		}
+
 		_, err := db.Exec(
 			`UPDATE jobs
-			 SET status = ?, progress = ?, progress_message = ?, started_at = COALESCE(started_at, ?), updated_at = ?
+			 SET status = ?, progress = ?, progress_message = ?, updated_at = ?
 			 WHERE id = ?`,
-			status, progress, message, now, now, id,
+			status, progress, message, now, id,
 		)
 		return err
+	}()
+	if err == nil {
+		db.changed(events.KindJobs, id)
 	}
-
-	_, err := db.Exec(
-		`UPDATE jobs
-		 SET status = ?, progress = ?, progress_message = ?, updated_at = ?
-		 WHERE id = ?`,
-		status, progress, message, now, id,
-	)
 	return err
 }
 
 // UpdateJobCompleted marks a job as completed or failed
 func (db *DB) UpdateJobCompleted(id, status string, result *string, errorMsg *string) error {
-	now := time.Now()
-	progress := 100
-	if status == constants.JobStatusFailed {
-		// Keep current progress on failure
-		var currentProgress int
-		err := db.QueryRow(`SELECT progress FROM jobs WHERE id = ?`, id).Scan(&currentProgress)
-		if err == nil {
-			progress = currentProgress
+	err := func() error {
+		now := time.Now()
+		progress := 100
+		if status == constants.JobStatusFailed {
+			// Keep current progress on failure
+			var currentProgress int
+			err := db.QueryRow(`SELECT progress FROM jobs WHERE id = ?`, id).Scan(&currentProgress)
+			if err == nil {
+				progress = currentProgress
+			}
 		}
-	}
 
-	_, err := db.Exec(
-		`UPDATE jobs
-		 SET status = ?, progress = ?, result = ?, error_message = ?, completed_at = ?, updated_at = ?
-		 WHERE id = ?`,
-		status, progress, result, errorMsg, now, now, id,
-	)
+		_, err := db.Exec(
+			`UPDATE jobs
+			 SET status = ?, progress = ?, result = ?, error_message = ?, completed_at = ?, updated_at = ?
+			 WHERE id = ?`,
+			status, progress, result, errorMsg, now, now, id,
+		)
+		return err
+	}()
+	if err == nil {
+		db.changed(events.KindJobs, id)
+	}
 	return err
 }
 

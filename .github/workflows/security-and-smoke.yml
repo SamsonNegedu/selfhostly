@@ -1,0 +1,130 @@
+name: Security and deployment checks
+
+on:
+  pull_request:
+    branches: [main, master]
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+# Least privilege: these jobs only read the repository
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go vet, tests, vulnerabilities
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...
+      # Fails when a dependency reachable from this code has a known vulnerability
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  web:
+    name: Frontend dependency audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --silent
+      # Production dependencies only: dev tooling never ships in the image
+      - run: npm audit --omit=dev --audit-level=high
+
+  scripts:
+    name: Shell script checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash -n scripts/*.sh
+      - name: shellcheck
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck -S warning scripts/*.sh
+
+  compose:
+    name: Compose files render
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Production file, and the optional socket-proxy overlay
+        env:
+          JWT_SECRET: ci
+          GATEWAY_API_KEY: ci
+          REGISTRATION_TOKEN: ci
+        run: |
+          docker compose -f docker-compose.prod.yml config -q
+          docker compose -f docker-compose.prod.yml -f docker-compose.socket-proxy.yml config -q
+
+  smoke:
+    name: Fresh install and restart
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      # Builds the images, bootstraps a throwaway install, asserts the security behaviour, restarts
+      # the primary and asserts nothing was lost (see scripts/smoke-test.sh)
+      - run: ./scripts/smoke-test.sh
+
+  upgrade:
+    name: Upgrade and automatic rollback
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Old backend built from the previous commit, new one from this commit; see scripts/test-upgrade.sh
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq sqlite3
+      - name: Run upgrade tests
+        env:
+          OLD_REF: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD~1' }}
+        run: ./scripts/test-upgrade.sh
+
+  cli:
+    name: Guided CLI, compose-diff and host checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq sqlite3
+      - name: compose-diff (renders compose files, needs no daemon)
+        run: ./scripts/test-compose-diff.sh
+      - name: selfhostlyctl unit tests (host checks run against real Linux sockets and file ownership)
+        run: go test ./internal/ctl/...
+      - name: Add a secondary node end to end
+        run: ./scripts/test-join.sh
+
+  upgrade-original:
+    name: Upgrade from a hand-edited original compose file
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq sqlite3
+      # Old images from the previous commit, new ones from this commit; see scripts/test-upgrade-original.sh
+      - name: Run the upgrade-from-original test
+        env:
+          OLD_REF: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD~1' }}
+        run: ./scripts/test-upgrade-original.sh

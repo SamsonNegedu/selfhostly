@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -241,11 +242,11 @@ func (s *scheduleService) CalculateNextRunTimes(ctx context.Context, appID, star
 		if nextStart != nil && startCron != "" {
 			startParts := strings.Fields(startCron)
 			stopParts := strings.Fields(stopCron)
-			
+
 			// If same day pattern, calculate stop after start
 			if len(startParts) == 5 && len(stopParts) == 5 {
 				sameDayPattern := startParts[2] == stopParts[2] && startParts[4] == stopParts[4]
-				
+
 				if sameDayPattern {
 					// Calculate stop time after the start time
 					nextStopTime := stopSchedule.Next(*nextStart)
@@ -270,7 +271,38 @@ func (s *scheduleService) CalculateNextRunTimes(ctx context.Context, appID, star
 		AppID:     appID,
 		NextStart: nextStart,
 		NextStop:  nextStop,
+		Upcoming:  upcomingRuns(time.Now().In(location), startSchedule, stopSchedule, upcomingRunCount),
 	}, nil
+}
+
+// upcomingRunCount is how many future runs a schedule preview lists.
+const upcomingRunCount = 6
+
+// upcomingRuns lists the next starts and stops of both schedules together, earliest first. A nil schedule
+// contributes nothing.
+func upcomingRuns(from time.Time, start, stop cron.Schedule, count int) []domain.ScheduledRun {
+	runs := []domain.ScheduledRun{}
+	collect := func(action string, schedule cron.Schedule) {
+		if schedule == nil {
+			return
+		}
+		at := from
+		for i := 0; i < count; i++ {
+			at = schedule.Next(at)
+			if at.IsZero() {
+				return
+			}
+			runs = append(runs, domain.ScheduledRun{Action: action, At: at})
+		}
+	}
+	collect("start", start)
+	collect("stop", stop)
+
+	sort.SliceStable(runs, func(i, j int) bool { return runs[i].At.Before(runs[j].At) })
+	if len(runs) > count {
+		runs = runs[:count]
+	}
+	return runs
 }
 
 // GetNextRunTimes calculates the next run times for a schedule

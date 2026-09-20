@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/golang-jwt/jwt"
 )
@@ -217,6 +218,8 @@ func TestConfig_extractToken(t *testing.T) {
 func createTestJWT(t *testing.T, secret string) string {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user": "test-user",
+		"iss":  "selfhostly",
+		"exp":  time.Now().Add(time.Hour).Unix(),
 	})
 	tokenString, err := token.SignedString([]byte(secret))
 	if err != nil {

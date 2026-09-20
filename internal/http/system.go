@@ -102,10 +102,7 @@ func (s *Server) getDebugDockerStats(c *gin.Context) {
 		"{{.CPUPerc}}|{{.MemUsage}}|{{.NetIO}}|{{.BlockIO}}")
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:   "Failed to get docker stats",
-			Details: domain.PublicMessage(err),
-		})
+		s.handleServiceError(c, "get docker stats", err)
 		return
 	}
 

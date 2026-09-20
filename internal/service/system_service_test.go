@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/selfhostly/internal/config"
+	"github.com/selfhostly/internal/constants"
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/docker"
 	"github.com/selfhostly/internal/domain"
@@ -46,7 +47,8 @@ func setupTestSystemService(t *testing.T, mockExecutor docker.CommandExecutor) (
 	testNodeName := "test-node"
 	testAPIKey := "test-api-key"
 	cfg := &config.Config{
-		AppsDir: tmpAppsDir,
+		AppsDir:  tmpAppsDir,
+		Security: config.SecurityConfig{Mode: constants.SecurityModeWarn},
 		Node: config.NodeConfig{
 			ID:        testNodeID,
 			Name:      testNodeName,
@@ -406,3 +408,62 @@ func TestSystemService_DeleteContainer_DockerError(t *testing.T) {
 
 // Note: GetSystemStats tests would require mocking the system.Collector which is more complex.
 // For now, we focus on testing the service methods that use Docker commands directly.
+
+func newEnforcingSystemService(t *testing.T, mock *docker.MockCommandExecutor) domain.SystemService {
+	t.Helper()
+	svc, _, cleanup := setupTestSystemService(t, mock)
+	t.Cleanup(cleanup)
+	impl := svc.(interface{ setSecurity(config.SecurityConfig) })
+	impl.setSecurity(config.SecurityConfig{Mode: constants.SecurityModeEnforce, HostAppsDir: "/srv/apps"})
+	return svc
+}
+
+func inspectLabels(mock *docker.MockCommandExecutor, id string, labels string) {
+	mock.SetMockOutput("docker", []string{"inspect", "--format", "{{json .Config.Labels}}", id}, []byte(labels))
+}
+
+func TestSystemService_EnforceRefusesUnmanagedContainers(t *testing.T) {
+	mock := docker.NewMockCommandExecutor()
+	svc := newEnforcingSystemService(t, mock)
+	id := "abc123def456"
+	inspectLabels(mock, id, `{"com.docker.compose.project":"selfhostly","com.docker.compose.project.working_dir":"/srv/selfhostly"}`)
+
+	for name, op := range map[string]func() error{
+		"restart": func() error { return svc.RestartContainer(context.Background(), id, "test-node-id") },
+		"stop":    func() error { return svc.StopContainer(context.Background(), id, "test-node-id") },
+		"delete":  func() error { return svc.DeleteContainer(context.Background(), id, "test-node-id") },
+	} {
+		if err := op(); err == nil {
+			t.Errorf("%s: a container outside the apps directory must be refused", name)
+		}
+	}
+	if mock.AssertCommandExecuted("docker", []string{"rm", "-f", id}) {
+		t.Error("the destructive command must not run for an unmanaged container")
+	}
+}
+
+func TestSystemService_EnforceAllowsAppContainers(t *testing.T) {
+	mock := docker.NewMockCommandExecutor()
+	svc := newEnforcingSystemService(t, mock)
+	id := "abc123def456"
+	inspectLabels(mock, id, `{"com.docker.compose.project.working_dir":"/srv/apps/kan"}`)
+	if err := svc.RestartContainer(context.Background(), id, "test-node-id"); err != nil {
+		t.Fatalf("an app container must be allowed: %v", err)
+	}
+
+	other := "def456abc123"
+	inspectLabels(mock, other, `{"com.selfhostly.managed":"true"}`)
+	if err := svc.StopContainer(context.Background(), other, "test-node-id"); err != nil {
+		t.Fatalf("an explicitly managed container must be allowed: %v", err)
+	}
+}
+
+func TestSystemService_EnforceFailsClosedWhenInspectFails(t *testing.T) {
+	mock := docker.NewMockCommandExecutor()
+	svc := newEnforcingSystemService(t, mock)
+	id := "abc123def456"
+	mock.SetMockError("docker", []string{"inspect", "--format", "{{json .Config.Labels}}", id}, errors.New("boom"))
+	if err := svc.RestartContainer(context.Background(), id, "test-node-id"); err == nil {
+		t.Fatal("enforce mode must fail closed when ownership cannot be verified")
+	}
+}

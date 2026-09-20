@@ -523,3 +523,16 @@ func TestRestartCloudflared(t *testing.T) {
 		t.Errorf("Expected command to be executed in %s, got %s", appPath, commands[0].Dir)
 	}
 }
+
+func TestGetAppServices_NeverDeployedAppHasNoServices(t *testing.T) {
+	m := NewManager(t.TempDir())
+
+	services, err := m.GetAppServices("not-deployed")
+
+	if err != nil {
+		t.Fatalf("expected no error for an app without a directory, got %v", err)
+	}
+	if services == nil || len(services) != 0 {
+		t.Fatalf("expected an empty, non-nil list, got %#v", services)
+	}
+}

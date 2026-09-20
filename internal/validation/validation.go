@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/selfhostly/internal/config"
 	"github.com/selfhostly/internal/docker"
 )
 
@@ -22,6 +23,15 @@ var (
 // SecurityConfig holds security validation configuration
 type SecurityConfig struct {
 	AllowedVolumePaths []string
+
+	// Enforce blocks allow-list violations. When false they are logged and tolerated so apps that
+	// predate the policy keep working until the operator has reviewed the audit.
+	Enforce bool
+
+	// AppName, HostAppsDir and AppsDir let relative bind sources be resolved and symlinks checked.
+	AppName     string
+	HostAppsDir string
+	AppsDir     string
 }
 
 // defaultSecurityConfig is used when no config is provided
@@ -109,6 +119,16 @@ func ValidateComposeContentWithConfig(content string, securityConfig *SecurityCo
 		return fmt.Errorf("compose file too large: %d bytes (maximum %d bytes)", len(content), maxSize)
 	}
 	
+	// Use default config if none provided
+	if securityConfig == nil {
+		securityConfig = defaultSecurityConfig
+	}
+
+	// The loader would follow include/extends and read host files, so reject them first.
+	if err := RejectFileReads([]byte(content)); err != nil {
+		return fmt.Errorf("security validation failed: %w", err)
+	}
+
 	// Parse and validate the compose file structure
 	compose, err := docker.ParseCompose([]byte(content))
 	if err != nil {
@@ -131,13 +151,14 @@ func ValidateComposeContentWithConfig(content string, securityConfig *SecurityCo
 		return fmt.Errorf("volume validation failed: %w", err)
 	}
 	
-	// Use default config if none provided
-	if securityConfig == nil {
-		securityConfig = defaultSecurityConfig
-	}
-	
 	// Validate security: block dangerous configurations that could compromise the host
 	if err := validateComposeSecurityWithConfig(compose, securityConfig); err != nil {
+		return fmt.Errorf("security validation failed: %w", err)
+	}
+
+	// Policy on the raw YAML covers everything the typed struct does not (long-form volumes,
+	// driver_opts bind mounts, namespace and user-namespace options, env_file and build paths).
+	if err := CheckComposePolicy([]byte(content), securityConfig).Apply(securityConfig.Enforce, securityConfig.AppName); err != nil {
 		return fmt.Errorf("security validation failed: %w", err)
 	}
 	
@@ -492,4 +513,15 @@ func ValidateDescription(description string) error {
 	}
 	
 	return nil
+}
+
+// NewSecurityConfig builds the compose policy configuration for one app from the process config.
+func NewSecurityConfig(cfg *config.Config, appName string) *SecurityConfig {
+	return &SecurityConfig{
+		AllowedVolumePaths: cfg.Security.AllowedVolumePaths,
+		Enforce:            cfg.Enforcing(),
+		AppName:            appName,
+		HostAppsDir:        cfg.Security.HostAppsDir,
+		AppsDir:            cfg.AppsDir,
+	}
 }

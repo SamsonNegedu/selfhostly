@@ -3,14 +3,19 @@ package gateway
 import (
 	"context"
 	"errors"
-	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"strings"
+
+	"github.com/selfhostly/internal/constants"
 )
 
-// Proxy forwards requests to the target node and returns the response as-is
+// Proxy authenticates a request, resolves which backend it belongs to, and forwards it with the
+// standard library's reverse proxy. That gives correct hop-by-hop handling, immediate flushing of
+// streaming responses (server-sent events) and WebSocket upgrades without any code of our own.
 type Proxy struct {
 	router        *Router
 	registry      *NodeRegistry
@@ -49,13 +54,11 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	hasReqCookie := req.Header.Get("Cookie") != ""
-	p.logger.InfoContext(req.Context(), "gateway: incoming request",
+	p.logger.DebugContext(req.Context(), "gateway: incoming request",
 		"method", req.Method,
 		"path", req.URL.Path,
 		"host", req.Host,
-		"referer", req.Header.Get("Referer"),
-		"has_cookie", hasReqCookie,
+		"has_cookie", req.Header.Get("Cookie") != "",
 	)
 
 	if !p.config.ValidateRequest(req) {
@@ -82,226 +85,143 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	p.logger.DebugContext(req.Context(), "gateway: routing request",
-		"path", req.URL.Path,
-		"target", baseURL,
-	)
-
 	targetURL, err := url.Parse(baseURL)
 	if err != nil {
-		p.logger.ErrorContext(req.Context(), "gateway: invalid target URL",
-			"base", baseURL,
-			"error", err,
-		)
+		p.logger.ErrorContext(req.Context(), "gateway: invalid target URL", "base", baseURL, "error", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+	p.logger.DebugContext(req.Context(), "gateway: routing request", "path", req.URL.Path, "target", baseURL)
 
-	// Build outgoing request: same method, path, query, body
-	outReq := req.Clone(req.Context())
-	outReq.URL.Scheme = targetURL.Scheme
-	outReq.URL.Host = targetURL.Host
-	outReq.URL.Path = req.URL.Path
-	outReq.URL.RawQuery = req.URL.RawQuery
-	if req.Body != nil {
-		outReq.Body = req.Body
-		outReq.ContentLength = req.ContentLength
-		outReq.GetBody = req.GetBody
-	}
-	if outReq.URL.RawQuery != "" {
-		outReq.URL.RawPath = req.URL.Path + "?" + req.URL.RawQuery
-	}
-	// Strip Hop-by-hop headers that ReverseProxy would strip
-	outReq.Header.Del("Connection")
-	outReq.Header.Del("Proxy-Connection")
-	outReq.Header.Del("Keep-Alive")
-	outReq.Header.Del("Transfer-Encoding")
-	outReq.Header.Del("Te")
-	outReq.Header.Del("Trailer")
-
-	// Strip Cloudflare-specific headers to prevent Error 1000 loops
-	// These headers should NOT be forwarded to upstream as they can cause:
-	// - Error 1000 if CF-Connecting-IP is present
-	// - Error 1000 if X-Forwarded-For exceeds 100 chars or appears twice
-	outReq.Header.Del("CF-Connecting-IP")
-	outReq.Header.Del("CF-Ray")
-	outReq.Header.Del("CF-Visitor")
-	outReq.Header.Del("CF-IPCountry")
-	outReq.Header.Del("CF-Request-ID")
-	
-	// Replace X-Forwarded-For with just the original client IP to prevent length issues
-	// Cloudflare adds each hop to X-Forwarded-For which can exceed 100 chars
-	if cfIP := req.Header.Get("CF-Connecting-IP"); cfIP != "" {
-		// Use Cloudflare's original client IP
-		outReq.Header.Set("X-Forwarded-For", cfIP)
-		outReq.Header.Set("X-Real-IP", cfIP)
-	} else if xff := req.Header.Get("X-Forwarded-For"); xff != "" {
-		// If no CF header, use the first IP from X-Forwarded-For
-		// to avoid accumulating a long chain
-		if firstIP := strings.Split(xff, ",")[0]; firstIP != "" {
-			outReq.Header.Set("X-Forwarded-For", strings.TrimSpace(firstIP))
-		}
-	}
-
-	// Add gateway auth only for node registry/management endpoints.
-	// Don't add it for user-facing endpoints (like /api/me, /api/apps, etc.)
-	// because gateway auth bypasses user authentication.
-	isNodeManagementEndpoint := strings.HasPrefix(req.URL.Path, "/api/nodes") &&
-		!strings.HasSuffix(req.URL.Path, "/register")
-
-	if isNodeManagementEndpoint {
-		outReq.Header.Set("X-Gateway-API-Key", p.gatewayAPIKey)
-	}
-	// So primary can rewrite OAuth redirects to the public URL (where the user actually is).
-	// Use incoming X-Forwarded-Host if set, else derive from Referer (for dev with Vite proxy),
-	// else use req.Host.
-	forwardedHost := req.Header.Get("X-Forwarded-Host")
 	isAuthRoute := strings.HasPrefix(req.URL.Path, "/auth/") || strings.HasPrefix(req.URL.Path, "/avatar/")
+	forwardedHost := p.publicHost(req)
 
-	p.logger.DebugContext(req.Context(), "gateway: determining forwarded host",
-		"x_forwarded_host_set", forwardedHost != "",
-		"has_referer", req.Header.Get("Referer") != "",
-		"req_host", req.Host,
-		"is_auth_route", isAuthRoute,
-	)
-
-	// For auth routes, check the origin cookie FIRST before using Referer
-	// (OAuth callbacks from GitHub will have Referer=github.com which is wrong)
-	if forwardedHost == "" && strings.HasPrefix(req.URL.Path, "/auth/") {
-		if cookie, err := req.Cookie("_gateway_origin"); err == nil && cookie.Value != "" {
-			forwardedHost = cookie.Value
-			p.logger.DebugContext(req.Context(), "gateway: retrieved host from origin cookie",
-				"host", forwardedHost,
-			)
-		}
+	// For /auth/.../login, remember the originating host in a short-lived cookie: the OAuth callback
+	// comes back from GitHub with no useful Referer, and needs to know which host the user was on.
+	if strings.HasPrefix(req.URL.Path, "/auth/") && strings.Contains(req.URL.Path, "/login") {
+		http.SetCookie(w, &http.Cookie{
+			Name:     "_gateway_origin",
+			Value:    forwardedHost,
+			Path:     "/",
+			MaxAge:   300,
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+		})
 	}
 
-	// If no X-Forwarded-Host and no cookie, try to extract from Referer (handles Vite proxy scenario)
-	if forwardedHost == "" {
-		if referer := req.Header.Get("Referer"); referer != "" {
-			if refURL, err := url.Parse(referer); err == nil && refURL.Host != "" {
-				forwardedHost = refURL.Host
-				p.logger.DebugContext(req.Context(), "gateway: extracted host from Referer",
-					"extracted_host", refURL.Host,
-				)
+	rp := &httputil.ReverseProxy{
+		Transport: p.transport,
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			p.rewrite(pr, targetURL, forwardedHost)
+		},
+		ModifyResponse: func(resp *http.Response) error {
+			if isAuthRoute {
+				if cookies := resp.Header["Set-Cookie"]; len(cookies) > 0 {
+					p.logger.InfoContext(req.Context(), "gateway: auth response with cookies",
+						"cookie_count", len(cookies),
+						"has_jwt", containsCookieName(cookies, "JWT"),
+						"has_xsrf", containsCookieName(cookies, "XSRF-TOKEN"),
+					)
+				}
+			}
+			return nil
+		},
+		ErrorHandler: func(rw http.ResponseWriter, r *http.Request, err error) {
+			// A client that disconnected is normal; avoid noisy ERROR logs
+			if errors.Is(err, context.Canceled) || r.Context().Err() == context.Canceled {
+				p.logger.DebugContext(r.Context(), "gateway: upstream request canceled by client", "target", baseURL)
 			} else {
-				p.logger.WarnContext(req.Context(), "gateway: failed to parse Referer",
-					"error", err,
-				)
+				p.logger.ErrorContext(r.Context(), "gateway: upstream request failed",
+					"target", baseURL, "path", r.URL.Path, "error", err)
+			}
+			rw.WriteHeader(http.StatusBadGateway)
+		},
+	}
+	rp.ServeHTTP(w, req)
+}
+
+// publicHost decides which hostname the backend should treat as the one the user is on. With
+// PUBLIC_HOSTS configured only those are ever used, so a forged X-Forwarded-Host, Referer or cookie
+// cannot steer OAuth redirects or cookie scoping to another host.
+func (p *Proxy) publicHost(req *http.Request) string {
+	host := req.Header.Get("X-Forwarded-Host")
+
+	// OAuth callbacks from GitHub carry Referer=github.com, which is wrong: prefer the origin cookie
+	if host == "" && strings.HasPrefix(req.URL.Path, "/auth/") {
+		if cookie, err := req.Cookie("_gateway_origin"); err == nil && cookie.Value != "" {
+			host = cookie.Value
+		}
+	}
+	// A Referer host is only trusted when no PUBLIC_HOSTS are configured (Vite dev proxy)
+	if host == "" && len(p.config.PublicHosts) == 0 {
+		if referer := req.Header.Get("Referer"); referer != "" {
+			if u, err := url.Parse(referer); err == nil && u.Host != "" {
+				host = u.Host
 			}
 		}
 	}
-
-	if forwardedHost == "" {
-		forwardedHost = req.Host
-		p.logger.DebugContext(req.Context(), "gateway: using request host as forwarded host",
-			"host", req.Host,
-		)
+	if host == "" {
+		host = req.Host
 	}
-	outReq.Header.Set("X-Forwarded-Host", forwardedHost)
+	if pinned, ok := p.config.pinPublicHost(host); !ok {
+		p.logger.WarnContext(req.Context(), "gateway: forwarded host is not a configured public host; using the primary one",
+			"received", host, "using", pinned)
+		host = pinned
+	}
+	return host
+}
 
-	// Always set outReq.Host to forwardedHost so go-pkgz/auth validates cookies correctly.
-	// The auth library uses request.Host (not X-Forwarded-Host) to validate cookies,
-	// so this must match the Host used when the cookie was issued during auth.
-	outReq.Host = forwardedHost
+// rewrite builds the outgoing request. The reverse proxy has already removed hop-by-hop headers and
+// any X-Forwarded-* the client sent, so those are set here from what the gateway itself knows.
+func (p *Proxy) rewrite(pr *httputil.ProxyRequest, target *url.URL, forwardedHost string) {
+	in, out := pr.In, pr.Out
+	out.URL.Scheme = target.Scheme
+	out.URL.Host = target.Host
 
-	if isAuthRoute {
-		p.logger.InfoContext(req.Context(), "gateway: rewriting Host for auth route",
-			"original_host", req.Host,
-			"new_host", outReq.Host,
-			"path", req.URL.Path,
-		)
+	// Credentials only the gateway or a backend node may present must never be accepted from a
+	// client: the gateway adds its own key below when it intends to.
+	out.Header.Del(constants.HeaderGatewayAPIKey)
+	out.Header.Del(constants.HeaderNodeID)
+	out.Header.Del(constants.HeaderNodeAPIKey)
 
-		// For /auth/github/login, store the origin host in a cookie so we can retrieve it
-		// during callback (when there's no Referer header from GitHub redirect)
-		if strings.HasPrefix(req.URL.Path, "/auth/") && strings.Contains(req.URL.Path, "/login") {
-			// Set a short-lived cookie to track the originating host
-			http.SetCookie(w, &http.Cookie{
-				Name:     "_gateway_origin",
-				Value:    forwardedHost,
-				Path:     "/",
-				MaxAge:   300, // 5 minutes (just long enough for OAuth flow)
-				HttpOnly: true,
-				SameSite: http.SameSiteLaxMode,
-			})
-			p.logger.DebugContext(req.Context(), "gateway: stored origin host for OAuth flow",
-				"host", forwardedHost,
-			)
+	// Cloudflare-specific headers cause Error 1000 loops if forwarded upstream
+	for _, h := range []string{"CF-Connecting-IP", "CF-Ray", "CF-Visitor", "CF-IPCountry", "CF-Request-ID"} {
+		out.Header.Del(h)
+	}
+
+	// Pass on just the original client address: Cloudflare appends every hop to X-Forwarded-For, which
+	// can exceed the length Cloudflare accepts on the next hop.
+	if cfIP := in.Header.Get("CF-Connecting-IP"); cfIP != "" {
+		out.Header.Set("X-Forwarded-For", cfIP)
+		out.Header.Set("X-Real-IP", cfIP)
+	} else if xff := in.Header.Get("X-Forwarded-For"); xff != "" {
+		if first := strings.TrimSpace(strings.Split(xff, ",")[0]); first != "" {
+			out.Header.Set("X-Forwarded-For", first)
 		}
+	} else if host, _, err := net.SplitHostPort(in.RemoteAddr); err == nil {
+		out.Header.Set("X-Forwarded-For", host)
 	}
 
-	p.logger.DebugContext(req.Context(), "gateway: forwarding request",
-		"forwarded_host", forwardedHost,
-		"forwarded_proto", outReq.Header.Get("X-Forwarded-Proto"),
-		"target_host", outReq.Host,
-		"is_auth_route", isAuthRoute,
-		"has_gateway_key", isNodeManagementEndpoint,
-	)
-	if proto := req.Header.Get("X-Forwarded-Proto"); proto != "" {
-		outReq.Header.Set("X-Forwarded-Proto", proto)
-	} else if req.TLS != nil {
-		outReq.Header.Set("X-Forwarded-Proto", "https")
-	} else {
-		outReq.Header.Set("X-Forwarded-Proto", "http")
+	// The gateway key is added only for node registry/management endpoints. It is deliberately not
+	// added for user-facing endpoints, because it bypasses user authentication on the backend.
+	if strings.HasPrefix(in.URL.Path, "/api/nodes") && !strings.HasSuffix(in.URL.Path, "/register") &&
+		in.URL.Path != constants.LinkPath {
+		out.Header.Set(constants.HeaderGatewayAPIKey, p.gatewayAPIKey)
 	}
 
-	// Use ReverseProxy-style response handling
-	p.logger.DebugContext(req.Context(), "gateway: sending upstream request",
-		"target", baseURL,
-		"path", req.URL.Path,
-	)
+	out.Header.Set("X-Forwarded-Host", forwardedHost)
+	// The auth library validates cookies against request.Host (not X-Forwarded-Host), so it must match
+	// the host used when the cookie was issued.
+	out.Host = forwardedHost
 
-	resp, err := p.transport.RoundTrip(outReq)
-	if err != nil {
-		// Client disconnect (context canceled) is normal; avoid noisy ERROR logs
-		if errors.Is(err, context.Canceled) || req.Context().Err() == context.Canceled {
-			p.logger.DebugContext(req.Context(), "gateway: upstream request canceled by client",
-				"target", baseURL,
-			)
-		} else {
-			p.logger.ErrorContext(req.Context(), "gateway: upstream request failed",
-				"target", baseURL,
-				"path", req.URL.Path,
-				"error", err,
-			)
-		}
-		w.WriteHeader(http.StatusBadGateway)
-		return
+	switch {
+	case in.Header.Get("X-Forwarded-Proto") != "":
+		out.Header.Set("X-Forwarded-Proto", in.Header.Get("X-Forwarded-Proto"))
+	case in.TLS != nil:
+		out.Header.Set("X-Forwarded-Proto", "https")
+	default:
+		out.Header.Set("X-Forwarded-Proto", "http")
 	}
-	defer resp.Body.Close()
-
-	hasCookie := resp.Header.Get("Set-Cookie") != ""
-	p.logger.DebugContext(req.Context(), "gateway: upstream response received",
-		"status", resp.StatusCode,
-		"target", baseURL,
-		"path", req.URL.Path,
-		"has_set_cookie", hasCookie,
-		"location", resp.Header.Get("Location"),
-	)
-
-	// Log Set-Cookie details for auth routes (masked for security)
-	if isAuthRoute && hasCookie {
-		cookies := resp.Header["Set-Cookie"]
-		p.logger.InfoContext(req.Context(), "gateway: auth response with cookies",
-			"cookie_count", len(cookies),
-			"has_jwt", containsCookieName(cookies, "JWT"),
-			"has_xsrf", containsCookieName(cookies, "XSRF-TOKEN"),
-		)
-	}
-
-	// Copy response headers (exclude hop-by-hop)
-	for k, vv := range resp.Header {
-		kk := strings.ToLower(k)
-		if kk == "connection" || kk == "keep-alive" || kk == "proxy-authenticate" ||
-			kk == "proxy-authorization" || kk == "te" || kk == "trailers" || kk == "transfer-encoding" {
-			continue
-		}
-		for _, v := range vv {
-			w.Header().Add(k, v)
-		}
-	}
-	w.WriteHeader(resp.StatusCode)
-	_, _ = io.Copy(w, resp.Body)
 }
 
 // containsCookieName checks if any Set-Cookie header contains the given cookie name

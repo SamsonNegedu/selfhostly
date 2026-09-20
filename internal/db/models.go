@@ -10,7 +10,7 @@ import (
 // SECURITY NOTICE:
 // Models do not include user_id/owner_id fields as this system is designed
 // for SINGLE-USER deployments. All authenticated users can access all resources.
-// For multi-user support, see docs/SECURITY.md for required changes.
+// For multi-user support, see docs/security/overview.md for required changes.
 
 // Node represents a node in the cluster
 type Node struct {
@@ -23,6 +23,7 @@ type Node struct {
 	LastSeen           *time.Time `json:"last_seen" db:"last_seen"`
 	ConsecutiveFailures int       `json:"consecutive_failures" db:"consecutive_failures"` // Track health check failures
 	LastHealthCheck    *time.Time `json:"last_health_check" db:"last_health_check"`      // When we last checked this node
+	LastLatencyMs      int        `json:"last_latency_ms" db:"last_latency_ms"`           // Round trip of the last successful check, 0 if none yet
 	CreatedAt          time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt          time.Time  `json:"updated_at" db:"updated_at"`
 }

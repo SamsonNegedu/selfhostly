@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -19,6 +20,37 @@ type ProgressCallback func(progress int, message string)
 type Manager struct {
 	appsDir         string
 	commandExecutor CommandExecutor
+	guard           ComposeGuard
+}
+
+// ComposeGuard vets the compose file that is about to be deployed. It runs against the bytes on
+// disk immediately before docker compose executes them, so a file that was edited out of band or
+// stored before a policy existed is still checked.
+type ComposeGuard func(appName string, content []byte) error
+
+// SetComposeGuard installs the pre-deploy check
+func (m *Manager) SetComposeGuard(g ComposeGuard) {
+	m.guard = g
+}
+
+// AppsDir returns the directory app folders live in
+func (m *Manager) AppsDir() string {
+	return m.appsDir
+}
+
+func (m *Manager) checkGuard(name string) error {
+	if m.guard == nil {
+		return nil
+	}
+	content, err := os.ReadFile(filepath.Join(m.appsDir, name, ComposeFileName))
+	if err != nil {
+		return nil // a missing file is reported by the caller's own existence check
+	}
+	if err := m.guard(name, content); err != nil {
+		slog.Error("compose file rejected by security policy", "app", name, "error", err)
+		return fmt.Errorf("compose file for %q rejected by security policy: %w", name, err)
+	}
+	return nil
 }
 
 // NewManager creates a new Docker manager with default command executor
@@ -89,6 +121,9 @@ func (m *Manager) WriteComposeFile(name, content string) error {
 // StartApp starts the app using docker compose
 func (m *Manager) StartApp(name string) error {
 	appPath := filepath.Join(m.appsDir, name)
+	if err := m.checkGuard(name); err != nil {
+		return err
+	}
 
 	// Directory must exist for start operation
 	if !m.directoryExists(appPath) {
@@ -113,6 +148,9 @@ func (m *Manager) StartApp(name string) error {
 // StartAppWithLogs starts the app using docker compose and streams stdout/stderr lines to logLine when non-nil.
 func (m *Manager) StartAppWithLogs(ctx context.Context, name string, logLine func(string)) error {
 	appPath := filepath.Join(m.appsDir, name)
+	if err := m.checkGuard(name); err != nil {
+		return err
+	}
 
 	if !m.directoryExists(appPath) {
 		slog.Error("app directory does not exist", "app", name, "appPath", appPath)
@@ -137,6 +175,9 @@ func (m *Manager) StartAppWithLogs(ctx context.Context, name string, logLine fun
 // to remove a service so that the old container is stopped and removed.
 func (m *Manager) ReconcileApp(name string) error {
 	appPath := filepath.Join(m.appsDir, name)
+	if err := m.checkGuard(name); err != nil {
+		return err
+	}
 
 	// Directory must exist for reconcile operation
 	if !m.directoryExists(appPath) {
@@ -183,6 +224,9 @@ func (m *Manager) StopApp(name string) error {
 // UpdateApp performs zero-downtime update
 func (m *Manager) UpdateApp(name string) error {
 	appPath := filepath.Join(m.appsDir, name)
+	if err := m.checkGuard(name); err != nil {
+		return err
+	}
 	composeFile := "docker-compose.yml"
 	composePath := filepath.Join(appPath, composeFile)
 
@@ -237,6 +281,9 @@ func (m *Manager) UpdateApp(name string) error {
 // logLine receives compose output lines when non-nil; pull lines are prefixed with "[pull] ", up/build with "[up] ".
 func (m *Manager) UpdateAppWithProgress(ctx context.Context, name string, progressCb ProgressCallback, logLine func(string)) error {
 	appPath := filepath.Join(m.appsDir, name)
+	if err := m.checkGuard(name); err != nil {
+		return err
+	}
 	composeFile := "docker-compose.yml"
 	composePath := filepath.Join(appPath, composeFile)
 
@@ -357,6 +404,9 @@ func (m *Manager) StartAppWithProgress(ctx context.Context, name string, progres
 // The injected tunnel service is named "tunnel". If the app has no tunnel service, the command may fail; callers should log and ignore.
 func (m *Manager) ForceRecreateTunnel(name string) error {
 	appPath := filepath.Join(m.appsDir, name)
+	if err := m.checkGuard(name); err != nil {
+		return err
+	}
 
 	slog.Info("force-recreating tunnel service", "app", name, "appPath", appPath, "command", "docker compose up -d --force-recreate tunnel")
 
@@ -432,6 +482,11 @@ func (m *Manager) GetAppLogs(name string, service string) ([]byte, error) {
 // GetAppServices returns the list of service names defined in the app's docker-compose.yml
 func (m *Manager) GetAppServices(name string) ([]string, error) {
 	appPath := filepath.Join(m.appsDir, name)
+
+	// An app that was never deployed has no directory yet, which means no services rather than a failure.
+	if _, err := os.Stat(appPath); os.IsNotExist(err) {
+		return []string{}, nil
+	}
 
 	slog.Debug("fetching app services", "app", name, "appPath", appPath, "command", "docker compose config --services")
 
@@ -637,4 +692,18 @@ func (m *Manager) DeleteContainer(containerID string) error {
 
 	slog.Info("container deleted successfully", "containerID", containerID, "output", string(output))
 	return nil
+}
+
+// ContainerLabels returns the labels of a container, used to decide whether it belongs to an app
+// this platform manages.
+func (m *Manager) ContainerLabels(containerID string) (map[string]string, error) {
+	out, err := m.commandExecutor.ExecuteCommand(DockerCommand, "inspect", "--format", "{{json .Config.Labels}}", containerID)
+	if err != nil {
+		return nil, fmt.Errorf("inspect container: %w", err)
+	}
+	labels := map[string]string{}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(string(out))), &labels); err != nil {
+		return nil, fmt.Errorf("parse container labels: %w", err)
+	}
+	return labels, nil
 }
