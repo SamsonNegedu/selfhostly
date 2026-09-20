@@ -9,9 +9,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/selfhostly/internal/constants"
+	"github.com/selfhostly/internal/update"
 )
 
 // Config holds the application configuration
@@ -27,6 +29,7 @@ type Config struct {
 	CORS          CORSConfig
 	Node          NodeConfig
 	Security      SecurityConfig
+	Updates       UpdateConfig
 
 	// Sources records where each implicit or generated value came from, so startup logs and
 	// `selfhostly doctor` can show what a restart will actually use.
@@ -50,6 +53,15 @@ type NodeConfig struct {
 // UsesLink reports whether this secondary reaches its primary over an outbound link
 func (n NodeConfig) UsesLink() bool {
 	return !n.IsPrimary && n.Transport == constants.NodeTransportTunnel
+}
+
+// UpdateConfig holds the settings for updating Selfhostly from the UI. Off unless UI_UPDATES_ENABLED=true.
+type UpdateConfig struct {
+	Enabled       bool
+	ManifestURL   string        // where release.json is published; its signature is at the same URL plus .sig
+	PublicKey     string        // base64 ed25519 key the manifest must be signed with (else the built-in one)
+	ImagePrefix   string        // repository prefix release images must live under
+	CheckInterval time.Duration // how often the primary looks for a new release
 }
 
 // CORSConfig holds CORS configuration
@@ -270,6 +282,13 @@ func Load() (*Config, error) {
 				Audience:   os.Getenv("CF_ACCESS_AUD"),
 			},
 			SessionHours: getEnvInt("AUTH_SESSION_HOURS", constants.DefaultSessionHours),
+		},
+		Updates: UpdateConfig{
+			Enabled:       os.Getenv("UI_UPDATES_ENABLED") == "true",
+			ManifestURL:   getEnv("UPDATE_MANIFEST_URL", update.DefaultManifestURL),
+			PublicKey:     os.Getenv("UPDATE_PUBLIC_KEY"),
+			ImagePrefix:   getEnv("UPDATE_IMAGE_REPO_PREFIX", update.DefaultImagePrefix),
+			CheckInterval: time.Duration(getEnvInt("UPDATE_CHECK_INTERVAL_HOURS", update.DefaultCheckIntervalHours)) * time.Hour,
 		},
 	}
 

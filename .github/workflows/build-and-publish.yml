@@ -3,7 +3,6 @@ name: Build and Publish (Fast - Pi Only)
 on:
   push:
     branches: [main, master]
-    tags: ["v*"]
   pull_request:
     branches: [main, master]
   workflow_dispatch:
@@ -21,8 +20,13 @@ jobs:
       gateway: ${{ steps.filter.outputs.gateway }}
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
+      # a push to main that changed anything an install runs is a release
+      release: ${{ steps.release.outputs.release }}
+      version: ${{ steps.release.outputs.version }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -41,6 +45,26 @@ jobs:
               - 'go.sum'
             frontend:
               - 'web/**'
+
+      # Every push to main that changes the gateway, backend or frontend is a release, numbered automatically:
+      # <RELEASE_SERIES>.<number of commits on main>. It only ever grows, and nobody tags anything. The number is
+      # stamped into the backend image, so an install knows which release it runs. Everything else builds as "dev".
+      - name: Work out the release
+        id: release
+        env:
+          RELEASE_SERIES: "1.0"
+          GATEWAY: ${{ steps.filter.outputs.gateway }}
+          BACKEND: ${{ steps.filter.outputs.backend }}
+          FRONTEND: ${{ steps.filter.outputs.frontend }}
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF}" == "refs/heads/main" \
+                && ( "${GATEWAY}" == "true" || "${BACKEND}" == "true" || "${FRONTEND}" == "true" ) ]]; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "version=${RELEASE_SERIES}.$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "version=dev" >> "$GITHUB_OUTPUT"
+          fi
 
   build-gateway:
     name: Build Gateway Image
@@ -101,7 +125,7 @@ jobs:
     name: Build Backend Image
     runs-on: ubuntu-latest
     needs: check-changes
-    if: needs.check-changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.check-changes.outputs.backend == 'true' || needs.check-changes.outputs.release == 'true' || github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
       packages: write
@@ -150,6 +174,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=backend
           build-args: |
             BUILDKIT_INLINE_CACHE=1
+            VERSION=${{ needs.check-changes.outputs.version }}
 
   build-frontend:
     name: Build Frontend Image
@@ -204,3 +229,102 @@ jobs:
           cache-to: type=gha,mode=max,scope=frontend
           build-args: |
             BUILDKIT_INLINE_CACHE=1
+
+  # A release also publishes release.json, signed. The primary of every install that turned on UI updates
+  # verifies it against the public key before it trusts anything in it, so the signing key is the root of
+  # trust: it lives only in the RELEASE_SIGNING_KEY secret (create it with `releasetool keygen`).
+  # Runs on every push to main that changed the gateway, backend or frontend. Nothing is tagged by hand: the
+  # version comes from check-changes and the GitHub release (and its tag) is created here.
+  release-manifest:
+    name: Publish Signed Release Manifest
+    runs-on: ubuntu-latest
+    needs: [check-changes, build-gateway, build-backend, build-frontend]
+    # the build jobs are skipped when their part did not change, which must not stop the release
+    if: >-
+      !cancelled() && needs.check-changes.outputs.release == 'true' &&
+      needs.build-gateway.result != 'failure' && needs.build-backend.result != 'failure' &&
+      needs.build-frontend.result != 'failure'
+    # one release at a time, so a newer push is never overtaken by an older one
+    concurrency:
+      group: release-manifest
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      packages: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and sign release.json
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.check-changes.outputs.version }}
+          GATEWAY_BUILT: ${{ needs.build-gateway.result }}
+          FRONTEND_BUILT: ${{ needs.build-frontend.result }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${RELEASE_SIGNING_KEY}" ]]; then
+            echo "::warning::RELEASE_SIGNING_KEY is not set, so no signed release manifest was published. Installs will not offer this release in the UI."
+            exit 0
+          fi
+          owner="${IMAGE_OWNER,,}"
+          prefix="${REGISTRY}/${owner}/selfhostly-"
+          short_sha="${GITHUB_SHA::7}"
+          # The backend always builds for a release. A gateway or frontend that did not change keeps the image
+          # of the last release, which is what :latest points at.
+          digest() {
+            docker buildx imagetools inspect "${prefix}$1:$2" --format '{{.Manifest.Digest}}'
+          }
+          gateway_tag="latest"; [[ "${GATEWAY_BUILT}" == "success" ]] && gateway_tag="${short_sha}"
+          frontend_tag="latest"; [[ "${FRONTEND_BUILT}" == "success" ]] && frontend_tag="${short_sha}"
+          backend_digest="$(digest backend "${short_sha}")"
+          gateway_digest="$(digest gateway "${gateway_tag}")"
+          frontend_digest="$(digest frontend "${frontend_tag}")"
+
+          # release notes: what changed in this push
+          range="${BEFORE}..${GITHUB_SHA}"
+          if [[ "${BEFORE}" =~ ^0+$ ]] || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then range="-1"; fi
+          notes="$(git log --no-merges --format='- %s' ${range} | head -c 15000)"
+
+          go build -o releasetool ./cmd/releasetool
+          ./releasetool manifest \
+            --version "${VERSION}" \
+            --backend "${prefix}backend@${backend_digest}" \
+            --gateway "${prefix}gateway@${gateway_digest}" \
+            --frontend "${prefix}frontend@${frontend_digest}" \
+            --compose-file docker-compose.prod.yml \
+            --inputs release/manifest-inputs.json \
+            --image-prefix "${prefix}" \
+            --notes "${notes}" \
+            --out release.json
+          printf '%s' "${RELEASE_SIGNING_KEY}" | ./releasetool sign --key - --in release.json --out release.json.sig
+
+          # Installs verify against the key built into the image, so prove this signature does too. A secret that
+          # does not match internal/update/pubkey.go fails here, not silently on every install.
+          built_in="$(sed -n 's/^var DefaultPublicKey = "\(.*\)"$/\1/p' internal/update/pubkey.go)"
+          ./releasetool verify --pub "${built_in}" --image-prefix "${prefix}" --in release.json --sig release.json.sig
+
+          # The GitHub release creates the tag. Marked latest, so .../releases/latest/download/release.json is this one.
+          gh release view "v${VERSION}" >/dev/null 2>&1 \
+            || gh release create "v${VERSION}" --target "${GITHUB_SHA}" --title "v${VERSION}" --latest --notes "${notes}"
+          gh release upload "v${VERSION}" release.json release.json.sig --clobber

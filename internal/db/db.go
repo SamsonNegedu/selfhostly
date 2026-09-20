@@ -1649,6 +1649,14 @@ func (db *DB) GetActiveJobForApp(appID string) (*Job, error) {
 	return job, err
 }
 
+// CountActiveJobs is how many jobs are pending or running, across all apps. An update waits for zero.
+func (db *DB) CountActiveJobs() (int, error) {
+	var n int
+	err := db.QueryRow(`SELECT COUNT(*) FROM jobs WHERE status IN (?, ?)`,
+		constants.JobStatusPending, constants.JobStatusRunning).Scan(&n)
+	return n, err
+}
+
 // UpdateJobStatus updates a job's status and progress
 func (db *DB) UpdateJobStatus(id, status string, progress int, message *string) error {
 	err := func() error {

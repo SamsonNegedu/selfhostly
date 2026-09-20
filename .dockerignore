@@ -47,6 +47,16 @@ Thumbs.db
 # CI/CD
 .github/workflows/
 
-# Docker files (not needed inside images)
+# Docker files (not needed inside images), except the compose files selfhostlyctl embeds (see assets.go):
+# the updater container writes the release's own compose file from them.
 Dockerfile*
 docker-compose*.yml
+!docker-compose.prod.yml
+!docker-compose.secondary.yml
+!docker-compose.secondary-direct.yml
+!docker-compose.socket-proxy.yml
+
+# Local scratch and build output
+tmp/
+tmp-gateway/
+bin/

@@ -7,6 +7,7 @@ import NotificationsMenu from './NotificationsMenu'
 import ScopeSwitcher from './ScopeSwitcher'
 import TopbarBreadcrumbs from './TopbarBreadcrumbs'
 import { useCrumbs } from './useCrumbs'
+import UpdateBadge from './UpdateBadge'
 import UserMenu from './UserMenu'
 
 const isApplePlatform = () => /Mac|iPhone|iPad/.test(navigator.platform)
@@ -74,6 +75,7 @@ function Header() {
                     <Search className="h-4 w-4" />
                 </button>
                 <ScopeSwitcher />
+                <UpdateBadge />
                 <NotificationsMenu />
                 <div className="hidden md:block">
                     <UserMenu />

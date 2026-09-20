@@ -28,6 +28,7 @@ Folders group docs by what you are doing. File names are lowercase kebab-case.
 - `security/volume-allowlist.md`: allowed host paths for volumes
 - `design/architecture.md`: how the system is put together and why
 - `design/compose-versioning.md`: version history and rollback
+- `design/ui-updates.md`: updating Selfhostly from the UI: the flow, the signing model, the API
 - `design/ui.md`: UI decisions and where the design tokens and components live
 - `design/backend-gaps.md`: what the UI needs that the backend does not do yet
 - `design/realtime-and-audit.md`: change stream, audit log, error codes, migrations

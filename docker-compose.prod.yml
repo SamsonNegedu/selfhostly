@@ -173,6 +173,14 @@ services:
       SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-}
       AUTH_SESSION_HOURS: ${AUTH_SESSION_HOURS:-}
 
+      # Updating from the UI (Settings, Updates). Off unless UI_UPDATES_ENABLED=true. The releases are signed:
+      # UPDATE_PUBLIC_KEY is the base64 ed25519 key they must verify against (the built-in one when empty).
+      UI_UPDATES_ENABLED: ${UI_UPDATES_ENABLED:-}
+      UPDATE_MANIFEST_URL: ${UPDATE_MANIFEST_URL:-}
+      UPDATE_PUBLIC_KEY: ${UPDATE_PUBLIC_KEY:-}
+      UPDATE_IMAGE_REPO_PREFIX: ${UPDATE_IMAGE_REPO_PREFIX:-}
+      UPDATE_CHECK_INTERVAL_HOURS: ${UPDATE_CHECK_INTERVAL_HOURS:-}
+
       # Only when AUTH_ENABLED=false behind Cloudflare Access: verify its signed token
       CF_ACCESS_TEAM_DOMAIN: ${CF_ACCESS_TEAM_DOMAIN:-}
       CF_ACCESS_AUD: ${CF_ACCESS_AUD:-}

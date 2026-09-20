@@ -187,6 +187,16 @@ func (s *Server) setupSystemRoutes(api *gin.RouterGroup) {
 			systemGroup.GET("/debug/docker-stats/:id", s.getDebugDockerStats)
 		}
 
+		// Updating Selfhostly itself: user level only, never reachable with node credentials
+		updates := systemGroup.Group("/update", s.denyNodeAuthMiddleware())
+		{
+			updates.GET("", s.getUpdate)
+			updates.POST("/check", s.checkUpdate)
+			updates.POST("/plan", s.planUpdate)
+			updates.POST("/apply", s.applyUpdate)
+			updates.POST("/rollback", s.rollbackUpdate)
+		}
+
 		systemGroup.POST("/containers/:id/restart", s.restartContainer)
 		systemGroup.POST("/containers/:id/stop", s.stopContainer)
 		systemGroup.DELETE("/containers/:id", s.deleteContainer)

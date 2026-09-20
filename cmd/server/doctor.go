@@ -20,6 +20,7 @@ import (
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/docker"
 	"github.com/selfhostly/internal/secrets"
+	"github.com/selfhostly/internal/update"
 	"github.com/selfhostly/internal/validation"
 	_ "modernc.org/sqlite"
 )
@@ -258,6 +259,11 @@ func runDoctor(args []string) int {
 		checkURL(r, strings.TrimSuffix(cfg.Node.PrimaryNodeURL, "/")+"/api/health", "primary node")
 	}
 
+	if cfg.Updates.Enabled {
+		section("UI updates")
+		checkUpdates(r, cfg)
+	}
+
 	if *auditApps {
 		section("Deployed apps vs. current compose policy")
 		auditDeployedApps(r, cfg)
@@ -268,6 +274,34 @@ func runDoctor(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+// checkUpdates reports whether turning on UI updates will actually work, in the terms the UI would show.
+func checkUpdates(r *doctorReport, cfg *config.Config) {
+	m := update.NewManager(update.Options{Settings: update.Settings{
+		Enabled: cfg.Updates.Enabled, PublicKey: cfg.Updates.PublicKey, IsPrimary: cfg.Node.IsPrimary,
+		AuthEnabled: cfg.Auth.Enabled, DockerHost: os.Getenv("DOCKER_HOST"),
+	}})
+	switch reason := m.DisabledReason(); reason {
+	case "":
+		r.pass("UI updates are on; releases must be signed with the configured key")
+	case update.ReasonSecondary:
+		r.note("UI updates are for the primary only: update a secondary with selfhostlyctl upgrade on its machine")
+	case update.ReasonAuthDisable:
+		r.warn("UI_UPDATES_ENABLED is set but login is off, so the feature stays off: an update must never be one click from an open API")
+		r.fix("enable login (AUTH_ENABLED=true and the GitHub settings): see docs/security/overview.md")
+	case update.ReasonNoKey:
+		r.warn("UI_UPDATES_ENABLED is set but there is no release signing key, so the feature stays off")
+		r.fix("set UPDATE_PUBLIC_KEY to the base64 public key your releases are signed with: see docs/design/ui-updates.md")
+	case update.ReasonNoSocket:
+		r.warn("UI_UPDATES_ENABLED is set but the Docker socket is not mounted, so the feature stays off")
+		r.fix("mount /var/run/docker.sock into the primary, as docker-compose.prod.yml does")
+	default:
+		r.warn("UI updates are unavailable: %s", reason)
+	}
+	if os.Getenv("DOCKER_HOST") != "" {
+		r.warn("Docker is reached through DOCKER_HOST (a socket proxy?): the updater needs the raw socket, so the review will report a blocker")
+	}
 }
 
 func checkDatabase(r *doctorReport, cfg *config.Config, skipIntegrity bool) {

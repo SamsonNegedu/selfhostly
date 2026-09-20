@@ -3,6 +3,7 @@ import Sidebar from './Sidebar'
 import Header from './Header'
 import MobileTabBar from './MobileTabBar'
 import JobBanner from './JobBanner'
+import UpdateProgress from './UpdateProgress'
 import CommandPalette from './CommandPalette'
 import { CommandPaletteProvider } from './CommandPaletteContext'
 import { ErrorBoundary } from '@/shared/components/ErrorBoundary'
@@ -46,6 +47,7 @@ function MainLayout({ children }: MainLayoutProps) {
                     {/* On phones the bottom tab bar covers the last 68px, so leave room for it. */}
                     <main className="flex-1 overflow-y-auto bg-background pb-[calc(var(--mobile-nav-h)+32px)] md:pb-0">
                         <div className="sticky top-0 z-20">
+                            <UpdateProgress />
                             <JobBanner />
                         </div>
                         <div className="container mx-auto px-3 sm:px-12 py-4 sm:py-6 md:py-8">

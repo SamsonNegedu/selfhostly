@@ -37,3 +37,6 @@ coverage
 # Misc
 *.log
 .cache
+
+# Browser tests: their own package, never part of the image
+e2e

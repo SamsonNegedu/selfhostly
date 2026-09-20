@@ -94,7 +94,7 @@ func (a *App) Root() *cobra.Command {
 	f.BoolVar(&a.DryRun, "dry-run", a.DryRun, "show what would change and change nothing")
 
 	root.AddCommand(a.checkCmd(), a.joinTokenCmd(), a.statusCmd(), a.doctorCmd(), a.versionCmd(),
-		a.joinCmd(), a.setupCmd(), a.bootstrapCmd(), a.upgradeCmd(), a.backupCmd(), a.composeDiffCmd(), a.pinImagesCmd(), a.composeCmd(), a.selfUpdateCmd())
+		a.joinCmd(), a.setupCmd(), a.bootstrapCmd(), a.upgradeCmd(), a.backupCmd(), a.composeDiffCmd(), a.pinImagesCmd(), a.composeCmd(), a.selfUpdateCmd(), a.updatePlanCmd(), a.updateRunCmd())
 	root.AddCommand(a.docsCmd(root))
 	return root
 }

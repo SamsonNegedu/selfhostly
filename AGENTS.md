@@ -21,6 +21,7 @@ it applies. Load the ones relevant to the task. Never restate a rule here.
 | Local setup and workflow | `docs/development/getting-started.md` |
 | Security model, blocked compose configs, `SECURITY_MODE` | `docs/security/overview.md` and `internal/validation/` |
 | Deploy and restart | `docs/operations/install.md`, `docs/operations/operate.md`, `docs/reference/selfhostlyctl.md` |
+| Updating from the UI (signed releases, the updater container) | `docs/design/ui-updates.md` |
 | Multi-node and gateway | `docs/operations/multi-node.md`, `docs/operations/gateway-deployment.md` |
 | UI decisions | `docs/design/ui.md` |
 | Missing backend features | `docs/design/backend-gaps.md` |

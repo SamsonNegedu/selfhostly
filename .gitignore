@@ -66,3 +66,6 @@ docker-compose.prod.yml.before-upgrade
 node-data/
 node-apps/
 bin/
+
+# End-to-end browser tests: their own package (web/e2e), installed by scripts/e2e/run.sh
+web/e2e/node_modules/

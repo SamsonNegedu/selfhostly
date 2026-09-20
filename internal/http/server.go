@@ -50,6 +50,7 @@ type Server struct {
 	nodeLinkService domain.NodeLinkService
 	securityService domain.SecurityService
 	jobService      domain.JobService
+	updateService   domain.UpdateService
 	cfAccess        *selfauth.CFAccessVerifier
 	httpServer      *http.Server
 	shutdownCtx     context.Context
@@ -147,6 +148,7 @@ func NewServer(cfg *config.Config, database *db.DB) *Server {
 	nodeLinkService := service.NewNodeLinkService(database, cfg, appLogger)
 	securityService := service.NewSecurityService(database)
 	jobService := service.NewJobService(database)
+	updateService := service.NewUpdateService(database, cfg)
 
 	// Initialize job processing system
 	jobProcessor := jobs.NewProcessor(database, dockerManager, appService, tunnelService, appLogger)
@@ -181,6 +183,7 @@ func NewServer(cfg *config.Config, database *db.DB) *Server {
 		nodeLinkService: nodeLinkService,
 		securityService: securityService,
 		jobService:      jobService,
+		updateService:   updateService,
 		cfAccess:        cfAccess,
 		shutdownCtx:     shutdownCtx,
 		shutdownCancel:  shutdownCancel,
@@ -413,6 +416,9 @@ func (s *Server) startBackgroundTasks() {
 		// After registration, start continuous heartbeats
 		go s.sendPeriodicHeartbeats()
 	}
+
+	// Look for new releases, and mark an update that was cut short
+	s.updateService.Start(s.shutdownCtx)
 
 	// Start job worker for background async operations
 	go func() {

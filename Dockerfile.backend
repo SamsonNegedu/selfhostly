@@ -29,12 +29,22 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 # Copy only necessary source files (respects .dockerignore)
+COPY assets.go ./
+COPY docker-compose.prod.yml docker-compose.secondary.yml docker-compose.secondary-direct.yml docker-compose.socket-proxy.yml env.example ./
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 
-# Build backend binary (no CGO needed with modernc.org/sqlite)
+# VERSION is the release this image is built from. The server reports it, so the UI knows when an update is
+# available, and selfhostlyctl carries it too.
+ARG VERSION=dev
+
+# Build backend binary (no CGO needed with modernc.org/sqlite). selfhostlyctl ships in the image because the
+# updater container the UI starts runs it: it embeds the compose file of this release.
 ARG TARGETARCH
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -o selfhostly ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
+        -ldflags "-X github.com/selfhostly/internal/buildinfo.Version=${VERSION}" -o selfhostly ./cmd/server && \
+    CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
+        -ldflags "-X github.com/selfhostly/internal/ctl.Version=${VERSION}" -o selfhostlyctl ./cmd/selfhostlyctl
 
 # Production Stage
 FROM alpine:latest
@@ -64,6 +74,7 @@ WORKDIR /app
 
 # Copy backend binary from builder
 COPY --from=builder /app/selfhostly .
+COPY --from=builder /app/selfhostlyctl /usr/local/bin/selfhostlyctl
 
 # Create directories with proper permissions
 RUN mkdir -p /app/data /app/apps && \

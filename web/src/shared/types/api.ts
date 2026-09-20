@@ -263,3 +263,132 @@ export interface ContainerInfo {
     created_at: string
     restart_count: number
 }
+
+// UI-driven update types
+
+export type UpdateSettingKind = 'optional' | 'generated' | 'required'
+
+export interface UpdateSettingInfo {
+    key: string
+    kind: UpdateSettingKind
+    description: string
+    secret: boolean
+}
+
+export interface UpdateAvailable {
+    version: string
+    published_at: string
+    notes: string
+    settings: UpdateSettingInfo[]
+}
+
+export type UpdatePlanState = 'preparing' | 'ready' | 'blocked' | 'failed'
+
+export type UpdateBlockerCode =
+    | 'job_running'
+    | 'compose_customized'
+    | 'missing_required'
+    | 'unsupported_from'
+    | 'socket_proxy'
+    | 'disk_low'
+    | 'doctor_failed'
+    | 'not_admin'
+    | 'update_in_progress'
+
+export interface UpdateBlocker {
+    code: UpdateBlockerCode
+    message: string
+}
+
+export type UpdateComposeState = 'current' | 'behind' | 'customized'
+
+export interface UpdatePlanCompose {
+    state: UpdateComposeState
+    diff: string
+    // What compose-diff says would change or carry over, in plain text.
+    report: string
+    approval_token: string
+}
+
+export interface UpdateRequiredSetting {
+    key: string
+    description: string
+    secret: boolean
+}
+
+export interface UpdatePlanSettings {
+    required_missing: UpdateRequiredSetting[]
+    generated: string[]
+    optional: string[]
+}
+
+export interface UpdatePlan {
+    version: string
+    state: UpdatePlanState
+    error: string
+    blockers: UpdateBlocker[]
+    compose: UpdatePlanCompose
+    settings: UpdatePlanSettings
+}
+
+export type UpdateRunState = 'pending' | 'running' | 'succeeded' | 'rolled_back' | 'failed' | 'interrupted'
+
+export type UpdatePhase =
+    | 'verify'
+    | 'rollback_point'
+    | 'pull'
+    | 'configure'
+    | 'dry_start'
+    | 'database'
+    | 'primary'
+    | 'gateway'
+    | 'frontend'
+    | 'apps'
+    | 'done'
+
+export type UpdateStepState = 'pending' | 'running' | 'done' | 'failed'
+
+export interface UpdateStep {
+    name: string
+    state: UpdateStepState
+    message: string
+}
+
+export type UpdateRunKind = 'update' | 'rollback'
+
+export interface UpdateRun {
+    id: string
+    // A status file written before runs had a kind is an update
+    kind?: UpdateRunKind
+    state: UpdateRunState
+    phase: UpdatePhase
+    from_version: string
+    to_version: string
+    message: string
+    steps: UpdateStep[]
+    warnings: string[]
+    started_at: string
+    finished_at: string
+}
+
+export interface UpdateStatus {
+    enabled: boolean
+    disabled_reason: string
+    current_version: string
+    checked_at: string
+    check_error: string
+    available: UpdateAvailable | null
+    plan: UpdatePlan | null
+    run: UpdateRun | null
+}
+
+export interface PlanUpdateRequest {
+    version: string
+}
+
+export interface ApplyUpdateRequest {
+    version: string
+    inputs: Record<string, string>
+    // The approval_token of the reviewed compose diff. Left out when the compose file is already current.
+    approve_compose?: string
+}
