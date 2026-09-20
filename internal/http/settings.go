@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/selfhostly/internal/domain"
 )
 
 // UpdateSettingsRequest represents an update settings request
@@ -27,7 +28,7 @@ func (s *Server) getSettingsDispatch(c *gin.Context) {
 
 // getSettings returns current settings
 func (s *Server) getSettings(c *gin.Context) {
-	settings, err := s.database.GetSettings()
+	settings, err := s.nodeService.GetSettings(c.Request.Context())
 	if err != nil {
 		slog.ErrorContext(c.Request.Context(), "failed to retrieve settings", "error", err)
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to retrieve settings"})
@@ -63,26 +64,12 @@ func (s *Server) updateSettings(c *gin.Context) {
 		return
 	}
 
-	// Get current settings to preserve unset values
-	settings, err := s.database.GetSettings()
+	settings, err := s.nodeService.UpdateSettings(c.Request.Context(), domain.UpdateSettingsRequest{
+		AutoStartApps:        req.AutoStartApps,
+		ActiveTunnelProvider: req.ActiveTunnelProvider,
+		TunnelProviderConfig: req.TunnelProviderConfig,
+	})
 	if err != nil {
-		slog.ErrorContext(c.Request.Context(), "failed to retrieve settings for update", "error", err)
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to retrieve settings"})
-		return
-	}
-
-	// Update only provided fields - only use tunnel_provider_config, no legacy fields
-	settings.AutoStartApps = req.AutoStartApps
-
-	// Update new provider fields
-	if req.ActiveTunnelProvider != "" {
-		settings.ActiveTunnelProvider = &req.ActiveTunnelProvider
-	}
-	if req.TunnelProviderConfig != "" {
-		settings.TunnelProviderConfig = &req.TunnelProviderConfig
-	}
-
-	if err := s.database.UpdateSettings(settings); err != nil {
 		slog.ErrorContext(c.Request.Context(), "failed to update settings", "error", err)
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to update settings"})
 		return

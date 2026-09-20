@@ -459,6 +459,26 @@ func (s *nodeService) GetSettings(_ context.Context) (*db.Settings, error) {
 	return settings, nil
 }
 
+// UpdateSettings applies the fields a user set. Provider fields left empty keep their stored value.
+func (s *nodeService) UpdateSettings(ctx context.Context, req domain.UpdateSettingsRequest) (*db.Settings, error) {
+	settings, err := s.database.GetSettings()
+	if err != nil {
+		return nil, domain.WrapDatabaseOperation("get settings", err)
+	}
+	settings.AutoStartApps = req.AutoStartApps
+	if req.ActiveTunnelProvider != "" {
+		settings.ActiveTunnelProvider = &req.ActiveTunnelProvider
+	}
+	if req.TunnelProviderConfig != "" {
+		settings.TunnelProviderConfig = &req.TunnelProviderConfig
+	}
+	if err := s.database.UpdateSettings(settings); err != nil {
+		return nil, domain.WrapDatabaseOperation("update settings", err)
+	}
+	s.logger.InfoContext(ctx, "settings updated")
+	return settings, nil
+}
+
 // AutoRegisterNode authenticates a secondary with the shared registration token or a single-use join
 // token and records it. The node is saved as unreachable first, because the health check looks it up in
 // the database: checking before the insert reported every node unreachable however reachable it was.

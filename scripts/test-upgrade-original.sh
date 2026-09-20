@@ -12,16 +12,15 @@
 # from a Linux host's).
 #
 #   OLD_REF=<commit> ./scripts/test-upgrade-original.sh    the version the install runs today
-#   With no OLD_REF it uses HEAD, which is only the old version until you commit the change under test:
-#   after committing, pass the commit that is deployed (CI passes the pull request's base).
+#   With no OLD_REF it uses HEAD while the tree has uncommitted changes, and the previous commit once the
+#   tree is clean. To test against an older deployed version, pass that commit (CI passes the pull request's base).
 #   SKIP_BUILD=1 ./scripts/test-upgrade-original.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "$ROOT/scripts/lib/ctl.sh"
-OLD_REF="${OLD_REF:-HEAD}"
 source "$ROOT/scripts/lib/old-ref.sh"
-OLD_REF="$(resolve_old_ref "$OLD_REF")"
+OLD_REF="$(resolve_old_ref "$(default_old_ref "${OLD_REF:-}")")"
 WORK="$(mktemp -d)"
 PROJECT="selfhostly-orig"
 FAILURES=0

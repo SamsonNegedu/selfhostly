@@ -21,11 +21,8 @@ This project uses [Air](https://github.com/cosmtrek/air) for Go live reload duri
 To run the application with live reload:
 
 ```bash
-# Start all services with live reload
-docker-compose -f docker-compose.dev.yml up
-
-# Or start just the backend with live reload
-docker-compose -f docker-compose.dev.yml up backend
+make dev                    # backend and frontend with live reload
+make dev SERVICE=backend    # just the backend
 ```
 
 ### How It Works
@@ -58,7 +55,7 @@ If you prefer to run the Go server locally without Docker:
 
 The Air configuration (`.air.toml`) includes:
 
-- **Watched directories**: All Go files except `web/`, `tmp/`, `vendor/`, etc.
+- **Watched files**: `go`, `tpl`, `tmpl` and `html` files, except in `web/`, `tmp/`, `vendor/`, `data/` and `apps/`
 - **Excluded files**: Test files (`*_test.go`)
 - **Build command**: `go build -o ./tmp/main ./cmd/server`
 - **Restart delay**: 1 second after file changes
@@ -76,12 +73,12 @@ Then edit `.env` with your configuration.
 ### Production vs Development
 
 - **Development**: `docker-compose.dev.yml` - Uses `Dockerfile.dev` with Air, mounts source code
-- **Production**: `docker-compose.prod.yml` - Uses optimized multi-stage build, smaller image
+- **Production**: `docker-compose.prod.yml` - Runs the published images (`ghcr.io/samsonnegedu/selfhostly-*`), hardened.
 
 ### Tips
 
 - Air will only watch Go files - frontend changes use the Vite dev server
-- If Air gets stuck, restart the container: `docker-compose -f docker-compose.dev.yml restart backend`
+- If Air gets stuck, restart the container: `docker compose -f docker-compose.dev.yml restart backend`
 - Check build errors in `build-errors.log` if the server doesn't start
 
 ## Run with the API gateway locally

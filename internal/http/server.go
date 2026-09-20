@@ -49,6 +49,7 @@ type Server struct {
 	nodeLinks       *nodelink.Registry
 	nodeLinkService domain.NodeLinkService
 	securityService domain.SecurityService
+	jobService      domain.JobService
 	cfAccess        *selfauth.CFAccessVerifier
 	httpServer      *http.Server
 	shutdownCtx     context.Context
@@ -145,6 +146,7 @@ func NewServer(cfg *config.Config, database *db.DB) *Server {
 	nodeService := service.NewNodeService(database, cfg, appLogger)
 	nodeLinkService := service.NewNodeLinkService(database, cfg, appLogger)
 	securityService := service.NewSecurityService(database)
+	jobService := service.NewJobService(database)
 
 	// Initialize job processing system
 	jobProcessor := jobs.NewProcessor(database, dockerManager, appService, tunnelService, appLogger)
@@ -178,6 +180,7 @@ func NewServer(cfg *config.Config, database *db.DB) *Server {
 		nodeLinks:       links,
 		nodeLinkService: nodeLinkService,
 		securityService: securityService,
+		jobService:      jobService,
 		cfAccess:        cfAccess,
 		shutdownCtx:     shutdownCtx,
 		shutdownCancel:  shutdownCancel,
@@ -658,7 +661,7 @@ func (s *Server) userOrNodeAuthMiddleware() gin.HandlerFunc {
 			}
 			c.Set("node_id", nodeID)
 		} else {
-			node, err := s.database.GetNode(nodeID)
+			node, err := s.nodeService.GetNode(c.Request.Context(), nodeID)
 			if err != nil || !secretsEqual(node.APIKey, apiKey) {
 				c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "unknown or invalid node", Details: "node ID or API key invalid"})
 				c.Abort()

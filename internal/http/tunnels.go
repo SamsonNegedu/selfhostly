@@ -27,7 +27,7 @@ func (s *Server) ListTunnelProviders(c *gin.Context) {
 	}
 
 	// Get active provider name
-	settings, err := s.database.GetSettings()
+	settings, err := s.nodeService.GetSettings(ctx)
 	activeProvider := constants.DefaultProviderName // default
 	if err == nil {
 		activeProvider = settings.GetActiveProviderName()
@@ -152,17 +152,6 @@ func (s *Server) ListTunnelsGeneric(c *gin.Context) {
 		slog.ErrorContext(ctx, "failed to list tunnels", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": domain.PublicMessage(err)})
 		return
-	}
-
-	// Tunnel is source of truth for public_url. Only set node_id from app (and fallback public_url for legacy rows).
-	for _, t := range tunnels {
-		app, err := s.database.GetApp(t.AppID)
-		if err == nil {
-			t.NodeID = app.NodeID
-			if t.PublicURL == "" {
-				t.PublicURL = app.PublicURL
-			}
-		}
 	}
 
 	// When request_scope is local (node-to-node), node client expects raw array

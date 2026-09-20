@@ -77,6 +77,7 @@ const (
 	codeAppNameInvalid           = "APP_NAME_INVALID"
 	codeDatabaseOperation        = "DATABASE_OPERATION_FAILED"
 	codeNodeNotFound             = "NODE_NOT_FOUND"
+	codeJobNotFound              = "JOB_NOT_FOUND"
 	codeConflict                 = "CONFLICT"
 )
 
@@ -93,6 +94,11 @@ const (
 // WrapNodeNotFound wraps an error as a node not found error
 func WrapNodeNotFound(nodeID string, cause error) error {
 	return &DomainError{Code: codeNodeNotFound, Message: fmt.Sprintf("node not found: %s", nodeID), Cause: cause}
+}
+
+// WrapJobNotFound wraps an error as a job not found error
+func WrapJobNotFound(jobID string, cause error) error {
+	return &DomainError{Code: codeJobNotFound, Message: fmt.Sprintf("job not found: %s", jobID), Cause: cause}
 }
 
 // WrapConflict reports that the request cannot be done because of the current state, for example a name that is
@@ -174,7 +180,8 @@ func IsNotFoundError(err error) bool {
 			domainErr.Code == codeContainerNotFound ||
 			domainErr.Code == ErrComposeVersionNotFound.Code ||
 			domainErr.Code == codeSettingsNotFound ||
-			domainErr.Code == codeNodeNotFound
+			domainErr.Code == codeNodeNotFound ||
+			domainErr.Code == codeJobNotFound
 	}
 	return false
 }

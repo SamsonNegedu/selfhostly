@@ -45,3 +45,17 @@ func (s *securityService) ListAudit(_ context.Context, limit int) ([]db.AuditEnt
 func (s *securityService) RecordAudit(_ context.Context, entry db.AuditEntry) error {
 	return s.database.InsertAudit(entry)
 }
+
+func (s *securityService) AuditTargetName(_ context.Context, targetType, id string) string {
+	switch targetType {
+	case domain.AuditTargetApp:
+		if app, err := s.database.GetApp(id); err == nil && app != nil {
+			return app.Name
+		}
+	case domain.AuditTargetNode:
+		if node, err := s.database.GetNode(id); err == nil && node != nil {
+			return node.Name
+		}
+	}
+	return ""
+}

@@ -5,15 +5,14 @@
 # and keeps data and apps, a broken image is rolled back automatically, a --set change applies,
 # and a --set that stops the server starting is reverted.
 #
-#   OLD_REF=HEAD ./scripts/test-upgrade.sh        (before committing, HEAD is the previous version)
+#   OLD_REF=<commit> ./scripts/test-upgrade.sh    (default: HEAD with uncommitted changes, else the previous commit)
 #   SKIP_BUILD=1 ./scripts/test-upgrade.sh        reuse images from the last run
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "$ROOT/scripts/lib/ctl.sh"
-OLD_REF="${OLD_REF:-HEAD}"
 source "$ROOT/scripts/lib/old-ref.sh"
-OLD_REF="$(resolve_old_ref "$OLD_REF")"
+OLD_REF="$(resolve_old_ref "$(default_old_ref "${OLD_REF:-}")")"
 WORK="$(mktemp -d)"
 PROJECT="selfhostly-upg"
 LIVE_BACKEND="selfhostly-upg-backend:live"

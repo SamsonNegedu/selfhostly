@@ -19,3 +19,22 @@ resolve_old_ref() {
   echo "old version ${ref:-<none>} is not available; using the previous commit" >&2
   git rev-parse HEAD~1
 }
+
+# The old version when the caller did not name one. With uncommitted changes to tracked files, HEAD is what
+# the install runs today. With a clean tree the change under test is already committed, so HEAD is the NEW
+# version and comparing it with itself would test nothing: use the commit before it.
+#
+# usage: OLD_REF="$(default_old_ref "${OLD_REF:-}")"
+default_old_ref() {
+  if [[ -n "$1" ]]; then
+    echo "$1"
+    return
+  fi
+  if [[ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]]; then
+    echo "OLD_REF not set: the tree has uncommitted changes, so HEAD is the old version" >&2
+    echo HEAD
+    return
+  fi
+  echo "OLD_REF not set: the tree is clean, so HEAD is the new version; using the previous commit (set OLD_REF to the deployed version to override)" >&2
+  git rev-parse HEAD~1
+}

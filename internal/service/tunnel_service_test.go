@@ -215,6 +215,28 @@ func TestTunnelService_ListActiveTunnels(t *testing.T) {
 	}
 }
 
+func TestTunnelService_ListActiveTunnelsTakesNodeAndFallbackURLFromTheApp(t *testing.T) {
+	service, database, _, cleanup := setupTestTunnelService(t)
+	defer cleanup()
+
+	app, _ := createTestAppWithTunnel(t, database)
+	app.PublicURL = "https://legacy.example.com"
+	if err := database.UpdateApp(app); err != nil {
+		t.Fatalf("Failed to update app: %v", err)
+	}
+
+	tunnels, err := service.ListActiveTunnels(context.Background(), []string{})
+	if err != nil || len(tunnels) != 1 {
+		t.Fatalf("got %d tunnels, err %v", len(tunnels), err)
+	}
+	if tunnels[0].NodeID != app.NodeID {
+		t.Errorf("node id = %q, want the app's %q", tunnels[0].NodeID, app.NodeID)
+	}
+	if tunnels[0].PublicURL != "https://legacy.example.com" {
+		t.Errorf("a tunnel without a public url must fall back to the app's, got %q", tunnels[0].PublicURL)
+	}
+}
+
 func TestTunnelService_UpdateTunnelIngress(t *testing.T) {
 	service, database, mockHTTPClient, cleanup := setupTestTunnelService(t)
 	defer cleanup()

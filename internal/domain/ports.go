@@ -153,6 +153,24 @@ type NodeService interface {
 	AutoRegisterNode(ctx context.Context, req AutoRegisterRequest) (*AutoRegistration, error)
 	// GetSettings returns the cluster settings a secondary syncs from the primary
 	GetSettings(ctx context.Context) (*db.Settings, error)
+	// UpdateSettings changes the fields the request sets and returns the stored settings
+	UpdateSettings(ctx context.Context, req UpdateSettingsRequest) (*db.Settings, error)
+}
+
+// JobService defines the primary port for reading deployment jobs and their logs
+type JobService interface {
+	GetJob(ctx context.Context, jobID string) (*db.Job, error)
+	// ListAppJobs returns an app's most recent jobs, newest first, never nil
+	ListAppJobs(ctx context.Context, appID string, limit int) ([]*db.Job, error)
+	// GetJobLogsAfter returns up to limit log lines whose sequence is greater than after
+	GetJobLogsAfter(ctx context.Context, jobID string, after int64, limit int) ([]db.JobLogLine, error)
+}
+
+// UpdateSettingsRequest is the change a user makes to the settings. Empty provider fields keep the stored value.
+type UpdateSettingsRequest struct {
+	AutoStartApps        bool
+	ActiveTunnelProvider string
+	TunnelProviderConfig string
 }
 
 // ============================================================================

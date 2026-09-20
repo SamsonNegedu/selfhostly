@@ -15,8 +15,9 @@ The scripts need Docker and run on private networks under their own names, so th
 
 The upgrade tests start from the version your install runs today. Set `OLD_REF` to that commit or tag.
 
-- With no `OLD_REF` they use `HEAD`. That is only the old version until you commit the change under test.
-- After committing, pass the deployed commit. CI passes the pull request's base.
+- With no `OLD_REF` and uncommitted changes, they use `HEAD` as the old version.
+- With no `OLD_REF` and a clean tree, the change is already committed, so they use the previous commit and say so.
+- To start from an older deployed version, pass that commit. CI passes the pull request's base.
 
 ## Docker Desktop and OrbStack
 

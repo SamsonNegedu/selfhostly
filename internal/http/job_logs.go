@@ -1,7 +1,6 @@
 package http
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -25,20 +24,13 @@ func (s *Server) getJobLogs(c *gin.Context) {
 		return
 	}
 
-	job, err := s.database.GetJob(jobID)
+	job, err := s.jobService.GetJob(c.Request.Context(), jobID)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			c.JSON(http.StatusNotFound, ErrorResponse{
-				Error:   "Job not found",
-				Details: "Could not find job with the specified ID",
-			})
-			return
-		}
-		s.handleServiceError(c, "get job", err)
+		s.handleJobError(c, "get job", err)
 		return
 	}
 
-	lines, err := s.database.GetJobLogsAfter(jobID, after, 500)
+	lines, err := s.jobService.GetJobLogsAfter(c.Request.Context(), jobID, after, 500)
 	if err != nil {
 		s.handleServiceError(c, "get job logs", err)
 		return
@@ -74,15 +66,8 @@ func (s *Server) streamJobLogs(c *gin.Context) {
 		return
 	}
 
-	if _, err := s.database.GetJob(jobID); err != nil {
-		if err == sql.ErrNoRows {
-			c.JSON(http.StatusNotFound, ErrorResponse{
-				Error:   "Job not found",
-				Details: "Could not find job with the specified ID",
-			})
-			return
-		}
-		s.handleServiceError(c, "get job", err)
+	if _, err := s.jobService.GetJob(c.Request.Context(), jobID); err != nil {
+		s.handleJobError(c, "get job", err)
 		return
 	}
 
@@ -120,7 +105,7 @@ func (s *Server) streamJobLogs(c *gin.Context) {
 			_, _ = fmt.Fprintf(c.Writer, ": keepalive\n\n")
 			flusher.Flush()
 		case <-poll.C:
-			lines, err := s.database.GetJobLogsAfter(jobID, lastSeq, 500)
+			lines, err := s.jobService.GetJobLogsAfter(c.Request.Context(), jobID, lastSeq, 500)
 			if err != nil {
 				return
 			}
@@ -134,7 +119,7 @@ func (s *Server) streamJobLogs(c *gin.Context) {
 			}
 			flusher.Flush()
 
-			j, err := s.database.GetJob(jobID)
+			j, err := s.jobService.GetJob(c.Request.Context(), jobID)
 			if err != nil {
 				return
 			}

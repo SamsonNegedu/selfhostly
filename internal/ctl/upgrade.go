@@ -19,13 +19,25 @@ import (
 const (
 	stateRoot        = ".upgrade"
 	keepRollbackSets = 5
+	// keepMarker in a rollback point's folder exempts it from pruning and from the count of kept points
+	keepMarker = "keep"
+	// configHashLabel is the label compose puts on a container to record the configuration it was created from
+	configHashLabel = "com.docker.compose.config-hash"
 )
+
+// recommendedSettings are worth setting on every install. An upgrade never changes them by itself, because
+// each one can block or change something that already runs, so it only points them out at the end.
+var recommendedSettings = []struct{ key, value, why string }{
+	{"SECURITY_MODE", "enforce", "block compose configs that break the security rules (an existing install starts in warn mode)"},
+	{"ENCRYPT_SECRETS_AT_REST", "true", "encrypt stored secrets in the database"},
+}
 
 type upgradeOpts struct {
 	sets                 []string
 	pull, noPull         bool
 	withFrontend, force  bool
 	noRollback, rollback bool
+	keep, restart        bool
 	rollbackTo, project  string
 	healthTimeout        int
 	compose              []string
@@ -45,7 +57,8 @@ func (a *App) upgradeCmd() *cobra.Command {
   5. recreate the primary, wait until healthy, run doctor
   6. recreate the gateway and wait
   7. confirm every other container that was running still is
-If the primary does not become healthy it rolls back by itself. Your apps are never touched.`,
+When the images and the configuration are the same as what is running, nothing is restarted (use --restart
+to restart anyway). If the primary does not become healthy it rolls back by itself. Your apps are never touched.`,
 		Args: cobra.NoArgs,
 		RunE: func(c *cobra.Command, _ []string) error {
 			if o.rollback {
@@ -61,6 +74,8 @@ If the primary does not become healthy it rolls back by itself. Your apps are ne
 	f.BoolVar(&o.withFrontend, "with-frontend", false, "also recreate the frontend")
 	f.BoolVar(&o.force, "force", false, "continue even if a deployment is running or the dry start found problems")
 	f.BoolVar(&o.noRollback, "no-rollback", false, "leave a failed upgrade in place for inspection")
+	f.BoolVar(&o.keep, "keep", false, "protect this run's rollback point from being pruned")
+	f.BoolVar(&o.restart, "restart", false, "recreate the containers even when the images and settings are unchanged")
 	f.BoolVar(&o.rollback, "rollback", false, "restore the state saved by the last run")
 	f.StringVar(&o.rollbackTo, "rollback-to", "", "with --rollback: restore this saved state instead of the last")
 	f.IntVar(&o.healthTimeout, "health-timeout", 90, "seconds to wait for health")
@@ -273,6 +288,7 @@ func (a *App) upgrade(ctx context.Context, o upgradeOpts) (err error) {
 		return fmt.Errorf("another upgrade is running (remove %s if it is stale)", lock)
 	}
 	stamp := a.now()
+	lastBefore, _ := os.ReadFile(filepath.Join(a.stateRoot(), "last"))
 	dir := filepath.Join(a.stateRoot(), stamp)
 	if err := os.MkdirAll(filepath.Join(dir, "backup"), 0o700); err != nil {
 		_ = os.Remove(lock)
@@ -343,6 +359,16 @@ func (a *App) upgrade(ctx context.Context, o upgradeOpts) (err error) {
 				return errAborted
 			}
 			a.say("  continuing anyway (--force)")
+		}
+	}
+
+	if !o.restart && len(o.sets) == 0 {
+		if same, why := u.unchanged(ctx); same {
+			u.discardRollbackPoint(ctx, stamp, dir, lastBefore)
+			finished = true
+			a.say("\nnothing to upgrade: %s. Nothing was restarted (pass --restart to restart anyway)", why)
+			u.suggestSettings()
+			return nil
 		}
 	}
 
@@ -423,11 +449,20 @@ func (a *App) upgrade(ctx context.Context, o upgradeOpts) (err error) {
 	} else {
 		a.say("  every other container is still running")
 	}
+	if o.keep {
+		if err := os.WriteFile(filepath.Join(dir, keepMarker), nil, 0o600); err != nil {
+			a.say("  warning: could not protect the rollback point: %v", err)
+		}
+	}
 	u.prune()
 
 	finished = true
 	a.say("\ndone. Rollback point: %s   (selfhostlyctl upgrade --rollback)", stamp)
 	a.say("database copy:       %s", filepath.Join(dir, "backup"))
+	if o.keep {
+		a.say("protected:           this rollback point is never pruned (delete %s to release it)", dir)
+	}
+	u.suggestSettings()
 	a.noteNewerTool()
 	return nil
 }
@@ -520,10 +555,81 @@ func (u *upgrader) prune() {
 		}
 	}
 	sort.Sort(sort.Reverse(sort.StringSlice(stamps)))
-	for i, s := range stamps {
-		if i >= keepRollbackSets {
-			_ = os.RemoveAll(filepath.Join(u.a.stateRoot(), s))
+	kept := 0
+	for _, s := range stamps {
+		dir := filepath.Join(u.a.stateRoot(), s)
+		if _, err := os.Stat(filepath.Join(dir, keepMarker)); err == nil {
+			continue
 		}
+		if kept++; kept > keepRollbackSets {
+			_ = os.RemoveAll(dir)
+		}
+	}
+}
+
+// unchanged reports whether every service already runs the image its reference now points to and was created
+// from the configuration compose would create it from now. Both must hold: a pull can move a tag, and an
+// edited compose or settings file changes the configuration hash.
+func (u *upgrader) unchanged(ctx context.Context) (bool, string) {
+	out, _, err := u.dc.out(ctx, append([]string{"config", "--hash"}, u.services...)...)
+	if err != nil {
+		return false, ""
+	}
+	want := map[string]string{}
+	for _, l := range strings.Split(out, "\n") {
+		if f := strings.Fields(l); len(f) == 2 {
+			want[f[0]] = f[1]
+		}
+	}
+	for _, s := range u.services {
+		c := u.dc.cid(ctx, s)
+		if c == "" || want[s] == "" {
+			return false, ""
+		}
+		got, _, _ := u.a.Run.Output(ctx, "docker", "inspect", "--format", `{{index .Config.Labels "`+configHashLabel+`"}}`, c)
+		if strings.TrimSpace(got) != want[s] {
+			return false, ""
+		}
+		ref, _, _ := u.a.Run.Output(ctx, "docker", "inspect", "--format", "{{.Config.Image}}", c)
+		running, _, _ := u.a.Run.Output(ctx, "docker", "inspect", "--format", "{{.Image}}", c)
+		current, _, err := u.a.Run.Output(ctx, "docker", "image", "inspect", "--format", "{{.Id}}", strings.TrimSpace(ref))
+		if err != nil || strings.TrimSpace(current) == "" || strings.TrimSpace(current) != strings.TrimSpace(running) {
+			return false, ""
+		}
+	}
+	return true, "the running images and settings are already what this would deploy"
+}
+
+// discardRollbackPoint undoes saveRollbackPoint when the run turned out to change nothing, so an idle
+// upgrade does not push a real rollback point out of the kept set
+func (u *upgrader) discardRollbackPoint(ctx context.Context, stamp, dir string, lastBefore []byte) {
+	for _, s := range u.services {
+		_, _, _ = u.a.Run.Output(ctx, "docker", "rmi", u.prefix+"/"+s+":"+stamp)
+	}
+	_ = os.RemoveAll(dir)
+	last := filepath.Join(u.a.stateRoot(), "last")
+	if len(lastBefore) == 0 {
+		_ = os.Remove(last)
+		return
+	}
+	_ = os.WriteFile(last, lastBefore, 0o600)
+}
+
+// suggestSettings lists the recommended settings the settings file does not have at the recommended value
+func (u *upgrader) suggestSettings() {
+	env := u.env.All()
+	var lines []string
+	for _, r := range recommendedSettings {
+		if env[r.key] != r.value {
+			lines = append(lines, fmt.Sprintf("    %s=%s   %s", r.key, r.value, r.why))
+		}
+	}
+	if len(lines) == 0 {
+		return
+	}
+	u.a.say("\nrecommended settings not set in %s (nothing was changed; apply one with selfhostlyctl upgrade --set KEY=VALUE):", u.env.Path)
+	for _, l := range lines {
+		u.a.say("%s", l)
 	}
 }
 

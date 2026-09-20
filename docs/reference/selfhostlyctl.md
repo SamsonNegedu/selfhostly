@@ -246,7 +246,8 @@ Steps, in order:
   5. recreate the primary, wait until healthy, run doctor
   6. recreate the gateway and wait
   7. confirm every other container that was running still is
-If the primary does not become healthy it rolls back by itself. Your apps are never touched.
+When the images and the configuration are the same as what is running, nothing is restarted (use --restart
+to restart anyway). If the primary does not become healthy it rolls back by itself. Your apps are never touched.
 ```
 
 | Option | Meaning |
@@ -254,10 +255,12 @@ If the primary does not become healthy it rolls back by itself. Your apps are ne
 | `--compose stringArray` | compose file (repeatable; default docker-compose.prod.yml) |
 | `--force` | continue even if a deployment is running or the dry start found problems |
 | `--health-timeout int` | seconds to wait for health (default 90) |
+| `--keep` | protect this run's rollback point from being pruned |
 | `--no-pull` | do not pull (use images already present) |
 | `--no-rollback` | leave a failed upgrade in place for inspection |
 | `--project string` | compose project name (default: detected) |
 | `--pull` | pull images even when --set is used |
+| `--restart` | recreate the containers even when the images and settings are unchanged |
 | `--rollback` | restore the state saved by the last run |
 | `--rollback-to string` | with --rollback: restore this saved state instead of the last |
 | `--set stringArray` | write KEY=VALUE into the settings file and apply it (repeatable) |

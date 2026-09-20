@@ -53,10 +53,23 @@ type stack struct {
 	primaryHealthy  bool
 	dryStartFails   bool
 	ignoresSettings bool // the compose file never reads any variable: rendering does not change with them
+	unchanged       bool // the running containers already match the images and configuration
 }
 
 func (st *stack) handle(cmd string) (string, bool) {
 	switch {
+	case strings.Contains(cmd, "config --hash"):
+		return "primary h1\ngateway h1\n", false
+	case strings.Contains(cmd, configHashLabel):
+		if st.unchanged {
+			return "h1\n", false
+		}
+		return "old\n", false
+	case strings.Contains(cmd, "docker image inspect"):
+		if st.unchanged {
+			return "sha256:abc\n", false
+		}
+		return "sha256:new\n", false
 	case strings.HasSuffix(strings.Fields(cmd)[len(strings.Fields(cmd))-1], "config") || strings.Contains(cmd, " config ENV:"):
 		if strings.Contains(cmd, "ENV:") && !st.ignoresSettings {
 			return "rendered-with-the-variable-set", false
@@ -208,5 +221,83 @@ func TestUpgradeWithoutSetDoesNotRenderProbes(t *testing.T) {
 	}
 	if sc.index("ENV:") >= 0 {
 		t.Fatal("nothing to probe without --set")
+	}
+}
+
+func TestUpgradeRestartsNothingWhenNothingChanged(t *testing.T) {
+	a, sc, out := upgradeApp(t, &stack{primaryHealthy: true, unchanged: true})
+	if err := runCLI(a, "upgrade", "--project", "p", "--health-timeout", "2"); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	for _, sub := range []string{"stop primary", " up -d"} {
+		if sc.index(sub) >= 0 {
+			t.Fatalf("nothing changed, but it ran %q", sub)
+		}
+	}
+	if !strings.Contains(out.String(), "nothing to upgrade") {
+		t.Fatalf("it must say why:\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Join(a.Dir, ".upgrade", "last")); err == nil {
+		t.Fatal("an idle run must not leave a rollback point behind")
+	}
+}
+
+func TestUpgradeRestartFlagRestartsEvenWhenNothingChanged(t *testing.T) {
+	a, sc, out := upgradeApp(t, &stack{primaryHealthy: true, unchanged: true})
+	if err := runCLI(a, "upgrade", "--project", "p", "--restart", "--health-timeout", "2"); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if sc.index("stop primary") < 0 || sc.index("up -d --no-deps primary") < 0 {
+		t.Fatalf("--restart must recreate the primary:\n%v", sc.calls)
+	}
+}
+
+func TestUpgradeWithASettingAlwaysApplies(t *testing.T) {
+	a, sc, out := upgradeApp(t, &stack{primaryHealthy: true, unchanged: true})
+	if err := runCLI(a, "upgrade", "--project", "p", "--set", "KEEP=2", "--health-timeout", "2"); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if sc.index("up -d --no-deps primary") < 0 {
+		t.Fatal("a --set must be applied by recreating")
+	}
+}
+
+func TestUpgradeKeepProtectsTheRollbackPointFromPruning(t *testing.T) {
+	a, _, out := upgradeApp(t, &stack{primaryHealthy: true})
+	root := filepath.Join(a.Dir, ".upgrade")
+	for _, stamp := range []string{"2020-01-01", "2020-01-02", "2020-01-03", "2020-01-04", "2020-01-05", "2020-01-06", "2020-01-07"} {
+		os.MkdirAll(filepath.Join(root, stamp), 0o700)
+	}
+	os.WriteFile(filepath.Join(root, "2020-01-01", keepMarker), nil, 0o600)
+	if err := runCLI(a, "upgrade", "--project", "p", "--set", "KEEP=2", "--keep", "--health-timeout", "2"); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(root, "2020-01-01")); err != nil {
+		t.Fatal("a protected rollback point must survive pruning")
+	}
+	// the run's own point is protected too, so five unprotected ones remain: 03 to 07
+	if _, err := os.Stat(filepath.Join(root, "2020-01-02")); err == nil {
+		t.Fatal("unprotected points beyond the limit must still be pruned")
+	}
+	last, _ := os.ReadFile(filepath.Join(root, "last"))
+	if _, err := os.Stat(filepath.Join(root, strings.TrimSpace(string(last)), keepMarker)); err != nil {
+		t.Fatalf("--keep must mark this run's own point: %v", err)
+	}
+	if !strings.Contains(out.String(), "protected") {
+		t.Fatalf("it must say so:\n%s", out)
+	}
+}
+
+func TestUpgradeListsRecommendedSettingsThatAreMissing(t *testing.T) {
+	a, _, out := upgradeApp(t, &stack{primaryHealthy: true})
+	if err := runCLI(a, "upgrade", "--project", "p", "--set", "SECURITY_MODE=enforce", "--health-timeout", "2"); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	got := out.String()
+	if strings.Contains(got, "SECURITY_MODE=enforce   ") || !strings.Contains(got, "ENCRYPT_SECRETS_AT_REST=true") {
+		t.Fatalf("only the missing recommendation should be listed:\n%s", got)
+	}
+	if env, _ := os.ReadFile(filepath.Join(a.Dir, ".env")); strings.Contains(string(env), "ENCRYPT_SECRETS_AT_REST") {
+		t.Fatal("recommendations are only reported, never written")
 	}
 }

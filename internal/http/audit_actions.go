@@ -2,6 +2,7 @@ package http
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/selfhostly/internal/domain"
 )
 
 // auditRoute says what a route does, for the audit log: an action name, the kind of thing it acts on, and the
@@ -14,8 +15,8 @@ type auditRoute struct {
 
 // Target kinds.
 const (
-	targetApp       = "app"
-	targetNode      = "node"
+	targetApp       = domain.AuditTargetApp
+	targetNode      = domain.AuditTargetNode
 	targetContainer = "container"
 	targetSettings  = "settings"
 	targetSessions  = "sessions"
@@ -75,16 +76,8 @@ func (s *Server) describeAudit(c *gin.Context) (route auditRoute, known bool, ta
 	if route.Param != "" {
 		target.ID = c.Param(route.Param)
 	}
-	switch {
-	case target.ID == "":
-	case route.TargetType == targetApp:
-		if app, err := s.database.GetApp(target.ID); err == nil && app != nil {
-			target.Name = app.Name
-		}
-	case route.TargetType == targetNode:
-		if node, err := s.database.GetNode(target.ID); err == nil && node != nil {
-			target.Name = node.Name
-		}
+	if target.ID != "" {
+		target.Name = s.securityService.AuditTargetName(c.Request.Context(), route.TargetType, target.ID)
 	}
 	return route, true, target
 }

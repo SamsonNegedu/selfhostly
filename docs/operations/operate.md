@@ -11,7 +11,8 @@ Running an install day to day: ship a new version, restart, roll back, back up, 
 
 `upgrade` saves a rollback point, pulls the new images, does a dry start with your real settings (a start that would fail is
 refused before anything stops), copies the database, recreates the primary, waits until healthy, recreates the gateway,
-and checks your apps are still up. **If the primary is not healthy it rolls back by itself.**
+and checks your apps are still up. **If the primary is not healthy it rolls back by itself.** It ends by listing recommended settings
+(`SECURITY_MODE=enforce`, `ENCRYPT_SECRETS_AT_REST=true`) that your `.env` does not have. It only reports them.
 
 | The release changed | Run |
 |---|---|
@@ -19,7 +20,7 @@ and checks your apps are still up. **If the primary is not healthy it rolls back
 | The UI (or you are not sure) | `selfhostlyctl upgrade --with-frontend` (safe every time) |
 | A setting you want to change now | `selfhostlyctl upgrade --set KEY=VALUE` |
 | The compose file (new service or mount) | [Update the compose file](#update-the-compose-file) |
-| Nothing you need, just a restart | `selfhostlyctl upgrade --no-pull` |
+| Nothing you need, just a restart | `selfhostlyctl upgrade --no-pull --restart` |
 | You want to look first | add `--dry-run` to any of the above |
 
 Edited `.env`? Use `upgrade`, not `docker compose restart`: restart keeps the old environment.
@@ -29,7 +30,8 @@ Edited `.env`? Use `upgrade`, not `docker compose restart`: restart keeps the ol
 | You pinned image digests (`pin-images`) | `latest` is not followed. Run `selfhostlyctl pin-images`, then `upgrade`. |
 | `--set` says your compose file never reads the setting | Your file does not pass that variable to the server, so writing it would change nothing. Switch to the current compose file (below), or add `KEY: ${KEY:-}` to the service's environment. |
 | The release adds settings | `upgrade` never edits `.env` for you. New settings have safe defaults. `selfhostlyctl bootstrap --print-plan` shows what you could add. |
-| You run `upgrade` twice | Safe, but it restarts each time, and `--rollback` returns to the state before the *latest* run. Older points: `--rollback-to <stamp>` (folders in `.upgrade/`, last five kept). |
+| You run `upgrade` twice | Safe. When the images and settings are unchanged it restarts nothing and leaves no rollback point (`--restart` forces one). Otherwise `--rollback` returns to the state before the *latest* run. Older points: `--rollback-to <stamp>` (folders in `.upgrade/`, last five kept). |
+| You want to keep a known-good point | `selfhostlyctl upgrade --keep` protects that run's point from pruning. Delete its folder in `.upgrade/` to release it. |
 | Several Selfhostly containers run here | It asks which. In scripts pass `--container NAME`. |
 | A new `selfhostlyctl` behaviour is needed | Run `selfhostlyctl self-update` (add `sudo` if it lives in `/usr/local/bin`). `--check` only reports. `upgrade` does not update the tool, but ends with a note when a newer one exists (silent offline or with `SELFHOSTLYCTL_NO_UPDATE_CHECK=1`). `selfhostlyctl version` shows what you have. |
 
@@ -88,7 +90,7 @@ prints the same table.
 | Node identity | The database's primary node (`NODE_ID` only if you pin one) | Unset: adopted from the database. Pinned but different: `doctor` fails before you restart. |
 | Node keys | `data/node-api-key`, `data/registration-token` | The log says whether each came from the environment, a saved file, or was just generated. |
 | Database | `data/selfhostly.db` | Backed up before every schema change: `data/selfhostly.db.bak-pre-migration-*` (last five kept). |
-| Rollback points | `.upgrade/<time>/` | Made by `selfhostlyctl upgrade` (last five kept). |
+| Rollback points | `.upgrade/<time>/` | Made by `selfhostlyctl upgrade` (last five kept, plus any made with `--keep`). |
 
 ## Read `doctor`
 

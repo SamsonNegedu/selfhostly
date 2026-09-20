@@ -334,8 +334,21 @@ func (s *tunnelService) ListActiveTunnels(ctx context.Context, nodeIDs []string)
 			return s.nodeClient.GetTunnels(n)
 		},
 	)
+	if err != nil {
+		return allTunnels, err
+	}
 
-	return allTunnels, err
+	// The tunnel is the source of truth for public_url. Only node_id comes from the app, and public_url
+	// falls back to it for legacy rows.
+	for _, t := range allTunnels {
+		if app, appErr := s.database.GetApp(t.AppID); appErr == nil {
+			t.NodeID = app.NodeID
+			if t.PublicURL == "" {
+				t.PublicURL = app.PublicURL
+			}
+		}
+	}
+	return allTunnels, nil
 }
 
 // SyncTunnelStatus synchronizes tunnel status with the provider (if supported)
