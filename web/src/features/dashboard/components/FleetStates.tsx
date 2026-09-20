@@ -85,7 +85,7 @@ export function FleetEmpty() {
                     </div>
                     <div className="flex-1">
                         <p className="font-semibold">Reach apps from anywhere</p>
-                        <p className="text-[13px] text-muted-foreground">
+                        <p className="text-compact text-muted-foreground">
                             Connect Cloudflare to give apps a public address.
                         </p>
                     </div>
@@ -102,7 +102,7 @@ export function FleetEmpty() {
                     </div>
                     <div className="flex-1">
                         <p className="font-semibold">Add another machine</p>
-                        <p className="text-[13px] text-muted-foreground">Spread apps across a Pi, a NAS or a VPS.</p>
+                        <p className="text-compact text-muted-foreground">Spread apps across a Pi, a NAS or a VPS.</p>
                     </div>
                     <Link to={ROUTES.registerNode} className={buttonClasses({ variant: 'outline' })}>
                         Add node

@@ -37,7 +37,7 @@ function VersionCompareDialog({
                 </DialogHeader>
                 {version && (
                     <>
-                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-[13px] text-muted-foreground">
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-compact text-muted-foreground">
                             {version.created_at && <span>{new Date(version.created_at).toLocaleString()}</span>}
                             {version.changed_by && <span>by {version.changed_by}</span>}
                             {version.rolled_back_from && <span>Rolled back from v{version.rolled_back_from}</span>}

@@ -11,7 +11,6 @@ import {
 } from '@/shared/components/ui/DropdownMenu'
 import { useJobPolling } from '@/shared/hooks/useJobPolling'
 import { useAppJobs, useQueryClient } from '@/shared/services/api'
-import { JobProgress } from '@/shared/components/ui/JobProgress'
 import { useToast } from '@/shared/components/ui/Toast'
 
 interface AppActionsProps {
@@ -177,13 +176,13 @@ export function AppActions({
 
     const startButton = canStart && (
         <Button onClick={onStart} disabled={disabled} className={sticky ? 'flex-1' : undefined}>
-            {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+            {isBusy ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
             {appStatus === 'error' ? 'Retry start' : 'Start'}
         </Button>
     )
     const stopButton = isRunning && (
         <Button variant="outline" onClick={onStop} disabled={disabled} className={sticky ? 'flex-1' : undefined}>
-            {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-4 w-4" />}
+            {isBusy ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Square className="h-4 w-4" />}
             Stop
         </Button>
     )
@@ -245,7 +244,6 @@ export function AppActions({
                 aria-label="App actions"
                 className="fixed inset-x-0 bottom-[var(--mobile-nav-h)] z-30 flex flex-col gap-2 border-t border-border bg-card p-3"
             >
-                {hasActiveJob && currentJob && <JobProgress job={currentJob} compact />}
                 <div className="flex items-center gap-2">
                     {startButton}
                     {stopButton}
@@ -260,12 +258,6 @@ export function AppActions({
 
     return (
         <div className="flex flex-col gap-2 md:items-end">
-            {hasActiveJob && currentJob && (
-                <div className="w-full max-w-md">
-                    <JobProgress job={currentJob} compact />
-                </div>
-            )}
-
             <div className="flex flex-wrap items-center gap-2">
                 {startButton}
                 {stopButton}

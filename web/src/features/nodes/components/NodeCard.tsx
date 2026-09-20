@@ -43,7 +43,7 @@ function Meter({ label, kind, percent }: { label: string; kind: Resource; percen
     const tone = resourceTone(kind, percent)
     return (
         <div className="flex flex-col gap-1.5">
-            <div className="flex items-baseline justify-between text-[13px]">
+            <div className="flex items-baseline justify-between text-compact">
                 <span className="text-muted-foreground">{label}</span>
                 <span className="flex items-center gap-1.5 font-semibold tabular-nums">
                     <StatusDot kind={tone} />
@@ -65,10 +65,12 @@ function NodeCard({ node, isCurrent, appCount, metrics, onRemove }: NodeCardProp
             <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="truncate text-[16px] font-semibold">{node.name}</h2>
+                        <h2 className="truncate text-heading font-semibold" title={node.name}>
+                            {node.name}
+                        </h2>
                         <StatusPill kind={meta.kind}>{meta.label}</StatusPill>
                     </div>
-                    <p className="mt-1 text-[13px] text-muted-foreground">
+                    <p className="mt-1 text-compact text-muted-foreground">
                         {node.is_primary ? 'Primary' : 'Secondary'}
                         {isCurrent && ' · you are connected here'}
                         {' · '}
@@ -101,17 +103,19 @@ function NodeCard({ node, isCurrent, appCount, metrics, onRemove }: NodeCardProp
                     <Meter label="Memory" kind="memory" percent={metrics.memoryPercent} />
                 </div>
             ) : (
-                <div className="rounded-lg bg-status-warn-bg px-3 py-2 text-[13px] text-status-warn-fg">
+                <div className="rounded-lg bg-status-warn-bg px-3 py-2 text-compact text-status-warn-fg">
                     {online
                         ? 'Waiting for the first reading.'
                         : `${node.name} is not answering. Its apps keep their last known state${node.last_seen ? `. Last seen ${formatAgo(node.last_seen)}.` : '.'}`}
                 </div>
             )}
 
-            <div className="flex flex-col gap-1 text-[12.5px] text-muted-foreground">
+            <div className="flex flex-col gap-1 text-compact text-muted-foreground">
                 <p className="flex items-center gap-1.5">
                     <Globe aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-                    <span className="truncate font-mono">{node.api_endpoint}</span>
+                    <span className="truncate font-mono" title={node.api_endpoint}>
+                        {node.api_endpoint}
+                    </span>
                 </p>
                 <p>{checkSummary(node)}</p>
             </div>

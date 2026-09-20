@@ -42,7 +42,7 @@ function InsightAlerts({ alerts }: { alerts: InsightAlert[] }) {
                                 <span className="sr-only">{WORD[alert.kind]}: </span>
                                 {alert.title}
                             </p>
-                            <p className="break-words text-[13px] text-muted-foreground">{alert.detail}</p>
+                            <p className="break-words text-compact text-muted-foreground">{alert.detail}</p>
                         </div>
                     </div>
                 )

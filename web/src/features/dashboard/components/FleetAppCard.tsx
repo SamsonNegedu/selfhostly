@@ -1,35 +1,17 @@
 import { Link } from 'react-router-dom'
-import {
-    AlertTriangle,
-    ExternalLink,
-    Globe,
-    Loader2,
-    Lock,
-    MoreHorizontal,
-    Play,
-    RefreshCw,
-    Square,
-    Trash2,
-} from 'lucide-react'
+import { AlertTriangle, Globe, Lock } from 'lucide-react'
 import { AppTile } from '@/shared/components/ui/AppTile'
-import { Button, buttonClasses } from '@/shared/components/ui/Button'
 import { Card } from '@/shared/components/ui/Card'
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from '@/shared/components/ui/DropdownMenu'
 import { StatusPill } from '@/shared/components/ui/StatusPill'
 import { cn } from '@/shared/lib/utils'
-import { formatBytes, formatPercent, formatUntil } from '@/shared/lib/format'
+import { formatBytes, formatPercent, formatUntil, hostOf } from '@/shared/lib/format'
 import { upcomingRuns } from '@/shared/lib/schedule'
-import { ROUTES, appHref } from '@/shared/lib/routes'
+import { appHref } from '@/shared/lib/routes'
 import { appStatusMeta } from '@/shared/lib/status'
 import { resourceTone } from '@/shared/lib/thresholds'
 import { useScheduleNextRuns } from '@/shared/services/api'
 import type { App } from '@/shared/types/api'
+import FleetAppCardActions from './FleetAppCardActions'
 import type { FleetApp } from '../lib/fleet'
 import type { AppMetrics } from '../hooks/useFleetMetrics'
 import type { useFleetActions } from '../hooks/useFleetActions'
@@ -42,14 +24,6 @@ interface FleetAppCardProps {
     actions: FleetActions
 }
 
-const hostOf = (url: string) => {
-    try {
-        return new URL(url).host
-    } catch {
-        return url
-    }
-}
-
 // Shows when the next automatic start or stop happens. Only asked for apps that have a schedule turned on.
 function NextRun({ app }: { app: App }) {
     const { data } = useScheduleNextRuns(app.id, app.node_id)
@@ -59,7 +33,7 @@ function NextRun({ app }: { app: App }) {
     const label = (run: { action: string; at: string }) =>
         `${run.action === 'start' ? 'starts' : 'stops'} ${formatUntil(run.at)}`
     return (
-        <p className="text-[12.5px] text-muted-foreground">
+        <p className="text-compact text-muted-foreground">
             {label(first).replace(/^./, (letter) => letter.toUpperCase())}
             {second ? `, then ${label(second)}` : ''}
         </p>
@@ -71,8 +45,8 @@ const VALUE_TONE = { ok: '', warn: 'text-status-warn-fg', err: 'text-status-err-
 function Metric({ label, value, tone = 'ok' }: { label: string; value: string; tone?: keyof typeof VALUE_TONE }) {
     return (
         <div className="flex flex-col gap-0.5">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</span>
-            <span className={cn('text-[13.5px] font-semibold', VALUE_TONE[tone])}>{value}</span>
+            <span className="text-caption font-semibold uppercase tracking-wider text-muted-foreground">{label}</span>
+            <span className={cn('text-compact font-semibold', VALUE_TONE[tone])}>{value}</span>
         </div>
     )
 }
@@ -102,19 +76,24 @@ function FleetAppCard({ fleetApp, metrics, actions }: FleetAppCardProps) {
                     {/* The link stretches over the whole card so the card is one large tap target. The actions sit above it. */}
                     <Link
                         to={appHref(app)}
-                        className="block truncate text-[15px] font-semibold hover:underline after:absolute after:inset-0 after:content-['']"
+                        title={app.name}
+                        className="block truncate text-title font-semibold hover:underline after:absolute after:inset-0 after:content-['']"
                     >
                         {app.name}
                     </Link>
-                    <p className="truncate text-[13px] text-muted-foreground">{app.description || 'No description'}</p>
+                    <p className="truncate text-compact text-muted-foreground" title={app.description || undefined}>
+                        {app.description || 'No description'}
+                    </p>
                 </div>
                 <StatusPill kind={meta.kind}>{meta.label}</StatusPill>
             </div>
 
             {app.public_url ? (
-                <div className="flex items-center gap-1.5 text-[12.5px] text-status-info-fg">
+                <div className="flex items-center gap-1.5 text-compact text-status-info-fg">
                     <Globe className="h-3.5 w-3.5 shrink-0" />
-                    <span className="truncate font-mono">{hostOf(app.public_url)}</span>
+                    <span className="truncate font-mono" title={app.public_url}>
+                        {hostOf(app.public_url)}
+                    </span>
                     {app.tunnel_mode === 'quick' && (
                         <StatusPill kind="warn" size="sm">
                             Temporary
@@ -122,20 +101,20 @@ function FleetAppCard({ fleetApp, metrics, actions }: FleetAppCardProps) {
                     )}
                 </div>
             ) : (
-                <div className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
+                <div className="flex items-center gap-1.5 text-compact text-muted-foreground">
                     <Lock className="h-3.5 w-3.5 shrink-0" />
                     {unreachable ? 'Node offline, status unknown' : 'LAN only'}
                 </div>
             )}
 
             {isFailed && (
-                <div className="flex items-start gap-2 rounded-lg bg-status-err-bg px-3 py-2 text-[12.5px] text-status-err-fg">
+                <div className="flex items-start gap-2 rounded-lg bg-status-err-bg px-3 py-2 text-compact text-status-err-fg">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     <span>{app.error_message || 'The app reported an error'}</span>
                 </div>
             )}
             {unreachable && (
-                <div className="rounded-lg bg-status-idle-bg px-3 py-2 text-[12.5px] text-status-idle-fg">
+                <div className="rounded-lg bg-status-idle-bg px-3 py-2 text-compact text-status-idle-fg">
                     {fleetApp.node?.name ?? 'Its node'} is not answering. Actions return when it reconnects.
                 </div>
             )}
@@ -152,85 +131,16 @@ function FleetAppCard({ fleetApp, metrics, actions }: FleetAppCardProps) {
             )}
             {!unreachable && app.schedule?.enabled && <NextRun app={app} />}
 
-            <div className="relative z-10 mt-auto flex flex-wrap items-center gap-2 pt-1">
-                {unreachable && (
-                    <Link to={ROUTES.nodes} className={buttonClasses({ variant: 'outline' })}>
-                        View node
-                    </Link>
-                )}
-                {(isStopped || isFailed) && (
-                    <Button onClick={() => actions.start(app)} disabled={busy}>
-                        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                        {isFailed ? 'Retry start' : 'Start'}
-                    </Button>
-                )}
-                {isFailed && (
-                    <Link to={appHref(app, 'logs')} className={buttonClasses({ variant: 'outline' })}>
-                        View logs
-                    </Link>
-                )}
-                {isStopped && (
-                    <Link to={appHref(app, 'schedule')} className={buttonClasses({ variant: 'outline' })}>
-                        Schedule
-                    </Link>
-                )}
-                {inProgress && (
-                    <Button variant="outline" disabled>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        {app.status === 'updating' ? 'Updating' : 'Working'}
-                    </Button>
-                )}
-                {isRunning && (
-                    <Button variant="outline" onClick={() => actions.requestStop(app)} disabled={busy}>
-                        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-4 w-4" />}
-                        Stop
-                    </Button>
-                )}
-                {isRunning && app.public_url && (
-                    <a
-                        href={app.public_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={buttonClasses({ variant: 'outline' })}
-                    >
-                        <ExternalLink className="h-4 w-4" />
-                        Open
-                    </a>
-                )}
-
-                <div className="ml-auto">
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" aria-label={`More actions for ${app.name}`}>
-                                <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-44">
-                            <DropdownMenuItem asChild>
-                                <Link to={appHref(app)}>Details</Link>
-                            </DropdownMenuItem>
-                            {!unreachable && (
-                                <DropdownMenuItem
-                                    onSelect={() => actions.requestUpdate(app)}
-                                    disabled={busy || inProgress}
-                                >
-                                    <RefreshCw className="mr-2 h-4 w-4" />
-                                    Update
-                                </DropdownMenuItem>
-                            )}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                                onSelect={() => actions.requestDelete(app)}
-                                disabled={busy}
-                                className="text-destructive focus:text-destructive"
-                            >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Delete
-                            </DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-                </div>
-            </div>
+            <FleetAppCardActions
+                app={app}
+                actions={actions}
+                unreachable={unreachable}
+                busy={busy}
+                isFailed={isFailed}
+                isStopped={isStopped}
+                isRunning={isRunning}
+                inProgress={inProgress}
+            />
         </Card>
     )
 }

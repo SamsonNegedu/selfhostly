@@ -55,7 +55,7 @@ function FleetToolbar({
                             aria-pressed={active}
                             onClick={() => onFilterChange(chip.value)}
                             className={cn(
-                                'inline-flex h-[34px] min-h-[44px] shrink-0 items-center gap-2 rounded-full border px-3.5 text-[13px] font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:min-h-0',
+                                'inline-flex h-[34px] min-h-[44px] shrink-0 items-center gap-2 rounded-full border px-3.5 text-compact font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:min-h-0',
                                 active
                                     ? 'border-primary bg-primary text-primary-foreground'
                                     : 'border-border bg-card text-foreground hover:bg-accent',

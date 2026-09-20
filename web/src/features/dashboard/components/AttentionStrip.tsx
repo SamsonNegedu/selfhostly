@@ -37,7 +37,7 @@ function AttentionStrip({ actions }: { actions: ReturnType<typeof useFleetAction
                         </div>
                         <div className="flex min-w-0 flex-1 flex-col">
                             <span className="font-semibold">{item.title}</span>
-                            <span className="text-[13px] text-muted-foreground">{item.detail}</span>
+                            <span className="text-compact text-muted-foreground">{item.detail}</span>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
                             {item.app ? (
@@ -47,7 +47,7 @@ function AttentionStrip({ actions }: { actions: ReturnType<typeof useFleetAction
                                         disabled={actions.isBusy(item.app.id)}
                                     >
                                         {actions.isBusy(item.app.id) ? (
-                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                            <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
                                         ) : (
                                             <Play className="h-4 w-4" />
                                         )}
@@ -70,7 +70,7 @@ function AttentionStrip({ actions }: { actions: ReturnType<typeof useFleetAction
                 )
             })}
             {hidden > 0 && (
-                <p className="px-4 py-2.5 text-[13px] text-muted-foreground">
+                <p className="px-4 py-2.5 text-compact text-muted-foreground">
                     And {hidden} more. Open the bell in the top bar to see them all.
                 </p>
             )}

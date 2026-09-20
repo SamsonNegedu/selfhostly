@@ -84,7 +84,7 @@ function ComposeVersionHistory({ appId, nodeId, onVersionSelect, showLabels = fa
                                     Restored
                                 </StatusPill>
                             )}
-                            <span className="text-[13px] text-muted-foreground">{formatAgo(version.created_at)}</span>
+                            <span className="text-compact text-muted-foreground">{formatAgo(version.created_at)}</span>
                         </div>
                         <div className="flex shrink-0 gap-1">
                             {onVersionSelect && (

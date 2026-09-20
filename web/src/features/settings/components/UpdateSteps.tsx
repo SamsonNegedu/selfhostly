@@ -39,7 +39,7 @@ function UpdateSteps({ steps }: { steps: UpdateStep[] }) {
                             {stepLabel(step.name)}
                         </span>
                         {step.message && (
-                            <span className="block text-[13px] text-muted-foreground">{step.message}</span>
+                            <span className="block text-compact text-muted-foreground">{step.message}</span>
                         )}
                     </span>
                 </li>

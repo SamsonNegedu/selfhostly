@@ -1,32 +1,22 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { Container, Search, ServerCrash } from 'lucide-react'
+import { ServerCrash } from 'lucide-react'
 import { EmptyState } from '@/shared/components/ui/EmptyState'
 import { ErrorState } from '@/shared/components/ui/ErrorState'
-import { Input } from '@/shared/components/ui/Input'
-import { SegmentedControl } from '@/shared/components/ui/SegmentedControl'
 import { Skeleton } from '@/shared/components/ui/Skeleton'
-import { StatusPill } from '@/shared/components/ui/StatusPill'
 import { buttonClasses } from '@/shared/components/ui/Button'
-import { Card } from '@/shared/components/ui/Card'
 import { useNodeContext } from '@/shared/contexts/NodeContext'
 import { formatAgo } from '@/shared/lib/attention'
 import { ROUTES } from '@/shared/lib/routes'
 import { useApps, useNodes, useSystemStats } from '@/shared/services/api'
-import ContainersByApp from './components/ContainersByApp'
+import ContainersSection from './components/ContainersSection'
 import InsightAlerts from './components/InsightAlerts'
 import NodeResources from './components/NodeResources'
+import SilentNodesCard from './components/SilentNodesCard'
 import { useStatsHistory } from './hooks/useStatsHistory'
 import { getInsightAlerts } from './lib/alerts'
 
-type StateFilter = 'all' | 'running' | 'stopped'
-
 const REFRESH_MS = 10_000
-const STATE_OPTIONS = [
-    { value: 'all', label: 'All' },
-    { value: 'running', label: 'Running' },
-    { value: 'stopped', label: 'Stopped' },
-]
 
 function Insights() {
     const { selectedNodeIds } = useNodeContext()
@@ -46,25 +36,10 @@ function Insights() {
 
     const { data: stats, error, dataUpdatedAt, refetch } = useSystemStats(REFRESH_MS, onlineIds)
     const history = useStatsHistory(stats, dataUpdatedAt)
-    const [query, setQuery] = useState('')
-    const [state, setState] = useState<StateFilter>('all')
 
     const online = useMemo(() => (stats ?? []).filter((node) => node.status === 'online' && !node.error), [stats])
     const alerts = useMemo(() => getInsightAlerts(online), [online])
     const containers = useMemo(() => online.flatMap((node) => node.containers ?? []), [online])
-    const visible = useMemo(
-        () =>
-            containers.filter((container) => {
-                if (state !== 'all' && container.state !== state) return false
-                const text = query.trim().toLowerCase()
-                return (
-                    text === '' ||
-                    container.name.toLowerCase().includes(text) ||
-                    container.app_name.toLowerCase().includes(text)
-                )
-            }),
-        [containers, state, query],
-    )
     const nodeName = (id: string) => nodes?.find((node) => node.id === id)?.name ?? id
 
     if (nodes === undefined || (onlineIds.length > 0 && stats === undefined && !error)) {
@@ -96,29 +71,7 @@ function Insights() {
                 </p>
             </div>
 
-            {silent.length > 0 && (
-                <Card
-                    className="divide-y divide-border border-status-warn/50"
-                    aria-label="Nodes that are not answering"
-                    role="region"
-                >
-                    {silent.map((node) => (
-                        <div key={node.id} className="flex flex-wrap items-center gap-3 p-4">
-                            <ServerCrash aria-hidden="true" className="h-5 w-5 shrink-0 text-status-warn-fg" />
-                            <div className="min-w-0 flex-1">
-                                <p className="font-semibold">{node.name} is not answering</p>
-                                <p className="text-[13px] text-muted-foreground">
-                                    Its readings are left out until it reconnects.
-                                    {node.last_seen ? ` Last seen ${formatAgo(node.last_seen)}.` : ''}
-                                </p>
-                            </div>
-                            <StatusPill kind="warn" size="sm">
-                                {node.status === 'unreachable' ? 'Unreachable' : 'Offline'}
-                            </StatusPill>
-                        </div>
-                    ))}
-                </Card>
-            )}
+            {silent.length > 0 && <SilentNodesCard nodes={silent} />}
 
             {online.length === 0 ? (
                 <EmptyState
@@ -140,51 +93,12 @@ function Insights() {
                         {online.map((node) => (
                             <NodeResources key={node.node_id} stats={node} history={history[node.node_id]} />
                         ))}
-                        <p className="text-[13px] text-muted-foreground">
+                        <p className="text-compact text-muted-foreground">
                             Charts show the readings taken while this page has been open. Older history is not kept.
                         </p>
                     </section>
 
-                    <section aria-label="Containers" className="flex flex-col gap-4">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                            <h2 className="text-lg font-semibold">Containers</h2>
-                            <div className="flex flex-wrap items-center gap-2">
-                                <div className="relative">
-                                    <Search
-                                        aria-hidden="true"
-                                        className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-                                    />
-                                    <Input
-                                        aria-label="Search containers"
-                                        value={query}
-                                        onChange={(event) => setQuery(event.target.value)}
-                                        placeholder="Search"
-                                        className="pl-9 sm:w-56"
-                                    />
-                                </div>
-                                <SegmentedControl
-                                    aria-label="Container state"
-                                    options={STATE_OPTIONS}
-                                    value={state}
-                                    onValueChange={(value) => setState(value as StateFilter)}
-                                />
-                            </div>
-                        </div>
-                        {visible.length === 0 ? (
-                            <EmptyState
-                                icon={<Container className="h-5 w-5" />}
-                                title={containers.length === 0 ? 'No containers' : 'No containers match'}
-                                description={
-                                    containers.length === 0
-                                        ? 'Nothing is running on these nodes yet.'
-                                        : 'Try another search or state.'
-                                }
-                                className="py-10"
-                            />
-                        ) : (
-                            <ContainersByApp containers={visible} apps={apps} nodeName={nodeName} />
-                        )}
-                    </section>
+                    <ContainersSection containers={containers} apps={apps} nodeName={nodeName} />
                 </>
             )}
         </div>

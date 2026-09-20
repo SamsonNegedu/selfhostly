@@ -62,7 +62,7 @@ function PreferenceRow({
         <div className="flex items-center gap-3.5 border-t border-border py-3.5 first:border-t-0 first:pt-0 last:pb-0">
             <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium">{title}</p>
-                <p className="text-[12.5px] text-muted-foreground">{description}</p>
+                <p className="text-compact text-muted-foreground">{description}</p>
             </div>
             {children}
         </div>
@@ -84,7 +84,7 @@ function AppearanceSection() {
                 <CardContent className="flex flex-col gap-4 p-6">
                     <div>
                         <h3 className="text-base font-semibold">Theme</h3>
-                        <p className="text-[13.5px] text-muted-foreground">
+                        <p className="text-compact text-muted-foreground">
                             Dark is the default. System follows your device.
                         </p>
                     </div>
@@ -104,7 +104,7 @@ function AppearanceSection() {
                                 )}
                             >
                                 <ThemePreview colors={PREVIEWS[option.preview]} />
-                                <span className="text-[13.5px] font-medium">{option.label}</span>
+                                <span className="text-compact font-medium">{option.label}</span>
                             </RadioGroupPrimitive.Item>
                         ))}
                     </RadioGroupPrimitive.Root>
@@ -115,7 +115,7 @@ function AppearanceSection() {
                 <CardContent className="flex flex-col p-6">
                     <div className="mb-4">
                         <h3 className="text-base font-semibold">Layout</h3>
-                        <p className="text-[13.5px] text-muted-foreground">How Fleet looks when it opens.</p>
+                        <p className="text-compact text-muted-foreground">How Fleet looks when it opens.</p>
                     </div>
                     <PreferenceRow title="Default Fleet view" description="Cards or table">
                         <SegmentedControl

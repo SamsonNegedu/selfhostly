@@ -87,7 +87,7 @@ function FailedStartGuide({ app }: { app: App }) {
 
                 {fix && (
                     <div className="flex flex-col gap-2">
-                        <p className="text-[13px] font-medium">Change to the compose file</p>
+                        <p className="text-compact font-medium">Change to the compose file</p>
                         <DiffBlock before={app.compose_content} after={fix.after} aria-label="Compose file change" />
                     </div>
                 )}
@@ -95,7 +95,11 @@ function FailedStartGuide({ app }: { app: App }) {
                 <div className="flex flex-wrap items-center gap-2">
                     {fix ? (
                         <Button onClick={applyAndRetry} disabled={working}>
-                            {working ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                            {working ? (
+                                <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <Play className="h-4 w-4" />
+                            )}
                             {step === 'saving'
                                 ? 'Saving'
                                 : step === 'starting'
@@ -104,7 +108,11 @@ function FailedStartGuide({ app }: { app: App }) {
                         </Button>
                     ) : (
                         <Button onClick={retry} disabled={working}>
-                            {working ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                            {working ? (
+                                <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <Play className="h-4 w-4" />
+                            )}
                             Retry start
                         </Button>
                     )}

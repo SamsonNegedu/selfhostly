@@ -28,8 +28,8 @@ function NodeGroupSection({ group, showHeader, nodeMetrics, metricsFor, actions 
             {showHeader && (
                 <div className="flex items-center gap-3">
                     <StatusDot kind={status?.kind ?? 'idle'} className="h-2.5 w-2.5" />
-                    <h2 className="text-[15px] font-semibold">{group.name}</h2>
-                    <span className="text-[13px] text-muted-foreground">
+                    <h2 className="text-title font-semibold">{group.name}</h2>
+                    <span className="text-compact text-muted-foreground">
                         {count} {count === 1 ? 'app' : 'apps'}
                         {nodeMetrics &&
                             ` · CPU ${formatPercent(nodeMetrics.cpuPercent)} · Memory ${formatPercent(nodeMetrics.memoryPercent)}`}
