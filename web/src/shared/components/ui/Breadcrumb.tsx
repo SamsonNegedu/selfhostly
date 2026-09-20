@@ -99,22 +99,6 @@ const BreadcrumbSeparator = ({
 )
 BreadcrumbSeparator.displayName = "BreadcrumbSeparator"
 
-const BreadcrumbEllipsis = ({
-    className,
-    ...props
-}: React.ComponentProps<"span">) => (
-    <span
-        role="presentation"
-        aria-hidden="true"
-        className={cn("flex h-9 w-9 items-center justify-center", className)}
-        {...props}
-    >
-        <span className="sr-only">More</span>
-        <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
-    </span>
-)
-BreadcrumbEllipsis.displayName = "BreadcrumbEllipsis"
-
 export {
     Breadcrumb,
     BreadcrumbList,
@@ -122,5 +106,4 @@ export {
     BreadcrumbLink,
     BreadcrumbPage,
     BreadcrumbSeparator,
-    BreadcrumbEllipsis,
 }

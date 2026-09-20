@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -15,6 +16,22 @@ type Config struct {
 	JWTSecret         string        // JWT secret to validate user tokens (same as primary)
 	AuthEnabled       bool          // Whether to validate JWT for user requests
 	RegistryTTL       time.Duration // How often to refresh node list from primary
+	PublicHosts       []string      // Hostnames users reach the gateway on; empty disables host pinning
+}
+
+// pinPublicHost returns host when it is a configured public host. When host pinning is on and the
+// value is not one of them (a spoofed X-Forwarded-Host, Referer or cookie) the first public host
+// is used instead, so an attacker cannot steer OAuth redirects or cookie scoping elsewhere.
+func (c *Config) pinPublicHost(host string) (string, bool) {
+	if len(c.PublicHosts) == 0 {
+		return host, true
+	}
+	for _, h := range c.PublicHosts {
+		if strings.EqualFold(h, host) {
+			return host, true
+		}
+	}
+	return c.PublicHosts[0], false
 }
 
 var ErrGatewayAPIKeyRequired = errors.New("GATEWAY_API_KEY is required")
@@ -41,7 +58,14 @@ func LoadConfig() (*Config, error) {
 			ttlSec = n
 		}
 	}
+	var publicHosts []string
+	for _, h := range strings.Split(os.Getenv("PUBLIC_HOSTS"), ",") {
+		if h = strings.TrimSpace(h); h != "" {
+			publicHosts = append(publicHosts, h)
+		}
+	}
 	return &Config{
+		PublicHosts:       publicHosts,
 		PrimaryBackendURL: primaryBackendURL,
 		GatewayAPIKey:     gatewayAPIKey,
 		ListenAddress:     listenAddr,

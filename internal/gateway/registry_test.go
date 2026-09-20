@@ -2,9 +2,11 @@ package gateway
 
 import (
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -13,13 +15,13 @@ import (
 
 func TestNodeRegistry_Refresh(t *testing.T) {
 	tests := []struct {
-		name           string
-		nodes          []NodeEntry
-		statusCode     int
-		wantErr        bool
-		wantNodeCount  int
-		wantPrimaryID  string
-		gatewayAPIKey  string
+		name          string
+		nodes         []NodeEntry
+		statusCode    int
+		wantErr       bool
+		wantNodeCount int
+		wantPrimaryID string
+		gatewayAPIKey string
 	}{
 		{
 			name: "successful refresh with multiple nodes",
@@ -161,9 +163,9 @@ func TestNodeRegistry_Get(t *testing.T) {
 	registry.mu.Unlock()
 
 	tests := []struct {
-		name     string
-		nodeID   string
-		want     string
+		name      string
+		nodeID    string
+		want      string
 		wantEmpty bool
 	}{
 		{
@@ -284,5 +286,49 @@ func TestNodeRegistry_PrimaryBaseURL(t *testing.T) {
 
 	if got := registry.PrimaryBaseURL(); got != primaryURL {
 		t.Errorf("PrimaryBaseURL() = %q, want %q", got, primaryURL)
+	}
+}
+
+func TestNodeRegistry_GetRefreshesOnAMiss(t *testing.T) {
+	var lists atomic.Int32
+	served := `[{"id":"p","api_endpoint":"http://p:8082","is_primary":true,"status":"online"}]`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		lists.Add(1)
+		_, _ = w.Write([]byte(served))
+	}))
+	defer srv.Close()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	reg := NewNodeRegistry(srv.URL, "k", time.Hour, logger)
+	reg.Start()
+	deadline := time.Now().Add(3 * time.Second)
+	for !reg.IsReady() && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if reg.Get("p") == "" {
+		t.Fatal("a known node must resolve from the cache")
+	}
+	base := lists.Load()
+
+	// a node joins after the cache was filled: the next lookup must find it without waiting a TTL
+	served = `[{"id":"p","api_endpoint":"http://p:8082","is_primary":true,"status":"online"},
+	           {"id":"new","api_endpoint":"tunnel://new","is_primary":false,"status":"online"}]`
+	reg.refreshMu.Lock()
+	reg.lastOnDemand = time.Time{}
+	reg.refreshMu.Unlock()
+	if got := reg.Get("new"); got != srv.URL {
+		t.Fatalf("a node that just joined must be routable at once (via the primary for a linked node), got %q", got)
+	}
+	if lists.Load() != base+1 {
+		t.Fatalf("exactly one refresh should have happened, got %d", lists.Load()-base)
+	}
+
+	// a stream of lookups for a node that does not exist must not hammer the primary
+	before := lists.Load()
+	for i := 0; i < 50; i++ {
+		_ = reg.Get("does-not-exist")
+	}
+	if lists.Load()-before > 1 {
+		t.Fatalf("misses must be rate limited, but the primary was asked %d times", lists.Load()-before)
 	}
 }

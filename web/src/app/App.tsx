@@ -1,23 +1,43 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import Dashboard from '@/features/dashboard';
-import CreateApp from '@/features/create-app';
-import AppDetails from '@/features/app-details';
-import Cloudflare from '@/features/cloudflare';
-import Monitoring from '@/features/monitoring';
-import Nodes from '@/features/nodes';
-import RegisterNode from '@/features/nodes/register';
-import Settings from '@/features/settings';
-import Login from '@/features/login';
 import MainLayout from '@/shared/components/layout/MainLayout';
 import { AuthProvider, useAuth } from '@/shared/components/auth/AuthProvider';
+import ServerUnavailable from '@/shared/components/auth/ServerUnavailable';
 import { useToast, ToastContainer } from '@/shared/components/ui/Toast';
+import { ErrorBoundary } from '@/shared/components/ErrorBoundary';
+import { NotFound } from '@/shared/components/NotFound';
+import { Skeleton } from '@/shared/components/ui/Skeleton';
 import { Agentation } from '@/shared/components/dev/Agentation';
+import { LEGACY_REDIRECTS, ROUTES } from '@/shared/lib/routes';
 import { ThemeProvider } from '@/shared/components/theme/ThemeProvider';
 import { NodeContextProvider } from '@/shared/contexts/NodeContext';
 
+// Each page loads when it is first visited, so the first paint does not wait for all of them.
+const Dashboard = lazy(() => import('@/features/dashboard'));
+const CreateApp = lazy(() => import('@/features/create-app'));
+const AppDetails = lazy(() => import('@/features/app-details'));
+const Cloudflare = lazy(() => import('@/features/cloudflare'));
+const Monitoring = lazy(() => import('@/features/monitoring'));
+const Nodes = lazy(() => import('@/features/nodes'));
+const RegisterNode = lazy(() => import('@/features/nodes/register'));
+const Settings = lazy(() => import('@/features/settings'));
+const Login = lazy(() => import('@/features/login'));
+
+// Component gallery for verifying shared UI. The conditional lets the production build drop it.
+const UiGallery = import.meta.env.DEV ? lazy(() => import('@/features/dev/ui-gallery')) : null;
+
+function PageFallback() {
+    return (
+        <div className="space-y-4 p-4 md:p-6" aria-busy="true">
+            <Skeleton className="h-8 w-48" />
+            <Skeleton className="h-40 w-full" />
+        </div>
+    );
+}
+
 // Protected route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-    const { isAuthenticated, isLoading } = useAuth();
+    const { isAuthenticated, isLoading, serverUnreachable, retry } = useAuth();
 
     if (isLoading) {
         return (
@@ -25,6 +45,10 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
             </div>
         );
+    }
+
+    if (serverUnreachable) {
+        return <ServerUnavailable onRetry={retry} />;
     }
 
     if (!isAuthenticated) {
@@ -42,13 +66,15 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     }
 
     return (
-        <MainLayout>{children}</MainLayout>
+        <MainLayout>
+            <Suspense fallback={<PageFallback />}>{children}</Suspense>
+        </MainLayout>
     );
 }
 
 // Public route - redirect to dashboard if already authenticated
 function PublicRoute({ children }: { children: React.ReactNode }) {
-    const { isAuthenticated, isLoading } = useAuth();
+    const { isAuthenticated, isLoading, serverUnreachable, retry } = useAuth();
 
     if (isLoading) {
         return (
@@ -58,11 +84,15 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
         );
     }
 
+    if (serverUnreachable) {
+        return <ServerUnavailable onRetry={retry} />;
+    }
+
     if (isAuthenticated) {
         return <Navigate to="/apps" replace />;
     }
 
-    return <>{children}</>;
+    return <Suspense fallback={null}>{children}</Suspense>;
 }
 
 function AppRoutes() {
@@ -120,7 +150,7 @@ function AppRoutes() {
                 }
             />
             <Route
-                path="/cloudflare"
+                path={ROUTES.access}
                 element={
                     <ProtectedRoute>
                         <Cloudflare />
@@ -128,13 +158,17 @@ function AppRoutes() {
                 }
             />
             <Route
-                path="/monitoring"
+                path={ROUTES.insights}
                 element={
                     <ProtectedRoute>
                         <Monitoring />
                     </ProtectedRoute>
                 }
             />
+            {/* Old addresses forward to the renamed pages */}
+            {LEGACY_REDIRECTS.map(({ from, to }) => (
+                <Route key={from} path={from} element={<Navigate to={to} replace />} />
+            ))}
             <Route
                 path="/nodes"
                 element={
@@ -152,8 +186,33 @@ function AppRoutes() {
                 }
             />
 
-            {/* Catch all - redirect to dashboard */}
-            <Route path="*" element={<Navigate to="/apps" replace />} />
+            {UiGallery && (
+                <Route
+                    path="/dev/ui"
+                    element={
+                        <ProtectedRoute>
+                            <Suspense fallback={null}>
+                                <UiGallery />
+                            </Suspense>
+                        </ProtectedRoute>
+                    }
+                />
+            )}
+
+            {/* The login page while signed in, so it can be checked. It is left out of production builds. */}
+            {import.meta.env.DEV && (
+                <Route path="/dev/login" element={<Suspense fallback={null}><Login /></Suspense>} />
+            )}
+
+            {/* Anything else is a page that does not exist */}
+            <Route
+                path="*"
+                element={
+                    <ProtectedRoute>
+                        <NotFound />
+                    </ProtectedRoute>
+                }
+            />
         </Routes>
     );
 }
@@ -167,7 +226,9 @@ function App() {
                 <ThemeProvider>
                     <AuthProvider>
                         <NodeContextProvider>
-                            <AppRoutes />
+                            <ErrorBoundary>
+                                <AppRoutes />
+                            </ErrorBoundary>
                             <ToastContainer toasts={toasts} removeToast={removeToast} />
                         </NodeContextProvider>
                     </AuthProvider>

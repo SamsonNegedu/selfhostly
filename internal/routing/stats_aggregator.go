@@ -48,6 +48,17 @@ func (a *StatsAggregator) AggregateStats(
 				localStats, err := localFetcher()
 				if err != nil {
 					a.logger.ErrorContext(ctx, "failed to retrieve local system stats", "error", err)
+					// Report the node instead of leaving it out, so the page can say why nothing is shown for it.
+					mu.Lock()
+					allStats = append(allStats, &system.SystemStats{
+						NodeID:     n.ID,
+						NodeName:   n.Name,
+						Status:     "error",
+						Error:      err.Error(),
+						Timestamp:  time.Now(),
+						Containers: []system.ContainerInfo{},
+					})
+					mu.Unlock()
 					return
 				}
 
@@ -55,6 +66,21 @@ func (a *StatsAggregator) AggregateStats(
 				allStats = append(allStats, localStats)
 				mu.Unlock()
 			} else {
+				// A node already known to be down is not asked, so it cannot hold up the answer for the others.
+				if n.Status == "offline" || n.Status == "unreachable" {
+					mu.Lock()
+					allStats = append(allStats, &system.SystemStats{
+						NodeID:     n.ID,
+						NodeName:   n.Name,
+						Status:     "offline",
+						Error:      "node is not answering",
+						Timestamp:  time.Now(),
+						Containers: []system.ContainerInfo{},
+					})
+					mu.Unlock()
+					return
+				}
+
 				// Fetch from remote node
 				a.logger.InfoContext(ctx, "fetching system stats from remote node", "nodeID", n.ID, "nodeName", n.Name)
 				remoteStatsMap, err := remoteFetcher(n)

@@ -10,10 +10,18 @@
 #   Internet → Cloudflared ┬→ Frontend (port 80) → Static HTML/JS/CSS
 #                           └→ Gateway (port 8080) → Backend (port 8082) → API logic
 #
-# Usage:
-#   1. Copy .env.prod.example to .env
-#   2. Configure Cloudflare Tunnel ingress rules (see docs)
+# Usage (new server):
+#   1. selfhostlyctl bootstrap --auth github --domain selfhostly.example.com --github-user you
+#      (generates every secret into .env; safe to re-run, never overwrites existing values)
+#   2. Add TUNNEL_TOKEN (and GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET) to .env
 #   3. docker compose -f docker-compose.prod.yml up -d
+#   4. docker exec selfhostly-primary ./selfhostly doctor
+#
+# Upgrading a running system: follow docs/operations/safe-restart.md.
+#
+# Image versions: SELFHOSTLY_VERSION picks a release tag. To pin exact digests run
+# selfhostlyctl pin-images, which writes GATEWAY_IMAGE / BACKEND_IMAGE / FRONTEND_IMAGE /
+# CLOUDFLARED_IMAGE into .env; those override the tag-based defaults below.
 # =============================================================================
 
 services:
@@ -23,7 +31,7 @@ services:
   # Routes /api/* and /auth/* to appropriate backend nodes
   # Validates JWT tokens, manages node registry
   gateway:
-    image: ghcr.io/samsonnegedu/selfhostly-gateway:latest
+    image: ${GATEWAY_IMAGE:-ghcr.io/samsonnegedu/selfhostly-gateway:${SELFHOSTLY_VERSION:-latest}}
     container_name: selfhostly-gateway
     environment:
       # Gateway Configuration
@@ -31,13 +39,25 @@ services:
       GATEWAY_API_KEY: ${GATEWAY_API_KEY}
       GATEWAY_LISTEN_ADDRESS: ":8080"
       GATEWAY_REGISTRY_TTL_SEC: "60"
+      APP_ENV: ${APP_ENV:-production}
+      LOG_JSON: ${LOG_JSON:-}
 
       # Authentication (same as backend for JWT validation)
       AUTH_ENABLED: ${AUTH_ENABLED:-true}
       JWT_SECRET: ${JWT_SECRET}
+
+      # Hostnames users reach the site on (comma separated). When set, forged X-Forwarded-Host,
+      # Referer or cookie values cannot redirect OAuth to another host. selfhostlyctl bootstrap sets this.
+      PUBLIC_HOSTS: ${PUBLIC_HOSTS:-}
     networks:
       - selfhostly-network
     restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
     depends_on:
       primary:
         condition: service_healthy
@@ -66,11 +86,17 @@ services:
   # No authentication, no database, no backend logic
   # Built from: web/Dockerfile
   frontend:
-    image: ghcr.io/samsonnegedu/selfhostly-frontend:latest
+    image: ${FRONTEND_IMAGE:-ghcr.io/samsonnegedu/selfhostly-frontend:${SELFHOSTLY_VERSION:-latest}}
     container_name: selfhostly-frontend
+    environment:
+      # API base URL the frontend uses; empty means same origin
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
     networks:
       - selfhostly-network
     restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     expose:
       - "80" # Internal port only (accessed via Cloudflared)
     healthcheck:
@@ -95,12 +121,16 @@ services:
   # Handles API logic, authentication, database, container orchestration
   # Not publicly exposed - accessed only via gateway
   primary:
-    image: ghcr.io/samsonnegedu/selfhostly-backend:latest
+    image: ${BACKEND_IMAGE:-ghcr.io/samsonnegedu/selfhostly-backend:${SELFHOSTLY_VERSION:-latest}}
     container_name: selfhostly-primary
-    user: 1000:984
+    # The group must own the Docker socket: selfhostlyctl bootstrap detects it and writes DOCKER_GID
+    user: ${APP_UID:-1000}:${DOCKER_GID:-984}
     environment:
       # Server Configuration
       SERVER_ADDRESS: ":8082"
+      APP_ENV: ${APP_ENV:-production}
+      # true = JSON logs (the default in production), false = plain text
+      LOG_JSON: ${LOG_JSON:-}
 
       # Database
       DATABASE_PATH: /app/data/selfhostly.db
@@ -124,10 +154,33 @@ services:
 
       # Node Configuration
       NODE_IS_PRIMARY: "true"
-      NODE_ID: ${NODE_ID:-450359e5-52c3-47e8-a256-6ea537528a06}
+      # Leave NODE_ID unset: the primary uses the ID already stored in its database (or creates one
+      # on first start and saves it). Set it only to pin an ID on purpose; `doctor` fails if a pinned
+      # ID disagrees with the database.
+      NODE_ID: ${NODE_ID:-}
       NODE_NAME: ${NODE_NAME:-primary}
       NODE_API_ENDPOINT: ${NODE_API_ENDPOINT:-http://primary:8082}
       REGISTRATION_TOKEN: ${REGISTRATION_TOKEN}
+
+      # Security policy. Empty SECURITY_MODE = enforce on a fresh install, warn on an existing one.
+      SECURITY_MODE: ${SECURITY_MODE:-}
+      # Host path behind ${APPS_DIR}. Empty = detected from this container's own mounts.
+      HOST_APPS_DIR: ${HOST_APPS_DIR:-}
+      ALLOWED_VOLUME_PATHS: ${ALLOWED_VOLUME_PATHS:-}
+      NODE_ENDPOINT_ALLOWED_CIDRS: ${NODE_ENDPOINT_ALLOWED_CIDRS:-}
+      NODE_ENDPOINT_ALLOW_LOOPBACK: ${NODE_ENDPOINT_ALLOW_LOOPBACK:-}
+      ENCRYPT_SECRETS_AT_REST: ${ENCRYPT_SECRETS_AT_REST:-}
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:-}
+      AUTH_SESSION_HOURS: ${AUTH_SESSION_HOURS:-}
+
+      # Only when AUTH_ENABLED=false behind Cloudflare Access: verify its signed token
+      CF_ACCESS_TEAM_DOMAIN: ${CF_ACCESS_TEAM_DOMAIN:-}
+      CF_ACCESS_AUD: ${CF_ACCESS_AUD:-}
+      ALLOW_UNAUTHENTICATED: ${ALLOW_UNAUTHENTICATED:-}
+
+      # The docker CLI needs a writable home while the root filesystem is read-only
+      HOME: /tmp
+      DOCKER_CONFIG: /tmp/.docker
     volumes:
       - ${DATA_DIR:-./data}:/app/data
       - ${APPS_DIR:-./apps}:/app/apps
@@ -135,8 +188,21 @@ services:
     networks:
       - selfhostly-network
     restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    # The server drains the running deployment job for up to 30s on shutdown; the Docker default
+    # of 10s would SIGKILL a long `compose pull` halfway.
+    stop_grace_period: 45s
     expose:
-      - "8082" # Internal port only (not exposed to host)
+      - "8082" # Reachable by the gateway on the internal network
+    # Secondary nodes on other machines reach the primary here. Loopback by default, so nothing new is
+    # exposed until you choose an address: `selfhostly join-token` explains how (PRIMARY_NODE_BIND).
+    ports:
+      - "${PRIMARY_NODE_BIND:-127.0.0.1}:${PRIMARY_NODE_PORT:-8082}:8082"
     healthcheck:
       test:
         [
@@ -158,8 +224,9 @@ services:
   # Configure ingress rules to route:
   #   - Frontend routes (/, /login, etc.) → frontend:3000
   #   - API routes (/api/*, /auth/*) → gateway:8080
+  # Anchor the path regexes (^/api(/|$)): they match anywhere in the URL. See docs/operations/cloudflare-zero-trust.md.
   cloudflared:
-    image: cloudflare/cloudflared:latest
+    image: ${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:latest}
     container_name: selfhostly-cloudflared
     command: tunnel run
     environment:
@@ -167,6 +234,9 @@ services:
     networks:
       - selfhostly-network
     restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       gateway:
         condition: service_healthy

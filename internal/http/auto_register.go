@@ -1,11 +1,11 @@
 package http
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/domain"
 )
 
@@ -30,40 +30,21 @@ func (s *Server) autoRegisterNode(c *gin.Context) {
 		return
 	}
 
-	// Validate registration token
-	if s.config.Node.RegistrationToken == "" {
-		c.JSON(http.StatusServiceUnavailable, ErrorResponse{
-			Error:   "Auto-registration not configured",
-			Details: "REGISTRATION_TOKEN not set on primary node",
-		})
-		return
-	}
-
-	if req.Token != s.config.Node.RegistrationToken {
+	reg, err := s.nodeService.AutoRegisterNode(c.Request.Context(), domain.AutoRegisterRequest(req))
+	if errors.Is(err, domain.ErrRegistrationUnauthorized) {
+		slog.Warn("node registration rejected: invalid token", "node_name", req.Name, "remote_addr", c.ClientIP())
 		c.JSON(http.StatusUnauthorized, ErrorResponse{
 			Error:   "Invalid registration token",
-			Details: "The provided registration token does not match the primary node's token",
+			Details: "The token is wrong, expired, or was already used",
 		})
 		return
 	}
+	if err != nil {
+		s.handleServiceError(c, "register node", err)
+		return
+	}
 
-	// Check if node with this ID already exists
-	existingNodeByID, err := s.database.GetNode(req.ID)
-	if err == nil && existingNodeByID != nil {
-		// Node already registered - update it instead
-		existingNodeByID.Name = req.Name
-		existingNodeByID.APIEndpoint = req.APIEndpoint
-		existingNodeByID.APIKey = req.APIKey
-		existingNodeByID.Status = "online"
-
-		if err := s.database.UpdateNode(existingNodeByID); err != nil {
-			c.JSON(http.StatusInternalServerError, ErrorResponse{
-				Error:   "Failed to update existing node",
-				Details: domain.PublicMessage(err),
-			})
-			return
-		}
-
+	if !reg.Created {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "Node already registered - updated successfully",
 			"node_id": req.ID,
@@ -71,42 +52,9 @@ func (s *Server) autoRegisterNode(c *gin.Context) {
 		})
 		return
 	}
-
-	// Check if node with this name already exists
-	existingNode, err := s.database.GetNodeByName(req.Name)
-	if err == nil && existingNode != nil {
-		c.JSON(http.StatusConflict, ErrorResponse{
-			Error:   "Node name already exists",
-			Details: "A node with this name is already registered with a different ID",
-		})
-		return
-	}
-
-	// Create new node with the provided details
-	newNode := db.NewNodeWithID(req.ID, req.Name, req.APIEndpoint, req.APIKey, false)
-
-	// Perform initial health check using nodeService
-	if err := s.nodeService.HealthCheckNode(c.Request.Context(), newNode.ID); err != nil {
-		slog.Warn("health check failed for auto-registered node", "name", req.Name, "error", err)
-		newNode.Status = "unreachable"
-	} else {
-		newNode.Status = "online"
-	}
-
-	// Save to database
-	if err := s.database.CreateNode(newNode); err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:   "Failed to register node",
-			Details: domain.PublicMessage(err),
-		})
-		return
-	}
-
-	slog.Info("node auto-registered successfully", "id", req.ID, "name", req.Name, "status", newNode.Status)
-
 	c.JSON(http.StatusCreated, gin.H{
 		"message": "Node registered successfully",
 		"node_id": req.ID,
-		"status":  newNode.Status,
+		"status":  reg.Node.Status,
 	})
 }

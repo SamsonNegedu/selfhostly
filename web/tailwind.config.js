@@ -1,3 +1,18 @@
+import defaultTheme from 'tailwindcss/defaultTheme'
+
+const hslVar = (name) => `hsl(var(--${name}))`
+
+const statusColor = (kind) => ({
+  DEFAULT: hslVar(`status-${kind}`),
+  bg: hslVar(`status-${kind}-bg`),
+  fg: hslVar(`status-${kind}-fg`),
+})
+
+const tintColor = (name) => ({
+  bg: hslVar(`tint-${name}-bg`),
+  fg: hslVar(`tint-${name}-fg`),
+})
+
 /** @type {import('tailwindcss').Config} */
 export default {
   darkMode: ["class"],
@@ -9,39 +24,65 @@ export default {
       screens: {
         'xs': '475px',
       },
+      fontFamily: {
+        sans: ['"IBM Plex Sans"', ...defaultTheme.fontFamily.sans],
+        mono: ['"IBM Plex Mono"', ...defaultTheme.fontFamily.mono],
+      },
       colors: {
-        border: "hsl(var(--border))",
-        input: "hsl(var(--input))",
-        ring: "hsl(var(--ring))",
-        background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
+        border: hslVar('border'),
+        input: hslVar('input'),
+        ring: hslVar('ring'),
+        background: hslVar('background'),
+        foreground: hslVar('foreground'),
         primary: {
-          DEFAULT: "hsl(var(--primary))",
-          foreground: "hsl(var(--primary-foreground))",
+          DEFAULT: hslVar('primary'),
+          foreground: hslVar('primary-foreground'),
         },
         secondary: {
-          DEFAULT: "hsl(var(--secondary))",
-          foreground: "hsl(var(--secondary-foreground))",
+          DEFAULT: hslVar('secondary'),
+          foreground: hslVar('secondary-foreground'),
         },
         destructive: {
-          DEFAULT: "hsl(var(--destructive))",
-          foreground: "hsl(var(--destructive-foreground))",
+          DEFAULT: hslVar('destructive'),
+          foreground: hslVar('destructive-foreground'),
         },
         muted: {
-          DEFAULT: "hsl(var(--muted))",
-          foreground: "hsl(var(--muted-foreground))",
+          DEFAULT: hslVar('muted'),
+          foreground: hslVar('muted-foreground'),
         },
         accent: {
-          DEFAULT: "hsl(var(--accent))",
-          foreground: "hsl(var(--accent-foreground))",
+          DEFAULT: hslVar('accent'),
+          foreground: hslVar('accent-foreground'),
         },
         popover: {
-          DEFAULT: "hsl(var(--popover))",
-          foreground: "hsl(var(--popover-foreground))",
+          DEFAULT: hslVar('popover'),
+          foreground: hslVar('popover-foreground'),
         },
         card: {
-          DEFAULT: "hsl(var(--card))",
-          foreground: "hsl(var(--card-foreground))",
+          DEFAULT: hslVar('card'),
+          foreground: hslVar('card-foreground'),
+        },
+        status: {
+          ok: statusColor('ok'),
+          warn: statusColor('warn'),
+          err: statusColor('err'),
+          info: statusColor('info'),
+          idle: statusColor('idle'),
+        },
+        tint: {
+          blue: tintColor('blue'),
+          red: tintColor('red'),
+          purple: tintColor('purple'),
+          navy: tintColor('navy'),
+          teal: tintColor('teal'),
+          green: tintColor('green'),
+        },
+        terminal: {
+          DEFAULT: hslVar('terminal'),
+          foreground: hslVar('terminal-foreground'),
+          muted: hslVar('terminal-muted'),
+          warn: hslVar('terminal-warn'),
+          error: hslVar('terminal-error'),
         },
       },
       borderRadius: {

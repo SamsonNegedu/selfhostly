@@ -38,8 +38,10 @@ WORKDIR /app
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001
 
-# Install serve globally during build (not at runtime)
-RUN npm install -g serve
+# Install serve globally during build (not at runtime), pinned so a rebuild is reproducible.
+# Bump deliberately: dependabot proposes updates to this ARG's value via the Dockerfile ecosystem.
+ARG SERVE_VERSION=14.2.4
+RUN npm install -g serve@${SERVE_VERSION}
 
 # Copy built files from builder
 COPY --from=builder /app/dist ./dist

@@ -24,15 +24,15 @@ const (
 
 // Job type values
 const (
-	JobTypeAppCreate          = "app_create"
-	JobTypeAppUpdate          = "app_update"
-	JobTypeAppStart           = "app_start"
-	JobTypeAppStop            = "app_stop"
-	JobTypeAppScheduledStart  = "app_scheduled_start"
-	JobTypeAppScheduledStop   = "app_scheduled_stop"
-	JobTypeTunnelCreate       = "tunnel_create"
-	JobTypeTunnelDelete       = "tunnel_delete"
-	JobTypeQuickTunnel        = "quick_tunnel"
+	JobTypeAppCreate         = "app_create"
+	JobTypeAppUpdate         = "app_update"
+	JobTypeAppStart          = "app_start"
+	JobTypeAppStop           = "app_stop"
+	JobTypeAppScheduledStart = "app_scheduled_start"
+	JobTypeAppScheduledStop  = "app_scheduled_stop"
+	JobTypeTunnelCreate      = "tunnel_create"
+	JobTypeTunnelDelete      = "tunnel_delete"
+	JobTypeQuickTunnel       = "quick_tunnel"
 )
 
 // Tunnel mode values
@@ -213,3 +213,110 @@ const (
 
 // Default provider name (for backward compatibility)
 const DefaultProviderName = ProviderCloudflare
+
+// Security mode values. SecurityModeWarn logs policy violations without blocking them so an
+// existing install can be audited before enforcement is switched on.
+const (
+	SecurityModeEnforce = "enforce"
+	SecurityModeWarn    = "warn"
+)
+
+// Environment names
+const (
+	EnvProduction  = "production"
+	EnvDevelopment = "development"
+)
+
+// Inter-node and gateway credential headers
+const (
+	HeaderGatewayAPIKey = "X-Gateway-API-Key"
+	HeaderNodeID        = "X-Node-ID"
+	HeaderNodeAPIKey    = "X-Node-API-Key"
+	HeaderCFAccessJWT   = "Cf-Access-Jwt-Assertion"
+)
+
+// Node link: a secondary opens an outbound WebSocket to the primary and serves HTTP over it
+const (
+	// LinkPath is the primary's link endpoint
+	LinkPath = "/api/nodes/connect"
+
+	// LinkEndpointScheme marks a node that is reached over its link: tunnel://<node-id>
+	LinkEndpointScheme = "tunnel"
+
+	// Credentials for the link are sent in dedicated headers, not the X-Node-* pair, because the
+	// gateway removes those from client requests
+	HeaderLinkNodeID    = "X-Selfhostly-Node-Id"
+	HeaderLinkNodeName  = "X-Selfhostly-Node-Name"
+	HeaderLinkNodeKey   = "X-Selfhostly-Node-Key"
+	HeaderLinkJoinToken = "X-Selfhostly-Join-Token"
+
+	// NodeTransportDirect and NodeTransportTunnel select how a secondary connects to its primary
+	NodeTransportDirect = "direct"
+	NodeTransportTunnel = "tunnel"
+)
+
+// Authentication constants
+const (
+	// AuthIssuer is the JWT issuer stamped by the backend and verified by the gateway
+	AuthIssuer = "selfhostly"
+
+	// GitHubUserIDPrefix prefixes the hashed GitHub login that go-pkgz/auth uses as User.ID
+	GitHubUserIDPrefix = "github_"
+
+	// DefaultSessionHours is how long a browser session cookie lives before re-login
+	DefaultSessionHours = 24
+
+	// AuthTokenDuration is the lifetime of a single JWT before go-pkgz refreshes it
+	AuthTokenDuration = time.Hour
+
+	// GitHubAPIBaseURL is used to resolve canonical GitHub logins for the allow-list
+	GitHubAPIBaseURL = "https://api.github.com"
+
+	// AllowListResolveTimeout bounds each GitHub lookup at startup
+	AllowListResolveTimeout = 5 * time.Second
+)
+
+// Rate limiting for unauthenticated node registration attempts
+const (
+	RegisterRateLimitAttempts = 10
+	RegisterRateLimitWindow   = time.Minute
+)
+
+// Join tokens are single-use secrets a secondary exchanges for cluster membership
+const (
+	JoinTokenTTL      = time.Hour
+	JoinTokenPrefix   = "sfj_"
+	JoinTokenByteSize = 24
+)
+
+// Secrets at rest
+const (
+	SecretsCipherPrefix = "enc:v1:"
+	SecretsKeyFileName  = "secrets.key"
+	NodeIDFileName      = "node-id"
+	NodeAPIKeyFileName  = "node-api-key"
+	RegistrationFile    = "registration-token"
+	SecurityModeFile    = "security-mode"
+	SecretFileMode      = 0o600
+)
+
+// Database maintenance
+const (
+	// DBBackupsToKeep is how many pre-migration copies of the database are retained
+	DBBackupsToKeep = 5
+)
+
+// Docker labels used to decide which containers this platform manages
+const (
+	LabelComposeProject    = "com.docker.compose.project"
+	LabelComposeWorkingDir = "com.docker.compose.project.working_dir"
+	// LabelComposeConfigFiles lists, comma separated, the compose files a project was started from
+	LabelComposeConfigFiles = "com.docker.compose.project.config_files"
+	LabelManaged           = "com.selfhostly.managed"
+)
+
+// Cloudflare Access verification
+const (
+	CFAccessJWKSCacheTTL = 15 * time.Minute
+	CFAccessCertsPath    = "/cdn-cgi/access/certs"
+)

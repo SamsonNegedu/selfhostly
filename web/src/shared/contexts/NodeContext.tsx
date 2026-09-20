@@ -49,7 +49,7 @@ export function NodeContextProvider({ children }: NodeContextProviderProps) {
             // Invalid stored value, use current node
             setSelectedNodeIdsState([currentNode.id]);
           }
-        } catch (e) {
+        } catch {
           // Parse error, use current node
           setSelectedNodeIdsState([currentNode.id]);
         }

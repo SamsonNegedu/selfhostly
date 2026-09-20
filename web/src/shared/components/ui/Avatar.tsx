@@ -19,7 +19,7 @@ const avatarVariants = cva(
   }
 )
 
-export interface AvatarProps
+interface AvatarProps
   extends React.HTMLAttributes<HTMLDivElement>,
   VariantProps<typeof avatarVariants> {
   src?: string
@@ -99,4 +99,4 @@ const AvatarFallback = React.forwardRef<
 ))
 AvatarFallback.displayName = "AvatarFallback"
 
-export { Avatar, AvatarFallback, avatarVariants }
+export { Avatar, AvatarFallback }

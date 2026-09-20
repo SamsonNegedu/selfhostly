@@ -1,0 +1,26 @@
+# Keeps dependencies, base images and pinned CI actions current. Each ecosystem opens grouped,
+# reviewable PRs instead of letting versions drift (or float on :latest).
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      go-minor-and-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: npm
+    directory: /web
+    schedule: { interval: weekly }
+    groups:
+      web-minor-and-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: docker
+    directory: /
+    schedule: { interval: weekly }
+  - package-ecosystem: docker
+    directory: /web
+    schedule: { interval: weekly }
+  # Also rewrites `uses: owner/action@<sha>` pins when a new release is published
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }

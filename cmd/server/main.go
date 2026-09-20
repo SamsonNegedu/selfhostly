@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -13,18 +14,33 @@ import (
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/http"
 	"github.com/selfhostly/internal/logger"
+	"github.com/selfhostly/internal/secrets"
 )
 
+// auditRetention is how long audit records are kept
+const auditRetention = 90 * 24 * time.Hour
+
 func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "doctor":
+			os.Exit(runDoctor(os.Args[2:]))
+		case "backup":
+			os.Exit(runBackup(os.Args[2:]))
+		case "join-token":
+			os.Exit(runJoinToken(os.Args[2:]))
+		}
+	}
+
 	// Show current working directory for debugging
 	cwd, _ := os.Getwd()
-	
+
 	// Load .env file - can be overridden with ENV_FILE environment variable
 	envFile := os.Getenv("ENV_FILE")
 	if envFile == "" {
 		envFile = ".env"
 	}
-	
+
 	if err := godotenv.Load(envFile); err != nil {
 		// Use default logger temporarily before config is loaded
 		slog.Warn("No .env file found", "file", envFile, "cwd", cwd, "error", err)
@@ -42,8 +58,27 @@ func main() {
 	// Initialize structured logger based on environment
 	// This sets slog as the default logger, so we can use slog directly throughout
 	logger.InitLogger(cfg.Environment, cfg.LogJSON)
-	
-	slog.Info("Application starting", "cwd", cwd, "environment", cfg.Environment)
+
+	slog.Info("Application starting", "cwd", cwd, "environment", cfg.Environment, "security_mode", cfg.Security.Mode)
+
+	// Refuse to start insecurely when enforcing; otherwise report the same problems as warnings
+	fatal := false
+	for _, issue := range cfg.ValidateStartup() {
+		if issue.Fatal {
+			slog.Error("configuration problem", "issue", issue.Message)
+			fatal = true
+		} else {
+			slog.Warn("configuration warning", "issue", issue.Message)
+		}
+	}
+	if fatal {
+		logEffectiveConfig(cfg)
+		slog.Error("refusing to start: fix the problems above, or set SECURITY_MODE=warn to start anyway")
+		os.Exit(1)
+	}
+	if !cfg.Enforcing() {
+		slog.Warn("SECURITY_MODE=warn: policy violations are logged, not blocked. Run `selfhostly doctor --audit-apps`, then set SECURITY_MODE=enforce")
+	}
 
 	// Debug: show auth configuration
 	slog.Info("Auth configuration", "enabled", cfg.Auth.Enabled)
@@ -53,7 +88,7 @@ func main() {
 			clientID = clientID[:8]
 		}
 		slog.Info("GitHub OAuth configured", "client_id_prefix", clientID+"...")
-		
+
 		// Show allowed users count (but not the actual usernames for security)
 		if len(cfg.Auth.GitHub.AllowedUsers) > 0 {
 			slog.Info("GitHub whitelist configured", "allowed_users_count", len(cfg.Auth.GitHub.AllowedUsers))
@@ -70,10 +105,49 @@ func main() {
 	}
 	defer database.Close()
 
+	// Secrets at rest: reading accepts plaintext and ciphertext; writes are encrypted when enabled
+	dataDir := filepath.Dir(cfg.DatabasePath)
+	secretKey, found := secrets.FindKey(cfg.Security.SettingsEncryptionKey, dataDir)
+	if !found {
+		// Never invent a new key next to data that was encrypted with a different one
+		if database.HasSealedSecrets() {
+			slog.Error("stored secrets are encrypted but no key is available: restore secrets.key into " + dataDir +
+				" (or set SETTINGS_ENCRYPTION_KEY) from your backup. Nothing was changed")
+			os.Exit(1)
+		}
+		secretKey, err = secrets.CreateKey(dataDir)
+		if err != nil {
+			slog.Error("Failed to create secrets key", "error", err)
+			os.Exit(1)
+		}
+	}
+	box, err := secrets.NewBox(secretKey, cfg.Security.EncryptSecretsAtRest)
+	if err != nil {
+		slog.Error("Failed to initialise secrets", "error", err)
+		os.Exit(1)
+	}
+	database.SetSecretBox(box)
+
+	// The database knows who this node is: use its ID unless one was set explicitly
+	if id, err := database.PrimaryNodeID(); err == nil && cfg.AdoptPrimaryIdentity(id, true) {
+		slog.Info("node id adopted from the database", "node_id", id)
+	}
+
+	// Logged here, after the database has been consulted, so it shows what this start really uses
+	logEffectiveConfig(cfg)
+
 	// Initialize node (bootstrap for primary nodes)
 	if err := database.InitNode(cfg); err != nil {
 		slog.Error("Failed to initialize node", "error", err)
 		os.Exit(1)
+	}
+
+	if err := database.MigrateSecrets(); err != nil {
+		slog.Error("Failed to encrypt secrets at rest", "error", err)
+		os.Exit(1)
+	}
+	if err := database.PruneAudit(auditRetention); err != nil {
+		slog.Warn("Failed to prune audit log", "error", err)
 	}
 
 	// Verify node setup
@@ -96,16 +170,16 @@ func main() {
 			"node_id", cfg.Node.ID,
 			"node_name", cfg.Node.Name,
 			"api_endpoint", cfg.Node.APIEndpoint,
-			"api_key", cfg.Node.APIKey,
+			"api_key_source", "NODE_API_KEY, or the node-api-key file next to the database",
 			"register_url", cfg.Node.PrimaryNodeURL+"/nodes")
-		
+
 		if cfg.Node.APIEndpoint == "" {
 			slog.Warn("NODE_API_ENDPOINT not set - using placeholder",
 				"placeholder", "http://<this-server-ip>"+cfg.ServerAddress)
 		}
-		
+
 		slog.Info("CRITICAL: Copy the Node ID above - required for heartbeat authentication!")
-		slog.Info("IMPORTANT: Save NODE_ID and NODE_API_KEY to .env to keep them consistent")
+		slog.Info("NODE_ID and NODE_API_KEY are persisted next to the database, so they survive restarts")
 		slog.Info("INFO: Server will start but cannot manage apps until registered")
 	} else {
 		// Find primary or current node

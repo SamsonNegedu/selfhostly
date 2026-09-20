@@ -11,6 +11,7 @@ import (
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/domain"
 	"github.com/selfhostly/internal/node"
+	nodepkg "github.com/selfhostly/internal/node"
 )
 
 // nodeService implements node management operations
@@ -41,33 +42,31 @@ func (s *nodeService) RegisterNode(ctx context.Context, req domain.RegisterNodeR
 
 	// Validate node ID is provided
 	if req.ID == "" {
-		return nil, fmt.Errorf("node ID is required for registration")
+		return nil, domain.WrapValidationError("id", fmt.Errorf("node ID is required"))
+	}
+	if err := node.ValidateEndpoint(req.APIEndpoint); err != nil {
+		return nil, domain.WrapValidationError("api_endpoint", err)
 	}
 
 	// Check if node with this ID already exists
 	existingNodeByID, err := s.database.GetNode(req.ID)
 	if err == nil && existingNodeByID != nil {
-		return nil, fmt.Errorf("node with ID %s already exists", req.ID)
+		return nil, domain.WrapConflict(domain.CodeNodeIDTaken, "id", fmt.Sprintf("a node with ID %s is already in the cluster", req.ID))
 	}
 
 	// Check if node with this name already exists
 	existingNode, err := s.database.GetNodeByName(req.Name)
 	if err == nil && existingNode != nil {
-		return nil, fmt.Errorf("node with name %s already exists", req.Name)
+		return nil, domain.WrapConflict(domain.CodeNodeNameTaken, "name", fmt.Sprintf("a node named %s is already in the cluster", req.Name))
 	}
 
 	// Create new node with the provided ID
 	newNode := db.NewNodeWithID(req.ID, req.Name, req.APIEndpoint, req.APIKey, false)
 
-	// Perform initial health check
-	if err := s.nodeClient.HealthCheck(newNode); err != nil {
-		s.logger.WarnContext(ctx, "health check failed for new node", "name", req.Name, "error", err)
-		newNode.Status = "unreachable"
-	} else {
-		newNode.Status = "online"
-		now := time.Now()
-		newNode.LastSeen = &now
-	}
+	// The node is saved as soon as it is known. Its first health check runs in the background, because an
+	// address that does not answer would otherwise make the caller wait for the full network timeout.
+	newNode.Status = "unknown"
+	newNode.LastSeen = nil
 
 	// Save to database
 	if err := s.database.CreateNode(newNode); err != nil {
@@ -76,6 +75,15 @@ func (s *nodeService) RegisterNode(ctx context.Context, req domain.RegisterNodeR
 	}
 
 	s.logger.InfoContext(ctx, "node registered successfully", "name", req.Name, "id", newNode.ID)
+
+	go func(nodeID string) {
+		checkCtx, cancel := context.WithTimeout(context.Background(), constants.HTTPClientTimeout*2)
+		defer cancel()
+		if err := s.HealthCheckNode(checkCtx, nodeID); err != nil {
+			s.logger.WarnContext(checkCtx, "first health check of new node failed", "nodeID", nodeID, "error", err)
+		}
+	}(newNode.ID)
+
 	return newNode, nil
 }
 
@@ -85,7 +93,7 @@ func (s *nodeService) GetNode(ctx context.Context, nodeID string) (*db.Node, err
 
 	node, err := s.database.GetNode(nodeID)
 	if err != nil {
-		return nil, fmt.Errorf("node not found: %w", err)
+		return nil, domain.WrapNodeNotFound(nodeID, err)
 	}
 
 	return node, nil
@@ -110,7 +118,7 @@ func (s *nodeService) UpdateNode(ctx context.Context, nodeID string, req domain.
 
 	node, err := s.database.GetNode(nodeID)
 	if err != nil {
-		return nil, fmt.Errorf("node not found: %w", err)
+		return nil, domain.WrapNodeNotFound(nodeID, err)
 	}
 
 	// Update fields
@@ -118,6 +126,9 @@ func (s *nodeService) UpdateNode(ctx context.Context, nodeID string, req domain.
 		node.Name = req.Name
 	}
 	if req.APIEndpoint != "" {
+		if err := nodepkg.ValidateEndpoint(req.APIEndpoint); err != nil {
+			return nil, domain.WrapValidationError("api_endpoint", err)
+		}
 		node.APIEndpoint = req.APIEndpoint
 	}
 	if req.APIKey != "" {
@@ -136,32 +147,48 @@ func (s *nodeService) UpdateNode(ctx context.Context, nodeID string, req domain.
 }
 
 // DeleteNode removes a node from the cluster
-func (s *nodeService) DeleteNode(ctx context.Context, nodeID string) error {
-	s.logger.InfoContext(ctx, "deleting node", "nodeID", nodeID)
+func (s *nodeService) DeleteNode(ctx context.Context, nodeID string, force bool) error {
+	s.logger.InfoContext(ctx, "deleting node", "nodeID", nodeID, "force", force)
 
 	node, err := s.database.GetNode(nodeID)
 	if err != nil {
-		return fmt.Errorf("node not found: %w", err)
+		return domain.WrapNodeNotFound(nodeID, err)
 	}
 
-	// Prevent deletion of primary node
-	if node.IsPrimary {
-		return fmt.Errorf("cannot delete primary node")
+	// The machine this server runs on cannot be removed from itself. Any other node can, including a primary
+	// record left over from a machine that no longer exists.
+	if nodeID == s.config.Node.ID {
+		return domain.WrapConflict(domain.CodeCurrentNode, "", fmt.Sprintf("%s is the machine you are connected to, so it cannot be removed from here", node.Name))
 	}
 
-	// Check if node has apps
 	apps, err := s.database.GetAllApps()
 	if err != nil {
 		s.logger.WarnContext(ctx, "failed to check for apps on node", "nodeID", nodeID, "error", err)
-	} else {
-		appsOnNode := 0
-		for _, app := range apps {
-			if app.NodeID == nodeID {
-				appsOnNode++
-			}
+	}
+	var onNode []*db.App
+	for _, app := range apps {
+		if app.NodeID == nodeID {
+			onNode = append(onNode, app)
 		}
-		if appsOnNode > 0 {
-			return fmt.Errorf("cannot delete node with %d apps still deployed", appsOnNode)
+	}
+
+	if len(onNode) > 0 {
+		noun := "apps"
+		if len(onNode) == 1 {
+			noun = "app"
+		}
+		if !force {
+			return domain.WrapConflict(domain.CodeNodeHasApps, "", fmt.Sprintf("%s still has %d %s. Delete them first", node.Name, len(onNode), noun))
+		}
+		// Forcing is for a node that cannot answer. One that answers can have its apps deleted properly.
+		if node.Status == "online" {
+			return domain.WrapConflict(domain.CodeNodeOnline, "", fmt.Sprintf("%s is online, so delete its %s the normal way first", node.Name, noun))
+		}
+		for _, app := range onNode {
+			if err := s.database.DeleteApp(app.ID); err != nil {
+				return domain.WrapDatabaseOperation("delete app record", err)
+			}
+			s.logger.WarnContext(ctx, "dropped the record of an app on an unreachable node", "nodeID", nodeID, "appID", app.ID, "app", app.Name)
 		}
 	}
 
@@ -180,11 +207,11 @@ func (s *nodeService) HealthCheckNode(ctx context.Context, nodeID string) error 
 
 	node, err := s.database.GetNode(nodeID)
 	if err != nil {
-		return fmt.Errorf("node not found: %w", err)
+		return domain.WrapNodeNotFound(nodeID, err)
 	}
 
 	// Perform health check
-	err = s.nodeClient.HealthCheck(node)
+	latency, err := s.nodeClient.HealthCheckTimed(node)
 	now := time.Now()
 
 	if err != nil {
@@ -200,6 +227,10 @@ func (s *nodeService) HealthCheckNode(ctx context.Context, nodeID string) error 
 		} else if node.ConsecutiveFailures >= 3 {
 			node.Status = "offline"
 		}
+		// A node that has never answered is not merely slow to be marked offline, it is not reachable.
+		if oldStatus == "unknown" {
+			node.Status = "unreachable"
+		}
 
 		s.logger.WarnContext(ctx, "node health check failed",
 			"nodeID", nodeID,
@@ -214,7 +245,8 @@ func (s *nodeService) HealthCheckNode(ctx context.Context, nodeID string) error 
 		node.Status = "online"
 		node.LastSeen = &now
 		node.LastHealthCheck = &now
-		s.logger.DebugContext(ctx, "node health check succeeded", "nodeID", nodeID)
+		node.LastLatencyMs = int(latency.Milliseconds())
+		s.logger.DebugContext(ctx, "node health check succeeded", "nodeID", nodeID, "latency_ms", node.LastLatencyMs)
 	}
 
 	node.UpdatedAt = now
@@ -398,7 +430,7 @@ func (s *nodeService) NodeHeartbeat(ctx context.Context, nodeID string) error {
 
 	node, err := s.database.GetNode(nodeID)
 	if err != nil {
-		return fmt.Errorf("node not found: %w", err)
+		return domain.WrapNodeNotFound(nodeID, err)
 	}
 
 	// Reset failure counter and mark as online
@@ -416,4 +448,68 @@ func (s *nodeService) NodeHeartbeat(ctx context.Context, nodeID string) error {
 
 	s.logger.InfoContext(ctx, "node heartbeat processed successfully", "nodeID", nodeID, "nodeName", node.Name)
 	return nil
+}
+
+// GetSettings returns the cluster settings a secondary syncs from the primary
+func (s *nodeService) GetSettings(_ context.Context) (*db.Settings, error) {
+	settings, err := s.database.GetSettings()
+	if err != nil {
+		return nil, domain.WrapDatabaseOperation("get settings", err)
+	}
+	return settings, nil
+}
+
+// AutoRegisterNode authenticates a secondary with the shared registration token or a single-use join
+// token and records it. The node is saved as unreachable first, because the health check looks it up in
+// the database: checking before the insert reported every node unreachable however reachable it was.
+func (s *nodeService) AutoRegisterNode(ctx context.Context, req domain.AutoRegisterRequest) (*domain.AutoRegistration, error) {
+	authenticated := constantTimeEqual(req.Token, s.config.Node.RegistrationToken)
+	if !authenticated {
+		ok, err := s.database.ConsumeJoinToken(req.Token, req.ID)
+		if err != nil {
+			return nil, domain.WrapDatabaseOperation("check join token", err)
+		}
+		authenticated = ok
+	}
+	if !authenticated {
+		s.logger.WarnContext(ctx, "node registration rejected: invalid token", "node_name", req.Name)
+		return nil, domain.ErrRegistrationUnauthorized
+	}
+	if err := node.ValidateEndpoint(req.APIEndpoint); err != nil {
+		return nil, domain.WrapValidationError("api_endpoint", err)
+	}
+
+	if existing, err := s.database.GetNode(req.ID); err == nil && existing != nil {
+		// Re-registration (for example after a restart) may refresh the endpoint but must present the key
+		// already on record; replacing a node's key needs an explicit update by an admin.
+		if !constantTimeEqual(existing.APIKey, req.APIKey) {
+			s.logger.WarnContext(ctx, "node re-registration rejected: API key differs from the one on record", "node_id", req.ID)
+			return nil, domain.WrapConflict(domain.CodeNodeIDTaken, "id",
+				"this node is already registered with a different API key; update its key from the primary instead of re-registering")
+		}
+		existing.Name = req.Name
+		existing.APIEndpoint = req.APIEndpoint
+		existing.Status = constants.NodeStatusOnline
+		if err := s.database.UpdateNode(existing); err != nil {
+			return nil, domain.WrapDatabaseOperation("update existing node", err)
+		}
+		return &domain.AutoRegistration{Node: existing}, nil
+	}
+	if other, err := s.database.GetNodeByName(req.Name); err == nil && other != nil {
+		return nil, domain.WrapConflict(domain.CodeNodeNameTaken, "name",
+			fmt.Sprintf("a node named %s is already registered with a different ID", req.Name))
+	}
+
+	n := db.NewNodeWithID(req.ID, req.Name, req.APIEndpoint, req.APIKey, false)
+	n.Status = constants.NodeStatusUnreachable
+	if err := s.database.CreateNode(n); err != nil {
+		return nil, domain.WrapDatabaseOperation("register node", err)
+	}
+	if err := s.HealthCheckNode(ctx, n.ID); err != nil {
+		s.logger.WarnContext(ctx, "health check failed for auto-registered node", "name", req.Name, "error", err)
+	} else {
+		n.Status = constants.NodeStatusOnline
+	}
+	s.logger.InfoContext(ctx, "node auto-registered", "id", req.ID, "name", req.Name, "status", n.Status)
+	return &domain.AutoRegistration{Node: n, Created: true}, nil
 }

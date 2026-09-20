@@ -1,34 +1,36 @@
 import * as React from "react"
+import * as TooltipPrimitive from "@radix-ui/react-tooltip"
+
 import { cn } from "@/shared/lib/utils"
 
+const OPEN_DELAY_MS = 200
+
+// Existing call sites use TooltipProvider as the wrapper of a single tooltip, so it provides the
+// Radix provider and root together. Content is portaled, so it is never clipped by a table or card.
 const TooltipProvider = ({ children }: { children: React.ReactNode }) => (
-    <div className="group relative inline-block">{children}</div>
+    <TooltipPrimitive.Provider delayDuration={OPEN_DELAY_MS}>
+        <TooltipPrimitive.Root>{children}</TooltipPrimitive.Root>
+    </TooltipPrimitive.Provider>
 )
 
-const TooltipTrigger = ({ children, asChild = false }: { children: React.ReactNode; asChild?: boolean }) => {
-    if (asChild) {
-        return <>{children}</>
-    }
-    return <>{children}</>
-}
+const TooltipTrigger = TooltipPrimitive.Trigger
 
-const TooltipContent = ({
-    children,
-    className,
-}: { children: React.ReactNode; className?: string }) => (
-    <div
-        className={cn(
-            "absolute z-50 hidden group-hover:block bg-popover text-popover-foreground border shadow-lg text-xs rounded py-1 px-2 -top-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap",
-            className
-        )}
-    >
-        {children}
-    </div>
-)
+const TooltipContent = React.forwardRef<
+    React.ElementRef<typeof TooltipPrimitive.Content>,
+    React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Content>
+>(({ className, sideOffset = 6, ...props }, ref) => (
+    <TooltipPrimitive.Portal>
+        <TooltipPrimitive.Content
+            ref={ref}
+            sideOffset={sideOffset}
+            className={cn(
+                "z-50 max-w-xs rounded-md border border-border bg-popover px-2.5 py-1.5 text-xs text-popover-foreground shadow-md",
+                className
+            )}
+            {...props}
+        />
+    </TooltipPrimitive.Portal>
+))
+TooltipContent.displayName = TooltipPrimitive.Content.displayName
 
-const Tooltip = ({ children }: { children: React.ReactNode }) => {
-    return <>{children}</>
-}
-
-export default Tooltip
 export { TooltipProvider, TooltipTrigger, TooltipContent }

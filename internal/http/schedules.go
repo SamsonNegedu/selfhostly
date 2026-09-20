@@ -167,16 +167,16 @@ func (s *Server) testAppSchedule(c *gin.Context) {
 	if err != nil {
 		// Check if it's a validation error (client error) or server error
 		errMsg := err.Error()
-		if strings.Contains(errMsg, "cannot be the same") || 
-		   strings.Contains(errMsg, "must occur after") ||
-		   strings.Contains(errMsg, "invalid") || 
-		   strings.Contains(errMsg, "failed to parse") ||
-		   strings.Contains(errMsg, "failed to load timezone") {
+		if strings.Contains(errMsg, "cannot be the same") ||
+			strings.Contains(errMsg, "must occur after") ||
+			strings.Contains(errMsg, "invalid") ||
+			strings.Contains(errMsg, "failed to parse") ||
+			strings.Contains(errMsg, "failed to load timezone") {
 			slog.WarnContext(c.Request.Context(), "invalid schedule configuration", "app_id", appID, "error", err)
 			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
 			return
 		}
-		
+
 		slog.ErrorContext(c.Request.Context(), "failed to calculate next run times", "app_id", appID, "error", err)
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to calculate next run times"})
 		return
