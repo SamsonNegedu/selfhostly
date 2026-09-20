@@ -1,170 +1,107 @@
-import { useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Cloud, Activity, Settings, ChevronLeft, ChevronRight, X, Network, Package } from 'lucide-react';
+import { Activity, ChevronLeft, ChevronRight, Globe, LayoutGrid, Server, SlidersHorizontal } from 'lucide-react';
 import { Button } from '../ui/Button';
-import { NodeSelector } from '../ui/NodeSelector';
-import { useNodeContext } from '../../contexts/NodeContext';
+import ClusterStatus from './ClusterStatus';
+import { useAttention } from '@/shared/hooks/useAttention';
+import { ROUTES } from '@/shared/lib/routes';
 
 interface SidebarProps {
-  isOpen: boolean;
-  onClose: () => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
 }
 
 const navItems = [
-  { path: '/apps', label: 'Apps', icon: Package },
-  { path: '/nodes', label: 'Nodes', icon: Network },
-  { path: '/cloudflare', label: 'Cloudflare', icon: Cloud },
-  { path: '/monitoring', label: 'Monitoring', icon: Activity },
-  { path: '/settings', label: 'Settings', icon: Settings },
+  { path: ROUTES.fleet, label: 'Fleet', icon: LayoutGrid, showsAttention: true },
+  { path: ROUTES.nodes, label: 'Nodes', icon: Server },
+  { path: ROUTES.access, label: 'Access', icon: Globe },
+  { path: ROUTES.insights, label: 'Insights', icon: Activity },
+  { path: ROUTES.settings, label: 'Settings', icon: SlidersHorizontal },
 ];
 
-function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse }: SidebarProps) {
+// The desktop navigation. Phones use the bottom tab bar instead.
+function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
   const location = useLocation();
-  const { selectedNodeIds, setSelectedNodeIds } = useNodeContext();
-
-  // Close sidebar on ESC key (mobile only)
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose();
-      }
-    };
-
-    document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
-  }, [isOpen, onClose]);
-
-  // Prevent body scroll when mobile sidebar is open
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [isOpen]);
+  const { failedApps } = useAttention();
 
   const isActive = (path: string) => {
-    if (path === '/apps') {
-      return location.pathname === '/apps' || location.pathname === '/';
+    if (path === ROUTES.fleet) {
+      return location.pathname === '/' || location.pathname.startsWith('/apps');
     }
     return location.pathname.startsWith(path);
   };
 
   return (
-    <>
-      {/* Backdrop for mobile */}
-      {isOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-30 md:hidden transition-opacity duration-200"
-          onClick={onClose}
-          aria-hidden="true"
-        />
-      )}
-
-      {/* Sidebar */}
-      <aside
-        className={`
-          fixed md:static inset-y-0 left-0 z-40
-          bg-card border-r border-border
-          transition-all duration-300 ease-in-out
-          flex flex-col
-          ${isCollapsed ? 'md:w-16' : 'md:w-60'}
-          ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-          w-60
-        `}
-        role="navigation"
-        aria-label="Main navigation"
+    <aside
+      className={`
+        hidden md:flex flex-col shrink-0
+        bg-background border-r border-border
+        transition-all duration-300 ease-in-out
+        ${isCollapsed ? 'w-16' : 'w-[216px]'}
+      `}
+      aria-label="Main navigation"
+    >
+      <Link
+        to="/apps"
+        className={`flex items-center gap-2.5 pb-4 pt-5 ${isCollapsed ? 'justify-center' : 'px-4'}`}
+        aria-label="Selfhostly home"
       >
-        {/* Mobile close button */}
-        <div className="md:hidden flex items-center justify-between p-4 border-b border-border">
-          <span className="font-semibold text-lg">Menu</span>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onClose}
-            aria-label="Close menu"
-          >
-            <X className="h-5 w-5" />
-          </Button>
-        </div>
+        <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+          <Server className="h-[17px] w-[17px]" />
+        </span>
+        {!isCollapsed && <span className="text-base font-semibold">Selfhostly</span>}
+      </Link>
 
-        {/* Global Node Selector */}
-        <div className={`border-b border-border p-4`}>
-          <NodeSelector
-            selectedNodeIds={selectedNodeIds}
-            onChange={setSelectedNodeIds}
-            multiSelect={true}
-            className="w-full"
-            collapsed={isCollapsed}
-          />
-        </div>
+      <nav className="flex-1 overflow-y-auto px-3 space-y-1">
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          const active = isActive(item.path);
+          const showBadge = item.showsAttention && failedApps > 0;
 
-        {/* Navigation items */}
-        <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const active = isActive(item.path);
-
-            return (
-              <Link
-                key={item.path}
-                to={item.path}
-                onClick={() => {
-                  // Close mobile sidebar after navigation
-                  if (window.innerWidth < 768) {
-                    onClose();
-                  }
-                }}
-                className={`
-                  flex items-center gap-3 px-3 py-2.5 rounded-lg
-                  transition-colors duration-150
-                  ${active
-                    ? 'bg-primary text-primary-foreground font-semibold'
-                    : 'text-foreground hover:bg-accent hover:text-accent-foreground'
-                  }
-                  ${isCollapsed ? 'md:justify-center' : ''}
-                `}
-                aria-label={item.label}
-                aria-current={active ? 'page' : undefined}
-              >
-                <Icon className="h-5 w-5 flex-shrink-0" />
+          return (
+            <Link
+              key={item.path}
+              to={item.path}
+              className={`
+                flex min-h-[38px] items-center gap-3 rounded-lg px-3
+                text-sm transition-colors duration-150
+                ${active
+                  ? 'bg-primary text-primary-foreground font-semibold'
+                  : 'font-medium text-foreground hover:bg-accent hover:text-accent-foreground'
+                }
+                ${isCollapsed ? 'justify-center px-0' : ''}
+              `}
+              aria-label={showBadge ? `${item.label}, ${failedApps} failed` : item.label}
+              aria-current={active ? 'page' : undefined}
+            >
+              <Icon className="h-[17px] w-[17px] flex-shrink-0" />
+              {!isCollapsed && <span className="flex-1">{item.label}</span>}
+              {showBadge && !isCollapsed && (
                 <span
-                  className={`
-                    font-medium transition-opacity duration-200
-                    ${isCollapsed ? 'md:hidden' : ''}
-                  `}
+                  aria-hidden="true"
+                  className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-destructive px-1 text-[11px] font-semibold text-destructive-foreground"
                 >
-                  {item.label}
+                  {failedApps}
                 </span>
-              </Link>
-            );
-          })}
-        </nav>
+              )}
+            </Link>
+          );
+        })}
+      </nav>
 
-        {/* Collapse toggle (desktop only) */}
-        <div className="hidden md:flex p-3 border-t border-border">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onToggleCollapse}
-            className={`w-full ${isCollapsed ? 'justify-center' : 'justify-between'}`}
-            aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            {!isCollapsed && <span className="text-sm">Collapse</span>}
-            {isCollapsed ? (
-              <ChevronRight className="h-4 w-4" />
-            ) : (
-              <ChevronLeft className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
-      </aside>
-    </>
+      <div className="space-y-2 p-3">
+        <ClusterStatus collapsed={isCollapsed} />
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onToggleCollapse}
+          className={`w-full ${isCollapsed ? 'justify-center' : 'justify-between'}`}
+          aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {!isCollapsed && <span className="text-sm">Collapse</span>}
+          {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+        </Button>
+      </div>
+    </aside>
   );
 }
 

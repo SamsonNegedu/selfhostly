@@ -89,9 +89,7 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 	}
 
 	// Validate compose content with security config
-	securityConfig := &validation.SecurityConfig{
-		AllowedVolumePaths: s.config.Security.AllowedVolumePaths,
-	}
+	securityConfig := validation.NewSecurityConfig(s.config, req.Name)
 	if err := validation.ValidateComposeContentWithConfig(req.ComposeContent, securityConfig); err != nil {
 		s.logger.WarnContext(ctx, "invalid compose content", "error", err)
 		return nil, domain.WrapValidationError("compose content", err)
@@ -428,9 +426,13 @@ func (s *appService) UpdateApp(ctx context.Context, appID string, nodeID string,
 
 	// Validate compose content if provided
 	if req.ComposeContent != "" {
-		securityConfig := &validation.SecurityConfig{
-			AllowedVolumePaths: s.config.Security.AllowedVolumePaths,
+		policyName := req.Name
+		if policyName == "" {
+			if existing, err := s.database.GetApp(appID); err == nil {
+				policyName = existing.Name
+			}
 		}
+		securityConfig := validation.NewSecurityConfig(s.config, policyName)
 		if err := validation.ValidateComposeContentWithConfig(req.ComposeContent, securityConfig); err != nil {
 			s.logger.WarnContext(ctx, "invalid compose content", "error", err)
 			return nil, domain.WrapValidationError("compose content", err)
@@ -1032,7 +1034,7 @@ func (s *appService) RestartCloudflared(ctx context.Context, appID string, nodeI
 // RestartAppService restarts a specific service within an app
 func (s *appService) RestartAppService(ctx context.Context, appID string, nodeID string, serviceName string) error {
 	s.logger.InfoContext(ctx, "restarting app service", "appID", appID, "nodeID", nodeID, "service", serviceName)
-	
+
 	app, err := s.database.GetApp(appID)
 	if err != nil {
 		s.logger.DebugContext(ctx, "app not found for service restart", "appID", appID)
@@ -1134,9 +1136,7 @@ func (s *appService) CreateAppAsync(ctx context.Context, req domain.CreateAppReq
 	}
 
 	// Validate compose content with security config
-	securityConfig := &validation.SecurityConfig{
-		AllowedVolumePaths: s.config.Security.AllowedVolumePaths,
-	}
+	securityConfig := validation.NewSecurityConfig(s.config, req.Name)
 	if err := validation.ValidateComposeContentWithConfig(req.ComposeContent, securityConfig); err != nil {
 		s.logger.WarnContext(ctx, "invalid compose content", "error", err)
 		return nil, domain.WrapValidationError("compose content", err)
@@ -1345,7 +1345,7 @@ func (s *appService) SwitchAppToCustomTunnelAsync(ctx context.Context, appID str
 	if err != nil {
 		return nil, domain.WrapAppNotFound(appID, err)
 	}
-	
+
 	if app.TunnelMode != constants.TunnelModeQuick {
 		return nil, fmt.Errorf("app is not using Quick Tunnel (tunnel_mode=%q)", app.TunnelMode)
 	}
@@ -1460,7 +1460,7 @@ func (s *appService) StopAppAsync(ctx context.Context, appID string) (*db.Job, e
 
 	if existingJob != nil {
 		// Allow stop even if there's a start or update job (helps with cleanup)
-		s.logger.InfoContext(ctx, "app has existing job, but allowing stop for cleanup", 
+		s.logger.InfoContext(ctx, "app has existing job, but allowing stop for cleanup",
 			"appID", appID, "existingJobType", existingJob.Type)
 	}
 

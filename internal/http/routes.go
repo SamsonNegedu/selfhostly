@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/selfhostly/internal/constants"
 )
 
 // setupRoutes configures all API routes
@@ -36,11 +37,17 @@ func (s *Server) setupRoutes() {
 	s.engine.HEAD("/api/health", healthHandler)
 
 	// Node auto-registration: no pre-auth (node doesn't exist yet). Handler validates REGISTRATION_TOKEN in body.
-	s.engine.POST("/api/nodes/register", s.autoRegisterNode)
+	s.engine.POST("/api/nodes/register", s.registerRateLimitMiddleware(), s.autoRegisterNode)
+
+	// Outbound node link: a secondary dials here (WebSocket). It carries its own credentials, so it is
+	// outside the user login group, and rate limited like registration.
+	s.engine.GET(constants.LinkPath, s.registerRateLimitMiddleware(), s.nodeConnect)
 
 	// Single API: user auth OR node auth (composite auth)
 	api := s.engine.Group("/api")
 	api.Use(s.userOrNodeAuthMiddleware())
+	// Requests for a node that dialled out are forwarded down its link
+	api.Use(s.forwardToLinkedNode())
 	{
 		// App routes (resolveNodeMiddleware sets node_id_param for resource-by-id when user auth)
 		s.setupAppRoutes(api)
@@ -60,8 +67,18 @@ func (s *Server) setupRoutes() {
 		// Job routes (require node_id from query for routing)
 		s.setupJobRoutes(api)
 
+		// Changes as they happen, for browsers. Node credentials cannot open it.
+		api.GET("/events", s.denyNodeAuthMiddleware(), s.streamEvents)
+
 		// Node-only routes (require node auth)
 		api.POST("/nodes/:id/heartbeat", s.requireNodeAuthMiddleware(), s.sendNodeHeartbeat)
+
+		// Security administration: user-level only, never reachable with node credentials
+		security := api.Group("/security", s.denyNodeAuthMiddleware())
+		{
+			security.POST("/revoke-sessions", s.revokeSessions)
+			security.GET("/audit", s.listAudit)
+		}
 
 		// User info endpoint (only when auth is enabled)
 		if s.authService != nil {
@@ -181,6 +198,7 @@ func (s *Server) setupNodeRoutes(api *gin.RouterGroup) {
 	{
 		nodes.GET("", s.listNodes)
 		nodes.POST("", s.registerNode)
+		nodes.POST("/join-tokens", s.denyNodeAuthMiddleware(), s.createJoinToken)
 		nodes.GET("/:id", s.getNode)
 		nodes.PUT("/:id", s.updateNode)
 		nodes.DELETE("/:id", s.deleteNode)

@@ -1,7 +1,14 @@
 import { useState, useEffect, useRef } from 'react'
-import { Button } from '@/shared/components/ui/Button'
-import { Play, Square, RefreshCw, Trash2, Loader2, RotateCcw } from 'lucide-react'
-import { TooltipProvider, TooltipContent, TooltipTrigger } from '@/shared/components/ui/Tooltip'
+import { createPortal } from 'react-dom'
+import { ExternalLink, Loader2, MoreHorizontal, Play, RefreshCw, RotateCcw, Square, Trash2 } from 'lucide-react'
+import { Button, buttonClasses } from '@/shared/components/ui/Button'
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/shared/components/ui/DropdownMenu'
 import { useJobPolling } from '@/shared/hooks/useJobPolling'
 import { useAppJobs, useQueryClient } from '@/shared/services/api'
 import { JobProgress } from '@/shared/components/ui/JobProgress'
@@ -11,32 +18,32 @@ interface AppActionsProps {
     appId: string
     nodeId: string
     appStatus: 'running' | 'stopped' | 'updating' | 'error' | 'pending'
-    isStartPending: boolean
-    isStopPending: boolean
-    isUpdatePending: boolean
-    isDeletePending: boolean
+    publicUrl?: string
+    // True while a start, stop, update or delete is in flight.
+    isBusy: boolean
     isRefreshing?: boolean
     onStart: () => void
     onStop: () => void
     onUpdate: () => void
     onDelete: () => void
     onRefresh?: () => void
+    // On a phone the actions sit in a bar above the tab bar, so they stay in reach while the page scrolls.
+    sticky?: boolean
 }
 
 export function AppActions({
     appId,
     nodeId,
     appStatus,
-    isStartPending,
-    isStopPending,
-    isUpdatePending,
-    isDeletePending,
+    publicUrl,
+    isBusy,
     isRefreshing = false,
     onStart,
     onStop,
     onUpdate,
     onDelete,
-    onRefresh
+    onRefresh,
+    sticky = false
 }: AppActionsProps) {
     const queryClient = useQueryClient()
     const { toast } = useToast()
@@ -154,145 +161,93 @@ export function AppActions({
             processedJobIdsRef.current.clear()
             ids.slice(-10).forEach(id => processedJobIdsRef.current.add(id))
         }
+    // Each job is handled once (processedJobIdsRef), when its id or status changes. Its message fields are read
+    // at that moment and must not retrigger this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentJob?.id, currentJob?.status, currentJob?.type, appId, nodeId, toast, queryClient])
 
-    const isAnyActionPending = isStartPending || isStopPending || isUpdatePending || isDeletePending
-
     const isRunning = appStatus === 'running'
-    const isStopped = appStatus === 'stopped'
+    const canStart = appStatus === 'stopped' || appStatus === 'error'
     const hasActiveJob = !!(currentJob && (currentJob.status === 'pending' || currentJob.status === 'running'))
+    const disabled = isBusy || hasActiveJob || appStatus === 'updating'
+
+    const startButton = canStart && (
+        <Button onClick={onStart} disabled={disabled} className={sticky ? 'flex-1' : undefined}>
+            {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+            {appStatus === 'error' ? 'Retry start' : 'Start'}
+        </Button>
+    )
+    const stopButton = isRunning && (
+        <Button variant="outline" onClick={onStop} disabled={disabled} className={sticky ? 'flex-1' : undefined}>
+            {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-4 w-4" />}
+            Stop
+        </Button>
+    )
+    const updateButton = (
+        <Button variant="outline" onClick={onUpdate} disabled={disabled} title="Pull the latest images and restart" className={sticky && !canStart && !isRunning ? 'flex-1' : undefined}>
+            <RotateCcw className="h-4 w-4" />
+            Update
+        </Button>
+    )
+    const openLink = isRunning && publicUrl && (
+        <a href={publicUrl} target="_blank" rel="noopener noreferrer" aria-label={sticky ? 'Open the app' : undefined} className={buttonClasses({ variant: 'outline', size: sticky ? 'icon' : 'default' })}>
+            <ExternalLink className="h-4 w-4" />
+            {!sticky && 'Open'}
+        </a>
+    )
+    const menu = (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" aria-label="More actions">
+                    <MoreHorizontal className="h-4 w-4" />
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+                {onRefresh && (
+                    <DropdownMenuItem onSelect={onRefresh} disabled={isRefreshing}>
+                        <RefreshCw className={`mr-2 h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                        Refresh
+                    </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={onDelete} disabled={disabled} className="text-destructive focus:text-destructive">
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete
+                </DropdownMenuItem>
+            </DropdownMenuContent>
+        </DropdownMenu>
+    )
+
+    if (sticky) {
+        return createPortal(
+            <div role="region" aria-label="App actions" className="fixed inset-x-0 bottom-[var(--mobile-nav-h)] z-30 flex flex-col gap-2 border-t border-border bg-card p-3">
+                {hasActiveJob && currentJob && <JobProgress job={currentJob} compact />}
+                <div className="flex items-center gap-2">
+                    {startButton}
+                    {stopButton}
+                    {updateButton}
+                    {openLink}
+                    {menu}
+                </div>
+            </div>,
+            document.body
+        )
+    }
 
     return (
-        <div className="flex flex-col items-end gap-2">
-            {/* Show job progress if there's an active job */}
+        <div className="flex flex-col gap-2 md:items-end">
             {hasActiveJob && currentJob && (
                 <div className="w-full max-w-md">
                     <JobProgress job={currentJob} compact />
                 </div>
             )}
 
-            {/* Action buttons - grouped by function */}
-            <div className="flex items-center gap-1 sm:gap-2">
-                {/* Primary Actions Group */}
-                <div className="flex items-center gap-0.5 sm:gap-1 border border-border rounded-lg p-0.5">
-                    {/* Start Button - shown when stopped */}
-                    {isStopped && (
-                        <TooltipProvider>
-                            <TooltipTrigger asChild>
-                                <Button
-                                    variant="default"
-                                    size="sm"
-                                    onClick={onStart}
-                                    disabled={isAnyActionPending || hasActiveJob}
-                                    className="h-7 sm:h-8 px-2 sm:px-3 gap-1 sm:gap-1.5"
-                                >
-                                    {isStartPending ? (
-                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                    ) : (
-                                        <Play className="h-3.5 w-3.5" />
-                                    )}
-                                    <span className="hidden xs:inline">Start</span>
-                                </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                                <p>Start application</p>
-                            </TooltipContent>
-                        </TooltipProvider>
-                    )}
-
-                    {/* Stop Button - shown when running */}
-                    {isRunning && (
-                        <TooltipProvider>
-                            <TooltipTrigger asChild>
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={onStop}
-                                    disabled={isAnyActionPending || hasActiveJob}
-                                    className="h-7 sm:h-8 px-2 sm:px-3 hover:bg-muted gap-1 sm:gap-1.5"
-                                >
-                                    {isStopPending ? (
-                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                    ) : (
-                                        <Square className="h-3.5 w-3.5" />
-                                    )}
-                                    <span className="hidden xs:inline">Stop</span>
-                                </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                                <p>Stop application</p>
-                            </TooltipContent>
-                        </TooltipProvider>
-                    )}
-
-                    {/* Update Button */}
-                    <TooltipProvider>
-                        <TooltipTrigger asChild>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={onUpdate}
-                                disabled={isAnyActionPending || hasActiveJob}
-                                className="h-7 sm:h-8 px-2 sm:px-3 hover:bg-muted gap-1 sm:gap-1.5"
-                            >
-                                {isUpdatePending ? (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                    <RotateCcw className="h-3.5 w-3.5" />
-                                )}
-                                <span className="hidden xs:inline">Update</span>
-                            </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                            <p>Pull latest images & restart</p>
-                        </TooltipContent>
-                    </TooltipProvider>
-                </div>
-
-                {/* Secondary Actions Group */}
-                <div className="flex items-center gap-0.5 sm:gap-1">
-                    {/* Refresh Button */}
-                    {onRefresh && (
-                        <TooltipProvider>
-                            <TooltipTrigger asChild>
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={onRefresh}
-                                    disabled={isRefreshing}
-                                    className="h-7 w-7 sm:h-8 sm:w-8 text-muted-foreground hover:text-foreground"
-                                >
-                                    <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-                                </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                                <p>Refresh</p>
-                            </TooltipContent>
-                        </TooltipProvider>
-                    )}
-
-                    {/* Delete Button */}
-                    <TooltipProvider>
-                        <TooltipTrigger asChild>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={onDelete}
-                                disabled={isAnyActionPending || hasActiveJob}
-                                className="h-7 w-7 sm:h-8 sm:w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                            >
-                                {isDeletePending ? (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                )}
-                            </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                            <p>Delete application</p>
-                        </TooltipContent>
-                    </TooltipProvider>
-                </div>
+            <div className="flex flex-wrap items-center gap-2">
+                {startButton}
+                {stopButton}
+                {updateButton}
+                {openLink}
+                {menu}
             </div>
         </div>
     )

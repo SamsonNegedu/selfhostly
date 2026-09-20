@@ -1,312 +1,146 @@
-import React, { useState } from 'react'
-import { Card, CardHeader, CardTitle, CardContent } from '@/shared/components/ui/Card'
+import { useState } from 'react'
+import { CheckCircle2, Loader2, Plus, Save, Trash2 } from 'lucide-react'
 import { Button } from '@/shared/components/ui/Button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/Card'
+import { Field } from '@/shared/components/ui/Field'
 import { Input } from '@/shared/components/ui/Input'
-import { Badge } from '@/shared/components/ui/Badge'
-import { Plus, Trash2, Save, AlertCircle, CheckCircle, Globe } from 'lucide-react'
-import { useQueryClient } from '@tanstack/react-query'
-import { useUpdateTunnelIngress, useCreateTunnelDNSRecord } from '@/shared/services/api'
+import { describeError } from '@/shared/lib/errors'
+import { useCreateTunnelDNSRecord, useUpdateTunnelIngress } from '@/shared/services/api'
 import type { IngressRule } from '@/shared/types/api'
 
 interface IngressConfigurationProps {
-    appId: string;
-    nodeId: string;
-    existingIngress?: IngressRule[];
-    existingHostname?: string;
-    tunnelID?: string;
-    onSave?: (rules: IngressRule[], hostname?: string) => void;
+    appId: string
+    nodeId: string
+    existingIngress?: IngressRule[]
+    onSave?: (rules: IngressRule[], hostname?: string) => void
+    // Drops the card and its title, for when it sits inside a sheet that already has one.
+    flat?: boolean
 }
 
-export function IngressConfiguration({ appId, nodeId, existingIngress = [], existingHostname: _existingHostname = '', tunnelID: _tunnelID, onSave }: IngressConfigurationProps) {
-    const queryClient = useQueryClient()
-    // Handle null/undefined values in existing ingress rules
-    const safeIngress = existingIngress || []
-    const sanitizedIngress = safeIngress.map(rule => ({
-        ...rule,
-        hostname: rule.hostname || null,
-        path: rule.path || null
-    }))
-    const [rules, setRules] = useState<IngressRule[]>(sanitizedIngress.length > 0 ? sanitizedIngress : [{ service: '', hostname: null, path: null }])
-    const [isSaving, setIsSaving] = useState(false)
-    const [saveError, setSaveError] = useState<string | null>(null)
-    const [saveSuccess, setSaveSuccess] = useState(false)
+const EMPTY_RULE: IngressRule = { service: '', hostname: null, path: null }
+const HOSTNAME_PATTERN = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i
+const SERVICE_PATTERN = /^https?:\/\/\S+$/i
 
-    const updateTunnelIngressMutation = useUpdateTunnelIngress()
-    const createDNSRecordMutation = useCreateTunnelDNSRecord()
+function normalize(rules: IngressRule[] | undefined): IngressRule[] {
+    const cleaned = (rules ?? []).map((rule) => ({ ...rule, hostname: rule.hostname || null, path: rule.path || null }))
+    return cleaned.length > 0 ? cleaned : [EMPTY_RULE]
+}
 
-    const addRule = () => {
-        setRules([...rules, { service: '', hostname: null, path: null }])
+// Which hostname goes to which service for one app's tunnel. Saving updates the tunnel and then creates a DNS
+// record for every hostname, so each address starts working without a visit to Cloudflare.
+export function IngressConfiguration({ appId, nodeId, existingIngress, onSave, flat = false }: IngressConfigurationProps) {
+    const [rules, setRules] = useState<IngressRule[]>(() => normalize(existingIngress))
+    const [saving, setSaving] = useState(false)
+    const [error, setError] = useState<string | null>(null)
+    const [saved, setSaved] = useState(false)
+    const [touched, setTouched] = useState(false)
+
+    const updateIngress = useUpdateTunnelIngress()
+    const createDns = useCreateTunnelDNSRecord()
+
+    const change = (index: number, patch: Partial<IngressRule>) => {
+        setRules(rules.map((rule, i) => (i === index ? { ...rule, ...patch } : rule)))
+        setSaved(false)
     }
 
-    const removeRule = (index: number) => {
-        if (rules.length > 1) {
-            const newRules = [...rules]
-            newRules.splice(index, 1)
-            setRules(newRules)
-        }
+    const hostnameError = (rule: IngressRule) => (rule.hostname && !HOSTNAME_PATTERN.test(rule.hostname) ? 'Enter a full hostname, such as app.example.com.' : undefined)
+    const serviceError = (rule: IngressRule) => {
+        if (rule.service.trim() === '') return touched ? 'Say where the app answers.' : undefined
+        return SERVICE_PATTERN.test(rule.service.trim()) ? undefined : 'Start with http:// or https://, for example http://web:80.'
     }
+    const invalid = rules.some((rule) => hostnameError(rule) || serviceError(rule))
+    const filled = rules.filter((rule) => rule.service.trim() !== '')
 
-    const updateRule = (index: number, field: keyof IngressRule, value: string | Record<string, any> | undefined | null) => {
-        const newRules = [...rules]
-        newRules[index] = { ...newRules[index], [field]: value || undefined }
-        setRules(newRules)
-    }
+    const save = async () => {
+        setTouched(true)
+        setError(null)
+        if (filled.length === 0) return setError('Add at least one route with a service address.')
+        if (invalid) return
+        const cleaned = filled.map((rule) => ({ ...rule, service: rule.service.trim(), hostname: rule.hostname?.trim() || null, path: rule.path?.trim() || null }))
+        const hostnames = [...new Set(cleaned.map((rule) => rule.hostname).filter((host): host is string => !!host))]
 
-    const getDefaultServiceUrl = () => {
-        // Try to infer service from existing data
-        const app = queryClient.getQueryData(['app', appId]) as any
-        if (app && app.compose_content) {
-            // Try to extract port from docker-compose content
-            const portMatch = app.compose_content.match(/ports:\s*\n\s*-\s*"(\d+):(\d+)"/)
-            if (portMatch) {
-                return `http://localhost:${portMatch[2]}`
-            }
-        }
-        return 'http://localhost:8080'
-    }
-
-    const handleSave = () => {
-        setIsSaving(true)
-        setSaveError(null)
-        setSaveSuccess(false)
-
-        // Validate all rules have service defined
-        const validRules = rules.filter(rule => rule.service.trim() !== '')
-        if (validRules.length === 0) {
-            setSaveError('At least one service must be defined')
-            setIsSaving(false)
+        setSaving(true)
+        try {
+            await updateIngress.mutateAsync({ appId, nodeId, ingressRules: cleaned, hostname: hostnames[0] })
+        } catch (failure) {
+            setError(describeError(failure))
+            setSaving(false)
             return
         }
-
-        // Extract all unique hostnames from rules for DNS record creation
-        const hostnames = validRules
-            .map(rule => rule.hostname)
-            .filter((h): h is string => h !== null && h !== undefined && h.trim() !== '')
-            .filter((value, index, self) => self.indexOf(value) === index) // unique values
-
-        // Update ingress configuration
-        updateTunnelIngressMutation.mutate(
-            {
-                appId,
-                nodeId,
-                ingressRules: validRules,
-                hostname: hostnames[0] || undefined, // Send first hostname for backward compatibility
-                targetDomain: undefined
-            },
-            {
-                onSuccess: () => {
-                    setSaveSuccess(true)
-                    setSaveError(null)
-
-                    // Immediately invalidate tunnel query for instant UI feedback (with nodeId)
-                    queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', appId, nodeId] })
-                    queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', appId] }) // Also invalidate without nodeId for backward compatibility
-
-                    // Create DNS records for all hostnames
-                    if (hostnames.length > 0) {
-                        const dnsPromises = hostnames.map(hostname =>
-                            createDNSRecordMutation.mutateAsync({
-                                appId,
-                                nodeId,
-                                hostname
-                            })
-                        )
-
-                        Promise.all(dnsPromises)
-                            .then(() => {
-                                // Invalidate all related queries to refresh UI (with nodeId)
-                                queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', appId, nodeId] })
-                                queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', appId] }) // Also invalidate without nodeId
-                                queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnels'] })
-                                queryClient.invalidateQueries({ queryKey: ['app', appId, nodeId] })
-                                queryClient.invalidateQueries({ queryKey: ['app', appId] }) // Also invalidate without nodeId
-                                queryClient.invalidateQueries({ queryKey: ['apps'] })
-                                onSave?.(validRules, hostnames[0])
-                            })
-                            .catch((error: Error) => {
-                                setSaveError(`Ingress configured but DNS creation failed: ${error.message}`)
-                            })
-                    } else {
-                        // Invalidate all related queries to refresh UI (with nodeId)
-                        queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', appId, nodeId] })
-                        queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnel', appId] }) // Also invalidate without nodeId
-                        queryClient.invalidateQueries({ queryKey: ['cloudflare', 'tunnels'] })
-                        queryClient.invalidateQueries({ queryKey: ['app', appId, nodeId] })
-                        queryClient.invalidateQueries({ queryKey: ['app', appId] }) // Also invalidate without nodeId
-                        queryClient.invalidateQueries({ queryKey: ['apps'] })
-                        onSave?.(validRules, undefined)
-                    }
-                },
-                onError: (error: Error) => {
-                    setSaveError(error.message)
-                    setSaveSuccess(false)
-                },
-                onSettled: () => {
-                    setIsSaving(false)
-                }
-            }
-        )
+        try {
+            for (const hostname of hostnames) await createDns.mutateAsync({ appId, nodeId, hostname })
+        } catch (failure) {
+            setError(`The routes were saved, but a DNS record could not be created. ${describeError(failure)}`)
+            setSaving(false)
+            return
+        }
+        setSaving(false)
+        setSaved(true)
+        onSave?.(cleaned, hostnames[0])
     }
+
+    const form = (
+        <div className="flex flex-col gap-5">
+            <p className="text-sm text-muted-foreground">
+                Which hostname goes to which service. A DNS record is created for each hostname, and anything that matches no route gets a 404.
+            </p>
+
+            {rules.map((rule, index) => (
+                <fieldset key={index} className="flex flex-col gap-3 border-t border-border pt-4 first:border-t-0 first:pt-0">
+                    <legend className="sr-only">Route {index + 1}</legend>
+                    <Field label={rules.length > 1 ? `Hostname (route ${index + 1})` : 'Hostname'} hint="Optional. Leave it empty to use the tunnel's own address." error={hostnameError(rule)}>
+                        <Input value={rule.hostname ?? ''} onChange={(event) => change(index, { hostname: event.target.value.trim() || null })} placeholder="app.example.com" inputMode="url" autoComplete="off" />
+                    </Field>
+                    <Field label="Service address" hint="Where the app answers, for example http://web:80." error={serviceError(rule)}>
+                        <Input value={rule.service} onChange={(event) => change(index, { service: event.target.value.trim() })} placeholder="http://web:80" inputMode="url" className="font-mono" autoComplete="off" />
+                    </Field>
+                    <Field label="Path (optional)" hint="Send only this path to the service, for example /api/*.">
+                        <Input value={rule.path ?? ''} onChange={(event) => change(index, { path: event.target.value.trim() || null })} placeholder="/api/*" autoComplete="off" />
+                    </Field>
+                    {rules.length > 1 && (
+                        <Button type="button" variant="ghost" size="sm" className="self-start text-destructive" onClick={() => setRules(rules.filter((_, i) => i !== index))}>
+                            <Trash2 className="h-4 w-4" />
+                            Remove route
+                        </Button>
+                    )}
+                </fieldset>
+            ))}
+
+            <Button type="button" variant="outline" className="self-start" onClick={() => setRules([...rules, EMPTY_RULE])}>
+                <Plus className="h-4 w-4" />
+                Add a route
+            </Button>
+
+            {error && (
+                <p role="alert" className="rounded-lg bg-status-err-bg px-3.5 py-3 text-sm text-status-err-fg">
+                    {error}
+                </p>
+            )}
+            {saved && (
+                <p role="status" className="flex items-center gap-2 text-sm text-status-ok-fg">
+                    <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
+                    Routes saved. DNS records are ready.
+                </p>
+            )}
+
+            <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
+                <Button onClick={() => void save()} disabled={saving}>
+                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    Save routes
+                </Button>
+                <span className="text-[13px] text-muted-foreground">Point your domain's nameservers at Cloudflare before adding a hostname.</span>
+            </div>
+        </div>
+    )
+
+    if (flat) return form
 
     return (
         <Card>
             <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                    <span>Ingress Configuration</span>
-                    <Badge variant="outline" className="text-xs">
-                        Public Access
-                    </Badge>
-                </CardTitle>
+                <CardTitle className="text-base">Routes</CardTitle>
             </CardHeader>
-            <CardContent>
-                <div className="space-y-4">
-                    {saveError && (
-                        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 flex items-center gap-2">
-                            <AlertCircle className="h-4 w-4 text-red-500" />
-                            <span className="text-sm text-red-700 dark:text-red-400">{saveError}</span>
-                        </div>
-                    )}
-
-                    {saveSuccess && (
-                        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3 flex items-center gap-2">
-                            <CheckCircle className="h-4 w-4 text-green-500" />
-                            <span className="text-sm text-green-700 dark:text-green-400">
-                                Ingress configuration saved successfully. DNS records created automatically for custom domains.
-                            </span>
-                        </div>
-                    )}
-
-                    {/* Info Banner */}
-                    <div className="border rounded-lg p-4 bg-blue-50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-900/30">
-                        <div className="flex items-start gap-3">
-                            <Globe className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
-                            <div className="space-y-1">
-                                <h3 className="text-sm font-medium text-blue-900 dark:text-blue-100">Custom Domain Setup</h3>
-                                <p className="text-xs text-blue-700 dark:text-blue-300">
-                                    Add a hostname (e.g., <code className="px-1 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30">vertsh.localnest.de</code>) to any ingress rule below,
-                                    and a DNS CNAME record will be created automatically pointing to your Cloudflare tunnel.
-                                    Leave hostname empty to use the default tunnel URL.
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="space-y-3">
-                        <div className="flex justify-between items-center">
-                            <h3 className="text-sm font-medium">Ingress Rules</h3>
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={addRule}
-                                className="flex items-center gap-1"
-                            >
-                                <Plus className="h-3 w-3" />
-                                Add Rule
-                            </Button>
-                        </div>
-
-                        {rules.map((rule, index) => (
-                            <div key={index} className="border rounded-lg p-3 space-y-3">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-xs font-medium text-muted-foreground">Rule {index + 1}</span>
-                                    {rules.length > 1 && (
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => removeRule(index)}
-                                            className="text-destructive hover:text-destructive"
-                                        >
-                                            <Trash2 className="h-3 w-3" />
-                                        </Button>
-                                    )}
-                                </div>
-
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                    <div>
-                                        <label className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                                            Hostname
-                                            {rule.hostname && <Globe className="h-3 w-3 text-green-500" />}
-                                        </label>
-                                        <Input
-                                            placeholder="vertsh.localnest.de"
-                                            value={rule.hostname || ''}
-                                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateRule(index, 'hostname', e.target.value || undefined)}
-                                        />
-                                        <p className="text-xs text-muted-foreground mt-1">
-                                            {rule.hostname
-                                                ? <span className="text-green-600 dark:text-green-400 flex items-center gap-1">
-                                                    <CheckCircle className="h-3 w-3" /> DNS record will be created
-                                                </span>
-                                                : 'Optional - uses tunnel URL if empty'}
-                                        </p>
-                                    </div>
-
-                                    <div>
-                                        <label className="text-xs font-medium text-muted-foreground">Service URL</label>
-                                        <Input
-                                            placeholder={getDefaultServiceUrl()}
-                                            value={rule.service}
-                                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateRule(index, 'service', e.target.value)}
-                                        />
-                                        <p className="text-xs text-muted-foreground mt-1">
-                                            e.g., http://localhost:8080
-                                        </p>
-                                    </div>
-
-                                    <div>
-                                        <label className="text-xs font-medium text-muted-foreground">Path (Optional)</label>
-                                        <Input
-                                            placeholder="/api/*"
-                                            value={rule.path || ''}
-                                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateRule(index, 'path', e.target.value || undefined)}
-                                        />
-                                        <p className="text-xs text-muted-foreground mt-1">
-                                            For path-based routing
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-
-                    <div className="pt-4 border-t">
-                        <Button
-                            onClick={handleSave}
-                            disabled={isSaving}
-                            className="w-full"
-                        >
-                            {isSaving ? (
-                                <>
-                                    <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                                    Saving Configuration...
-                                </>
-                            ) : (
-                                <>
-                                    <Save className="h-4 w-4 mr-2" />
-                                    Save Ingress Configuration
-                                </>
-                            )}
-                        </Button>
-                    </div>
-
-                    <div className="text-xs text-muted-foreground space-y-2 bg-muted/50 rounded-lg p-3">
-                        <p className="flex items-start gap-2">
-                            <CheckCircle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-green-500" />
-                            <span>A catch-all rule (404 response) is automatically added to the end of your configuration.</span>
-                        </p>
-                        <p className="flex items-start gap-2">
-                            <CheckCircle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-green-500" />
-                            <span>DNS CNAME records are automatically created for any hostname you enter in the ingress rules.</span>
-                        </p>
-                        <p className="flex items-start gap-2">
-                            <AlertCircle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-blue-500" />
-                            <span>Make sure your domain's nameservers are pointing to Cloudflare before adding a custom hostname.</span>
-                        </p>
-                    </div>
-                </div>
-            </CardContent>
+            <CardContent>{form}</CardContent>
         </Card>
     )
 }

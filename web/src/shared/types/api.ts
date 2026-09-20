@@ -4,8 +4,12 @@ export interface Node {
   api_endpoint: string;
   // api_key is excluded from API responses for security - never exposed to frontend
   is_primary: boolean;
-  status: 'online' | 'offline' | 'unreachable';
+  status: 'online' | 'offline' | 'unreachable' | 'unknown';
   last_seen?: string;
+  /** When the node was last checked, and how the checks are going. Latency is 0 until one has succeeded. */
+  last_health_check?: string | null;
+  last_latency_ms?: number;
+  consecutive_failures?: number;
   created_at: string;
   updated_at: string;
 }
@@ -44,6 +48,8 @@ export interface ScheduleNextRuns {
   app_id: string;
   next_start?: string; // ISO date string
   next_stop?: string;  // ISO date string
+  /** The next few starts and stops together, earliest first. */
+  upcoming?: { action: 'start' | 'stop'; at: string }[];
 }
 
 export interface UpdateScheduleRequest {
@@ -53,21 +59,9 @@ export interface UpdateScheduleRequest {
   enabled: boolean;
 }
 
-export interface TimezoneOption {
-  value: string;
-  label: string;
-  offset: string;
-}
-
 export interface JobLogLine {
   seq: number;
   text: string;
-}
-
-export interface JobLogsResponse {
-  lines: JobLogLine[];
-  next_after: number;
-  job_status: string;
 }
 
 export interface Job {
@@ -108,12 +102,6 @@ export interface RegisterNodeRequest {
   name: string;
   api_endpoint: string;
   api_key: string;
-}
-
-export interface UpdateNodeRequest {
-  name?: string;
-  api_endpoint?: string;
-  api_key?: string;
 }
 
 export interface UpdateAppRequest {
@@ -173,7 +161,7 @@ export interface CloudflareTunnelResponse {
 }
 
 // New provider-agnostic tunnel types
-export interface TunnelProvider {
+interface TunnelProvider {
   name: string;
   display_name: string;
   is_configured: boolean;
@@ -197,30 +185,6 @@ export interface TunnelProvidersResponse {
   active: string;
 }
 
-// Generic tunnel type (for future use with provider abstraction)
-// CloudflareTunnel will eventually be replaced by this
-export interface Tunnel {
-  id: string;
-  app_id: string;
-  provider_type: string;
-  tunnel_id: string;
-  tunnel_name: string;
-  public_url: string;
-  status: 'active' | 'inactive' | 'error' | 'deleted';
-  is_active: boolean;
-  ingress_rules?: IngressRule[] | null;
-  created_at: string;
-  updated_at: string;
-  last_synced_at?: string;
-  error_details?: string;
-}
-
-export interface ApiResponse<T = unknown> {
-  data?: T;
-  error?: string;
-  message?: string;
-}
-
 export interface ComposeVersion {
   id: string;
   app_id: string;
@@ -237,29 +201,6 @@ export interface RollbackRequest {
   change_reason?: string;
 }
 
-export interface AppStats {
-  app_name: string;
-  total_cpu_percent: number;
-  total_memory_bytes: number;
-  memory_limit_bytes: number;
-  containers: ContainerStat[];
-  timestamp: string;
-  status?: string;
-  message?: string;
-}
-
-export interface ContainerStat {
-  container_id: string;
-  container_name: string;
-  cpu_percent: number;
-  memory_usage_bytes: number;
-  memory_limit_bytes: number;
-  network_rx_bytes: number;
-  network_tx_bytes: number;
-  block_read_bytes: number;
-  block_write_bytes: number;
-}
-
 // System monitoring types
 export interface SystemStats {
   node_id: string;
@@ -274,12 +215,12 @@ export interface SystemStats {
   status: 'online' | 'offline' | 'error'; // Node connectivity status
 }
 
-export interface CPUStats {
+interface CPUStats {
   usage_percent: number;
   cores: number;
 }
 
-export interface MemoryStats {
+interface MemoryStats {
   total_bytes: number;
   used_bytes: number;
   free_bytes: number;
@@ -287,7 +228,7 @@ export interface MemoryStats {
   usage_percent: number;
 }
 
-export interface DiskStats {
+interface DiskStats {
   total_bytes: number;
   used_bytes: number;
   free_bytes: number;
@@ -295,7 +236,7 @@ export interface DiskStats {
   path: string;
 }
 
-export interface DockerStats {
+interface DockerStats {
   total_containers: number;
   running: number;
   stopped: number;

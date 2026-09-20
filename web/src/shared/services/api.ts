@@ -18,7 +18,6 @@ import type {
   SystemStats,
   Node,
   RegisterNodeRequest,
-  UpdateNodeRequest,
   ProviderFeatures,
   TunnelProvidersResponse,
   Job,
@@ -320,16 +319,6 @@ export function useComposeVersions(appId: string, nodeId: string) {
   });
 }
 
-export function useComposeVersion(appId: string, version: number, nodeId: string) {
-  return useQuery<ComposeVersion>({
-    queryKey: ['compose-version', appId, version, nodeId],
-    queryFn: () => {
-      return apiClient.get<ComposeVersion>(`/api/apps/${appId}/compose/versions/${version}?node_id=${nodeId}`);
-    },
-    enabled: !!appId && version > 0 && !!nodeId,
-  });
-}
-
 export function useRollbackToVersion(appId: string, nodeId: string) {
   const queryClient = useQueryClient();
   
@@ -362,7 +351,39 @@ export function useUpdateSettings() {
     mutationFn: (data: UpdateSettingsRequest) => apiClient.put<Settings, UpdateSettingsRequest>('/api/settings', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
+      // Whether a provider counts as connected depends on the saved credentials.
+      queryClient.invalidateQueries({ queryKey: ['tunnels', 'providers'] });
     },
+  });
+}
+
+export interface AuditEntry {
+  id: number;
+  time: string;
+  actor: string;
+  method: string;
+  path: string;
+  status: number;
+  remote_addr: string;
+  /** What was done and to what, when the server knows. Empty for requests it does not describe. */
+  action: string;
+  target_type: string;
+  target_id: string;
+  target_name: string;
+}
+
+// The most recent state-changing requests, newest first.
+export function useAuditLog(limit = 50) {
+  return useQuery<AuditEntry[]>({
+    queryKey: ['security', 'audit', limit],
+    queryFn: async () => (await apiClient.get<AuditEntry[] | null>('/api/security/audit', { limit })) ?? [],
+  });
+}
+
+// Signs everyone out, on every device, including this one.
+export function useRevokeSessions() {
+  return useMutation({
+    mutationFn: () => apiClient.post<{ message: string; revoked_before: string }>('/api/security/revoke-sessions'),
   });
 }
 
@@ -667,18 +688,26 @@ export function useDeleteContainer() {
 }
 
 // Node management API
-export function useNodes() {
+export function useNodes(options?: { refetchInterval?: number | false }) {
   return useQuery<Node[]>({
     queryKey: ['nodes'],
     queryFn: () => apiClient.get<Node[]>('/api/nodes'),
+    refetchInterval: options?.refetchInterval,
+    // Waiting for a machine to join means leaving this tab to work on the other machine, so keep checking.
+    refetchIntervalInBackground: !!options?.refetchInterval,
   });
 }
 
-export function useNode(id: string) {
-  return useQuery<Node>({
-    queryKey: ['node', id],
-    queryFn: () => apiClient.get<Node>(`/api/nodes/${id}`),
-    enabled: !!id,
+export interface JoinToken {
+  token: string;
+  expires_at: string;
+  usage: string;
+}
+
+// A single-use token that lets a new machine add itself to the cluster.
+export function useCreateJoinToken() {
+  return useMutation({
+    mutationFn: () => apiClient.post<JoinToken, Record<string, never>>('/api/nodes/join-tokens', {}),
   });
 }
 
@@ -693,23 +722,12 @@ export function useRegisterNode() {
   });
 }
 
-export function useUpdateNode(id: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: UpdateNodeRequest) => 
-      apiClient.put<Node, UpdateNodeRequest>(`/api/nodes/${id}`, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['nodes'] });
-      queryClient.invalidateQueries({ queryKey: ['node', id] });
-    },
-  });
-}
-
 export function useDeleteNode() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => 
-      apiClient.delete<{ message: string; nodeID: string }>(`/api/nodes/${id}`),
+    // Force also drops the records of apps on a node that is not answering, which cannot be cleaned up there.
+    mutationFn: ({ id, force = false }: { id: string; force?: boolean }) =>
+      apiClient.delete<{ message: string; nodeID: string }>(`/api/nodes/${id}${force ? '?force=true' : ''}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['nodes'] });
     },
@@ -735,15 +753,6 @@ export function useCurrentNode() {
 // ============================================================================
 // Job API
 // ============================================================================
-
-// Get a specific job by ID
-export function useJob(jobId: string | null, nodeId: string | null) {
-  return useQuery<Job>({
-    queryKey: ['job', jobId, nodeId],
-    queryFn: () => apiClient.get<Job>(`/api/jobs/${jobId}`, { node_id: nodeId! }),
-    enabled: !!jobId && !!nodeId,
-  });
-}
 
 // Get recent jobs for an app
 export function useAppJobs(appId: string, nodeId: string) {

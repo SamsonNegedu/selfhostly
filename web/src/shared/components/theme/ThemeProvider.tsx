@@ -1,57 +1,62 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 
 type Theme = 'light' | 'dark' | 'system'
+type ActualTheme = 'light' | 'dark'
 
 interface ThemeContextType {
     theme: Theme
     setTheme: (theme: Theme) => void
-    actualTheme: 'light' | 'dark'
+    actualTheme: ActualTheme
 }
+
+// Keep in sync with the inline script in index.html, which applies the class before first paint.
+const THEME_STORAGE_KEY = 'theme'
+const DEFAULT_THEME: Theme = 'dark'
+const DARK_SCHEME_QUERY = '(prefers-color-scheme: dark)'
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
 
-export function ThemeProvider({ children }: { children: React.ReactNode }) {
-    const [theme, setTheme] = useState<Theme>(() => {
-        const saved = localStorage.getItem('theme')
-        if (saved && (saved === 'light' || saved === 'dark' || saved === 'system')) {
-            return saved as Theme
-        }
-        return 'system'
-    })
+function isTheme(value: string | null): value is Theme {
+    return value === 'light' || value === 'dark' || value === 'system'
+}
 
-    const [actualTheme, setActualTheme] = useState<'light' | 'dark'>(() => {
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('theme')
-            if (saved === 'light' || saved === 'dark') {
-                return saved
-            }
-            return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-        }
-        return 'light'
-    })
+function readStoredTheme(): Theme {
+    const saved = localStorage.getItem(THEME_STORAGE_KEY)
+    return isTheme(saved) ? saved : DEFAULT_THEME
+}
+
+function resolveTheme(theme: Theme): ActualTheme {
+    if (theme === 'system') {
+        return window.matchMedia(DARK_SCHEME_QUERY).matches ? 'dark' : 'light'
+    }
+    return theme
+}
+
+function applyThemeClass(actual: ActualTheme) {
+    const root = window.document.documentElement
+    root.classList.remove('light', 'dark')
+    root.classList.add(actual)
+}
+
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+    const [theme, setTheme] = useState<Theme>(readStoredTheme)
+    const [actualTheme, setActualTheme] = useState<ActualTheme>(() => resolveTheme(readStoredTheme()))
 
     useEffect(() => {
-        localStorage.setItem('theme', theme)
-
-        const root = window.document.documentElement
-        root.classList.remove('light', 'dark')
-
-        const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
-        const themeClass = isDark ? 'dark' : 'light'
-        root.classList.add(themeClass)
-        setActualTheme(themeClass)
+        localStorage.setItem(THEME_STORAGE_KEY, theme)
+        const actual = resolveTheme(theme)
+        applyThemeClass(actual)
+        setActualTheme(actual)
     }, [theme])
 
     useEffect(() => {
-        const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+        if (theme !== 'system') return
+
+        const mediaQuery = window.matchMedia(DARK_SCHEME_QUERY)
         const handleChange = () => {
-            if (theme === 'system') {
-                const isDark = mediaQuery.matches
-                const root = window.document.documentElement
-                root.classList.remove('light', 'dark')
-                root.classList.add(isDark ? 'dark' : 'light')
-                setActualTheme(isDark ? 'dark' : 'light')
-            }
+            const actual = resolveTheme('system')
+            applyThemeClass(actual)
+            setActualTheme(actual)
         }
 
         mediaQuery.addEventListener('change', handleChange)

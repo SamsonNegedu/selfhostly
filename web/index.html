@@ -3,10 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="Selfhostly - Manage your self-hosted applications with ease" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#0E1116" />
     <title>Selfhostly</title>
+    <script>
+      // Apply the saved theme before first paint so dark mode never flashes light.
+      // Mirrors ThemeProvider: dark by default, 'system' follows the OS.
+      (function () {
+        try {
+          var saved = localStorage.getItem('theme');
+          var theme = saved === 'light' || saved === 'system' ? saved : 'dark';
+          var dark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.classList.add(dark ? 'dark' : 'light');
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

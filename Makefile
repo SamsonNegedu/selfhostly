@@ -1,134 +1,73 @@
 # =============================================================================
-# Selfhostly Makefile
+# Selfhostly Makefile. Run `make help` to list the commands.
 # =============================================================================
 #
-# Run with different .env files:
-#   make run-local                          # Uses .env (default)
-#   make run-local ENV_FILE=.env.primary    # Uses .env.primary
-#   make run-local ENV_FILE=.env.secondary  # Uses .env.secondary
+# Options that work on the commands below:
+#   ENV_FILE=.env.primary   which env file the local backend or gateway reads (default .env)
+#   NOAIR=1                 run with `go run` instead of Air hot reload
+#   SERVICE=backend         limit `dev` and `logs` to one Docker service
+#   ARGS=-v                 extra flags for `make test`
 #
-# Multi-Node Local Development:
-#   Terminal 1: make run-local ENV_FILE=.env.primary
-#   Terminal 2: make run-local ENV_FILE=.env.secondary
-#
-# =============================================================================
+# Two nodes on one machine: `make backend ENV_FILE=.env.primary` in one terminal,
+# `make backend ENV_FILE=.env.secondary` in another.
 
-.PHONY: dev dev-backend dev-frontend prod down clean install-air run-local test test-verbose test-coverage help
+DC       ?= docker compose
+ENV_FILE ?= .env
+SERVICE  ?=
+ARGS     ?=
 
-# Development commands
-dev: ## Start all services with live reload
-	docker-compose -f docker-compose.dev.yml up
+BACKEND_RUN = $(if $(NOAIR),go run ./cmd/server,air)
+GATEWAY_RUN = $(if $(NOAIR),go run ./cmd/gateway,air -c .air-gateway.toml)
 
-dev-backend: ## Start only backend with live reload
-	docker-compose -f docker-compose.dev.yml up backend
+.DEFAULT_GOAL := help
+.PHONY: help dev backend gateway frontend prod down clean logs test ctl
 
-dev-frontend: ## Start only frontend
-	docker-compose -f docker-compose.dev.yml up frontend
+help: ## Show this help
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-10s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-dev-build: ## Rebuild dev containers
-	docker-compose -f docker-compose.dev.yml build
+# --- Run in Docker -----------------------------------------------------------
 
-# Production commands
-prod: ## Start production services
-	docker-compose -f docker-compose.prod.yml up -d
+dev: ## Backend and frontend in Docker with live reload (SERVICE=backend for one)
+	$(DC) -f docker-compose.dev.yml up --build $(SERVICE)
 
-prod-build: ## Build and start production services
-	docker-compose -f docker-compose.prod.yml up -d --build
+prod: ## Production services in the background
+	$(DC) -f docker-compose.prod.yml up -d --build
 
-# Control commands
-down: ## Stop all running containers
-	docker-compose -f docker-compose.dev.yml down
-	docker-compose -f docker-compose.prod.yml down
+down: ## Stop the dev and production containers
+	$(DC) -f docker-compose.dev.yml down
+	$(DC) -f docker-compose.prod.yml down
 
-clean: ## Clean build artifacts and containers
-	docker-compose -f docker-compose.dev.yml down -v
-	docker-compose -f docker-compose.prod.yml down -v
-	rm -rf tmp/
-	rm -rf tmp-gateway/
-	rm -f build-errors.log
-	rm -f build-errors-gateway.log
+logs: ## Follow the dev logs (SERVICE=backend for one)
+	$(DC) -f docker-compose.dev.yml logs -f $(SERVICE)
 
-# Local development (no Docker)
-install-air: ## Install Air for local development
-	go install github.com/air-verse/air@latest
+# --- Run on this machine, no Docker -----------------------------------------
 
-run-local: ## Run backend with Air (usage: make run-local [ENV_FILE=.env.custom])
-	@if [ -n "$(ENV_FILE)" ]; then \
-		if [ ! -f "$(ENV_FILE)" ]; then \
-			echo "ERROR: $(ENV_FILE) not found."; \
-			exit 1; \
-		fi; \
-		echo "Starting with $(ENV_FILE)"; \
-		ENV_FILE=$(ENV_FILE) air; \
-	else \
-		echo "Starting with .env"; \
-		air; \
-	fi
+backend: check-env check-air ## Backend with hot reload on :8080 (ENV_FILE=..., NOAIR=1)
+	ENV_FILE=$(ENV_FILE) $(BACKEND_RUN)
 
-run-local-no-air: ## Run backend without Air (usage: make run-local-no-air [ENV_FILE=.env.custom])
-	@if [ -n "$(ENV_FILE)" ]; then \
-		if [ ! -f "$(ENV_FILE)" ]; then \
-			echo "ERROR: $(ENV_FILE) not found."; \
-			exit 1; \
-		fi; \
-		echo "Starting with $(ENV_FILE)"; \
-		ENV_FILE=$(ENV_FILE) go run cmd/server/main.go; \
-	else \
-		echo "Starting with .env"; \
-		go run cmd/server/main.go; \
-	fi
+gateway: check-env check-air ## API gateway with hot reload (ENV_FILE=..., NOAIR=1)
+	ENV_FILE=$(ENV_FILE) $(GATEWAY_RUN)
 
-run-gateway: ## Run API gateway with Air hot reload (usage: make run-gateway [ENV_FILE=.env.gateway])
-	@if [ -n "$(ENV_FILE)" ]; then \
-		if [ ! -f "$(ENV_FILE)" ]; then \
-			echo "ERROR: $(ENV_FILE) not found."; \
-			exit 1; \
-		fi; \
-		echo "Starting gateway with $(ENV_FILE)"; \
-		ENV_FILE=$(ENV_FILE) air -c .air-gateway.toml; \
-	else \
-		echo "Starting gateway with .env"; \
-		air -c .air-gateway.toml; \
-	fi
+frontend: ## Frontend dev server on :5173
+	cd web && npm run dev
 
-run-gateway-no-air: ## Run API gateway without Air (usage: make run-gateway-no-air [ENV_FILE=.env.gateway])
-	@if [ -n "$(ENV_FILE)" ]; then \
-		if [ ! -f "$(ENV_FILE)" ]; then \
-			echo "ERROR: $(ENV_FILE) not found."; \
-			exit 1; \
-		fi; \
-		echo "Starting gateway with $(ENV_FILE)"; \
-		ENV_FILE=$(ENV_FILE) go run cmd/gateway/main.go; \
-	else \
-		echo "Starting gateway with .env"; \
-		go run cmd/gateway/main.go; \
-	fi
+# --- Checks and cleanup ------------------------------------------------------
 
-build-gateway: ## Build gateway binary
-	go build -o bin/gateway ./cmd/gateway
+test: ## Run the Go tests (ARGS=-v, ARGS=-cover)
+	go test $(ARGS) ./...
 
-# Testing commands
-test: ## Run all tests
-	go test ./...
+ctl: ## Build the selfhostlyctl command line into bin/
+	go build -ldflags "-X github.com/selfhostly/internal/ctl.Version=$(shell git describe --tags --always --dirty 2>/dev/null || echo dev)" -o bin/selfhostlyctl ./cmd/selfhostlyctl
 
-test-verbose: ## Run all tests with verbose output
-	go test -v ./...
+clean: ## Remove containers, volumes and build output
+	$(DC) -f docker-compose.dev.yml down -v
+	$(DC) -f docker-compose.prod.yml down -v
+	rm -rf tmp tmp-gateway build-errors.log build-errors-gateway.log
 
-test-coverage: ## Run all tests with coverage report
-	go test -cover ./...
+# Not listed in help: guards used by the run commands above.
+.PHONY: check-env check-air
+check-env:
+	@test -f $(ENV_FILE) || { echo "$(ENV_FILE) not found. Copy env.example to $(ENV_FILE) first."; exit 1; }
 
-# Utility commands
-logs: ## Show logs from all services
-	docker-compose -f docker-compose.dev.yml logs -f
-
-logs-backend: ## Show backend logs only
-	docker-compose -f docker-compose.dev.yml logs -f backend
-
-restart-backend: ## Restart backend service
-	docker-compose -f docker-compose.dev.yml restart backend
-
-help: ## Show this help message
-	@echo 'Usage: make [target]'
-	@echo ''
-	@echo 'Available targets:'
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+check-air:
+	@$(if $(NOAIR),true,command -v air >/dev/null || { echo "Installing Air"; go install github.com/air-verse/air@latest; })

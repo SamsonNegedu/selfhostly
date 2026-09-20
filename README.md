@@ -23,7 +23,7 @@ A web-based platform for managing self-hosted applications on your Raspberry Pi 
 
 ### Application Management
 - **Deploy Docker Compose Apps** - Deploy applications through an intuitive web interface
-- **Built-in Editor** - Monaco editor with YAML syntax highlighting and validation
+- **Built-in Editor** - CodeMirror editor with YAML syntax highlighting and validation
 - **Version History** - Automatic versioning with complete rollback capability
 - **Zero-Downtime Updates** - Pull new images and update containers without interruption
 - **Activity Timeline** - Track all changes, deployments, and updates
@@ -48,11 +48,24 @@ A web-based platform for managing self-hosted applications on your Raspberry Pi 
 - **Modern Stack** - Built with React, TypeScript, TailwindCSS, and Radix UI
 - **Flexible Authentication** - Cloudflare Zero Trust or GitHub OAuth support
 
+## Deploying and operating
+
+`selfhostlyctl` is the command line for all of it: `setup`, `check`, `join-token`, `join`, `upgrade`, `backup`,
+`doctor`, `status`, `compose-diff`, `pin-images`. Install it with
+`curl -fsSL https://raw.githubusercontent.com/samsonnegedu/selfhostly/main/scripts/install.sh | sh`, or `make ctl`.
+Every command explains itself with `--help`.
+
+- [docs/operations/deploy.md](docs/operations/deploy.md): new server, secondary nodes, backups, moving servers
+- [docs/operations/upgrade.md](docs/operations/upgrade.md): **start here to upgrade an existing install** (keeps your hand edits, rolls back automatically)
+- [docs/operations/safe-restart.md](docs/operations/safe-restart.md): what a restart touches, rollback, secrets, troubleshooting
+- [docs/security/overview.md](docs/security/overview.md): security model, every setting, known limitations
+- [docs/rfcs/node-link.md](docs/rfcs/node-link.md): how secondary nodes connect (outbound-only link)
+
 ## Tech Stack
 
 **Backend:** Go • Gin • SQLite (modernc.org/sqlite - pure Go, no CGO) • Docker API • gopsutil
 
-**Frontend:** React • TypeScript • TanStack Query • Zustand • TailwindCSS • Radix UI • Monaco Editor • Lucide Icons
+**Frontend:** React • TypeScript • TanStack Query • Zustand • TailwindCSS • Radix UI • CodeMirror • Lucide Icons
 
 **Infrastructure:** Docker • Docker Compose • Cloudflare Tunnels • Air (live reload)
 
@@ -60,11 +73,11 @@ A web-based platform for managing self-hosted applications on your Raspberry Pi 
 
 **Single-user design only.** This application is intended for personal use (e.g., managing a home server or Raspberry Pi).
 
-- **Recommended:** Deploy behind [Cloudflare Zero Trust](./docs/CLOUDFLARE_ZERO_TRUST.md) for secure authentication
-- **Alternative:** [GitHub OAuth authentication](./docs/GITHUB_WHITELIST.md) with username whitelist
+- **Recommended:** Deploy behind [Cloudflare Zero Trust](docs/operations/cloudflare-zero-trust.md) for secure authentication
+- **Alternative:** [GitHub OAuth authentication](docs/security/github-allowlist.md) with username whitelist
 - **Not suitable** for multi-user or multi-tenant environments
 
-See [Security Documentation](./docs/SECURITY.md) for full details.
+See [Security Documentation](docs/security/overview.md) for full details.
 
 ## Recent Updates
 
@@ -95,14 +108,15 @@ See [Security Documentation](./docs/SECURITY.md) for full details.
 git clone https://github.com/yourusername/selfhostly.git
 cd selfhostly
 
-# 2. Configure environment
+# 2. Guided setup: checks the machine, writes .env, starts everything (needs selfhostlyctl, see above)
+selfhostlyctl setup
+
+# Or by hand: configure the environment, then run with Docker Compose
 cp env.example .env
 # Edit .env with your settings (see Configuration section below)
-
-# 3. Run with Docker Compose
 docker compose -f docker-compose.prod.yml up -d
 
-# Or use Make command
+# Or use Make
 make prod
 
 # Optional: Run with Cloudflare Tunnel
@@ -114,25 +128,15 @@ Access the web interface at `http://localhost:8080` (or your configured address)
 ### Development Setup
 
 ```bash
-# Option 1: Start both backend and frontend with one command
-make dev
+make dev                 # Backend and frontend in Docker with live reload
 
-# Option 2: Start services separately
-make dev-backend      # Terminal 1: Backend with live reload
-cd web && npm run dev # Terminal 2: Frontend dev server
+# or on this machine, no Docker (two terminals)
+make backend             # Backend with hot reload on :8080
+make frontend            # Frontend dev server on :5173
 ```
 
-Frontend dev server runs at `http://localhost:5173` with hot module reloading.  
-Backend API runs at `http://localhost:8080` with automatic rebuild on code changes.
-
-#### Run everything locally (no Docker)
-
-| What | Command | Port |
-|------|---------|------|
-| Backend (primary) | `make run-local` (with Air hot reload) | 8080 |
-| Frontend | `cd web && npm run dev` | 5173 |
-
-Use the same `.env` (e.g. `cp env.example .env`). Open **http://localhost:5173**; Vite proxies `/api` and `/auth` to the backend.
+Open **http://localhost:5173**. Vite proxies `/api` and `/auth` to the backend. Both use the `.env` you get from
+`cp env.example .env`.
 
 #### Run with API gateway (primary + gateway + frontend)
 
@@ -145,7 +149,7 @@ When testing the gateway locally, primary and gateway need different ports. Exam
    GATEWAY_API_KEY=dev-gateway-secret
    ```
    ```bash
-   make run-local   # or: make run-local ENV_FILE=.env.primary
+   make backend   # or: make backend ENV_FILE=.env.primary
    ```
    → Primary listens on **8082**.
 
@@ -156,77 +160,37 @@ When testing the gateway locally, primary and gateway need different ports. Exam
    GATEWAY_API_KEY=dev-gateway-secret
    ```
    ```bash
-   make run-gateway   # with Air hot reload
-   # or: make run-gateway ENV_FILE=.env.gateway
+   make gateway   # or: make gateway ENV_FILE=.env.gateway
    ```
    → Gateway listens on **8080** (hot reloads on code changes).
 
 3. **Frontend** (proxy points at gateway):
    ```bash
-   cd web && npm run dev
+   make frontend
    ```
    Vite proxies to `http://localhost:8080` (gateway). Open **http://localhost:5173**.
 
 Summary: **Primary 8082 → Gateway 8080 → Frontend proxy → Browser 5173.**
 
-See [Development Guide](./docs/DEVELOPMENT.md) for more details.
+See [Development Guide](docs/development/getting-started.md) for more details.
 
 ## Make Commands
 
-The project includes a Makefile with convenient commands for common tasks. Run `make help` to see all available commands.
+Run `make help` to list them.
 
-### Development Commands
+| Command | What it does |
+|---------|--------------|
+| `make dev` | Backend and frontend in Docker with live reload (`SERVICE=backend` for one) |
+| `make backend` | Backend on this machine with hot reload (`ENV_FILE=.env.primary`, `NOAIR=1` to skip Air) |
+| `make gateway` | API gateway on this machine, same options |
+| `make frontend` | Frontend dev server |
+| `make prod` | Production services in the background |
+| `make logs` | Follow the dev logs (`SERVICE=backend` for one) |
+| `make down` | Stop the dev and production containers |
+| `make test` | Go tests (`ARGS=-v`, `ARGS=-cover`) |
+| `make clean` | Remove containers, volumes and build output |
 
-```bash
-make dev              # Start all services with live reload (backend + frontend)
-make dev-backend      # Start only backend with live reload
-make dev-frontend     # Start only frontend dev server
-make dev-build        # Rebuild dev containers
-```
-
-### Production Commands
-
-```bash
-make prod             # Start production services
-make prod-build       # Build and start production services
-```
-
-### Control Commands
-
-```bash
-make down             # Stop all running containers
-make clean            # Clean build artifacts, containers, and volumes
-make logs             # Show logs from all services
-make logs-backend     # Show backend logs only
-make restart-backend  # Restart backend service
-```
-
-### Local Development (No Docker)
-
-```bash
-make install-air      # Install Air for local development
-make run-local        # Run backend locally with Air
-make run-local-no-air # Run backend locally without Air
-make run-gateway      # Run API gateway (set GATEWAY_* and GATEWAY_API_KEY in .env)
-```
-
-### Getting Help
-
-```bash
-make help             # Show all available commands with descriptions
-```
-
-### Quick Reference
-
-| Command | Description |
-|---------|-------------|
-| `make dev` | Start full dev environment |
-| `make run-local` | Run backend locally (Air) |
-| `make run-gateway` | Run API gateway locally |
-| `make prod` | Start production |
-| `make logs` | View all logs |
-| `make down` | Stop everything |
-| `make clean` | Clean up completely |
+Air is installed automatically the first time `make backend` or `make gateway` needs it.
 | `make help` | Show all commands |
 
 ## Configuration
@@ -267,7 +231,7 @@ REGISTRATION_TOKEN=your-secure-registration-token # Same as primary - enables au
 - **Unified Monitoring** - View metrics across all nodes
 - **Automatic Health Checks** - Continuous monitoring and heartbeats
 
-See [Multi-Node Setup Guide](./docs/MULTI_NODE.md) for complete configuration, authentication, and troubleshooting.
+See [Multi-Node Setup Guide](docs/operations/multi-node.md) for complete configuration, authentication, and troubleshooting.
 
 ### Cloudflare Integration (Optional)
 
@@ -301,7 +265,7 @@ CLOUDFLARE_ACCOUNT_ID=your_account_id
 - Email-based access control
 - Built-in 2FA support
 
-See [Cloudflare Zero Trust Setup Guide](./docs/CLOUDFLARE_ZERO_TRUST.md)
+See [Cloudflare Zero Trust Setup Guide](docs/operations/cloudflare-zero-trust.md)
 
 **Option 2: GitHub OAuth**
 
@@ -315,49 +279,26 @@ GITHUB_ALLOWED_USERS=username1,username2
 NODE_API_ENDPOINT=https://your-domain.com
 ```
 
-See [GitHub OAuth Setup Guide](./docs/GITHUB_WHITELIST.md)
+See [GitHub OAuth Setup Guide](docs/security/github-allowlist.md)
 
-**Security Note:** This application is designed for single-user deployments. See [Security Documentation](./docs/SECURITY.md) for details.
+**Security Note:** This application is designed for single-user deployments. See [Security Documentation](docs/security/overview.md) for details.
 
 ## Development
 
 ### Local Development
 
-**Option 1: Make Commands (Easiest)**
+
 
 ```bash
 # Start everything with one command
 make dev
 
-# Or start services separately
-make dev-backend      # Terminal 1: Backend with live reload
-make dev-frontend     # Terminal 2: Frontend dev server
+# Or on this machine, no Docker (two terminals)
+make backend          # Backend with hot reload
+make frontend         # Frontend dev server (run `cd web && npm install` once first)
 ```
 
-**Option 2: Docker Compose**
-
-```bash
-# Start backend with Air (live reload)
-docker compose -f docker-compose.dev.yml up backend
-
-# Start frontend in another terminal
-cd web && npm install && npm run dev
-```
-
-**Option 3: Native Go + npm**
-
-```bash
-# Install Air for live reload
-make install-air
-# Or: go install github.com/air-verse/air@latest
-
-# Terminal 1: Backend with live reload
-make run-local
-# Or: air
-
-# Terminal 2: Frontend dev server
-cd web && npm install && npm run dev
-```
+Air is installed automatically the first time it is needed.
 
 **Access:**
 - Frontend: `http://localhost:5173` (proxies API requests to backend)
@@ -370,7 +311,7 @@ cd web && npm install && npm run dev
 cd web && npm run build
 
 # Build Go binaries
-go build -o bin/server cmd/server/main.go
+go build -o bin/server ./cmd/server
 go build -o bin/gateway cmd/gateway/main.go
 
 # Or build Docker images
@@ -431,7 +372,7 @@ cd web && npm run lint
 make logs
 
 # View backend logs only
-make logs-backend
+make logs SERVICE=backend
 
 # Or with Docker Compose directly
 docker compose -f docker-compose.dev.yml logs -f
@@ -447,32 +388,32 @@ make down
 make clean
 ```
 
-See [Development Guide](./docs/DEVELOPMENT.md) for live reload setup and debugging tips.
+See [Development Guide](docs/development/getting-started.md) for live reload setup and debugging tips.
 
 ## Documentation
 
 ### Getting Started
-- [Development Guide](./docs/DEVELOPMENT.md) - Local setup, live reload, and debugging
-- [Multi-Node Setup](./docs/MULTI_NODE.md) - Distributed deployment, authentication, and health checks
-- [Security Model](./docs/SECURITY.md) - Single-user design and limitations
+- [Development Guide](docs/development/getting-started.md) - Local setup, live reload, and debugging
+- [Multi-Node Setup](docs/operations/multi-node.md) - Distributed deployment, authentication, and health checks
+- [Security Model](docs/security/overview.md) - Single-user design and limitations
 
 ### Features
-- [Monitoring Dashboard](./docs/MONITORING.md) - System metrics, container monitoring, and resource alerts
-- [Compose Versioning](./docs/COMPOSE_VERSIONING.md) - Version control and rollback system
-- [Cloudflare Integration](./docs/CLOUDFLARE_ZERO_TRUST.md) - Tunnel setup and Zero Trust configuration
+- [Monitoring Dashboard](docs/operations/monitoring.md) - System metrics, container monitoring, and resource alerts
+- [Compose Versioning](docs/design/compose-versioning.md) - Version control and rollback system
+- [Cloudflare Integration](docs/operations/cloudflare-zero-trust.md) - Tunnel setup and Zero Trust configuration
 
 ### Authentication & Security
-- [Multi-Node Authentication](./docs/MULTI_NODE.md#authentication-strategies) - Node-to-node API keys and user auth
-- [Cloudflare Zero Trust Setup](./docs/CLOUDFLARE_ZERO_TRUST.md) - Recommended authentication method
-- [GitHub OAuth Setup](./docs/GITHUB_WHITELIST.md) - Alternative authentication option
-- [Volume Path Whitelist](./docs/VOLUME_WHITELIST.md) - Configure allowed host paths for unified backups
+- [Multi-Node Authentication](docs/operations/multi-node.md#authentication-strategies) - Node-to-node API keys and user auth
+- [Cloudflare Zero Trust Setup](docs/operations/cloudflare-zero-trust.md) - Recommended authentication method
+- [GitHub OAuth Setup](docs/security/github-allowlist.md) - Alternative authentication option
+- [Volume Path Whitelist](docs/security/volume-allowlist.md) - Configure allowed host paths for unified backups
 
 ## Key Workflows
 
 ### Deploying a New App
 
 1. **Create App** - Navigate to "Create App" and provide a name and description
-2. **Write Compose File** - Use the Monaco editor to write or paste your docker-compose.yml
+2. **Write Compose File** - Use the editor to write or paste your docker-compose.yml
 3. **Configure Ingress** - Optionally add Cloudflare ingress rules for public access
 4. **Deploy** - Click "Create & Deploy" to start your containers
 
@@ -529,7 +470,7 @@ See [Development Guide](./docs/DEVELOPMENT.md) for live reload setup and debuggi
 - Verify `.env` file exists and has correct values
 - Check logs: `make logs` or `docker compose -f docker-compose.prod.yml logs -f`
 - Ensure port 8080 is not in use
-- Try rebuilding: `make prod-build`
+- Try rebuilding: `make prod`
 
 ### Cloudflare tunnel not working
 
@@ -582,5 +523,5 @@ MIT License - see [LICENSE](./LICENSE) file for details
 - Authentication via [go-pkgz/auth](https://github.com/go-pkgz/auth) - OAuth and JWT handling
 - UI powered by [Radix UI](https://www.radix-ui.com/) and [TailwindCSS](https://tailwindcss.com/)
 - System metrics via [gopsutil](https://github.com/shirou/gopsutil)
-- Code editor via [Monaco Editor](https://microsoft.github.io/monaco-editor/)
+- Code editor via [CodeMirror](https://codemirror.net/)
 - Database via [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite) - Pure Go SQLite implementation

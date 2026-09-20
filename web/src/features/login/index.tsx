@@ -1,116 +1,84 @@
-import { useEffect, useState } from 'react';
-import { Github, AlertCircle, Shield, X, Server } from 'lucide-react';
-import { Button } from '@/shared/components/ui/Button';
-import { loginWithGitHub } from '@/shared/services/api';
-import { useSearchParams } from 'react-router-dom';
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { AlertCircle, Github, Server, X } from 'lucide-react'
+import { Button } from '@/shared/components/ui/Button'
+import { loginWithGitHub } from '@/shared/services/api'
 
-function Login() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [showError, setShowError] = useState(false);
-
-  useEffect(() => {
-    // Check for error parameter in URL (from OAuth callback)
-    const error = searchParams.get('error');
-    const errorDescription = searchParams.get('error_description');
-
-    if (error) {
-      // Set appropriate error message based on error type
-      if (error === 'access_denied' || errorDescription?.includes('whitelist') || errorDescription?.includes('not authorized')) {
-        setErrorMessage('Access denied: Your GitHub account is not authorized to access this system.');
-      } else if (error === 'unauthorized') {
-        setErrorMessage('Authentication failed: You are not authorized to access this system.');
-      } else {
-        setErrorMessage(`Authentication failed: ${errorDescription || 'Please try again'}`);
-      }
-      setShowError(true);
-
-      // Clear error params from URL
-      searchParams.delete('error');
-      searchParams.delete('error_description');
-      setSearchParams(searchParams, { replace: true });
-    }
-  }, [searchParams, setSearchParams]);
-
-  const dismissError = () => {
-    setShowError(false);
-    setTimeout(() => setErrorMessage(null), 300);
-  };
-
-  return (
-    <div className="h-screen bg-gradient-to-br from-background via-muted/20 to-background flex items-center justify-center p-3 sm:p-4">
-      <div className="w-full max-w-md">
-        {/* Error Alert */}
-        {showError && errorMessage && (
-          <div className="mb-4 sm:mb-6 bg-destructive/10 border border-destructive/50 rounded-xl p-3 sm:p-4 backdrop-blur-sm fade-in">
-            <div className="flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <h3 className="text-destructive font-semibold mb-1">Access Denied</h3>
-                <p className="text-destructive/90 text-sm">{errorMessage}</p>
-                {errorMessage.includes('not authorized') && (
-                  <div className="mt-2 sm:mt-3 p-2.5 sm:p-3 bg-muted/50 rounded-lg border border-border">
-                    <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1.5 sm:mb-2">
-                      <Shield className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                      <span className="font-medium">Security Notice</span>
-                    </div>
-                    <p className="text-muted-foreground text-xs leading-relaxed">
-                      Only specific GitHub accounts are authorized to access this system.
-                      If you believe you should have access, contact your system administrator
-                      to add your GitHub username to whitelist.
-                    </p>
-                  </div>
-                )}
-              </div>
-              <button
-                onClick={dismissError}
-                className="text-destructive hover:text-destructive/80 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Logo and title */}
-        <div className="text-center mb-6 sm:mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-primary mb-3 sm:mb-4">
-            <Server className="w-7 h-7 sm:w-8 sm:h-8 text-primary-foreground" />
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-2">
-            Selfhostly
-          </h1>
-          <p className="text-sm sm:text-base text-muted-foreground">
-            Deploy and manage your self-hosted applications
-          </p>
-        </div>
-
-        {/* Login card */}
-        <div className="bg-card/50 backdrop-blur-xl rounded-2xl border border-border p-6 sm:p-8 shadow-xl">
-          <h2 className="text-lg sm:text-xl font-semibold text-foreground text-center mb-5 sm:mb-6">
-            Sign in to continue
-          </h2>
-
-          <Button
-            onClick={loginWithGitHub}
-            className="w-full h-11 sm:h-12 bg-muted hover:bg-muted/80 text-foreground border border-border rounded-xl transition-all duration-200 flex items-center justify-center gap-3 text-sm sm:text-base"
-          >
-            <Github className="w-5 h-5" />
-            <span>Continue with GitHub</span>
-          </Button>
-
-          <p className="text-muted-foreground text-xs sm:text-sm text-center mt-5 sm:mt-6">
-            Sign in with your GitHub account to access the dashboard
-          </p>
-        </div>
-
-        {/* Footer */}
-        <p className="text-muted-foreground text-xs sm:text-sm text-center mt-6 sm:mt-8 mb-3 sm:mb-0">
-          Secure authentication powered by GitHub OAuth
-        </p>
-      </div>
-    </div>
-  );
+interface LoginProblem {
+    title: string
+    detail: string
 }
 
-export default Login;
+// What went wrong when GitHub sent the person back with an error. Only the allow list case gets its own wording,
+// because it is the one they can do something about.
+function describeProblem(error: string, description: string | null): LoginProblem {
+    const text = `${error} ${description ?? ''}`.toLowerCase()
+    if (error === 'access_denied' || error === 'unauthorized' || text.includes('whitelist') || text.includes('not authorized')) {
+        return {
+            title: 'This GitHub account is not allowed',
+            detail: 'Only accounts on the allow list can sign in. Ask whoever runs this server to add your GitHub username.',
+        }
+    }
+    return { title: 'Sign in did not finish', detail: description ? `${description}.` : 'Something went wrong with GitHub. Try again.' }
+}
+
+function Login() {
+    const [params, setParams] = useSearchParams()
+    const [problem, setProblem] = useState<LoginProblem | null>(null)
+
+    useEffect(() => {
+        const error = params.get('error')
+        if (!error) return
+        setProblem(describeProblem(error, params.get('error_description')))
+        // The message is kept in state, so the address can be cleaned and a refresh does not show it again.
+        const next = new URLSearchParams(params)
+        next.delete('error')
+        next.delete('error_description')
+        setParams(next, { replace: true })
+    }, [params, setParams])
+
+    return (
+        <main className="flex min-h-screen items-center justify-center bg-background p-4">
+            <div className="flex w-full max-w-sm flex-col gap-6">
+                <div className="flex flex-col items-center gap-3 text-center">
+                    <div aria-hidden="true" className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+                        <Server className="h-6 w-6" />
+                    </div>
+                    <div>
+                        <h1 className="text-2xl font-semibold tracking-tight">Selfhostly</h1>
+                        <p className="text-sm text-muted-foreground">Run your own apps, from one place.</p>
+                    </div>
+                </div>
+
+                {problem && (
+                    <div role="alert" className="flex items-start gap-3 rounded-xl bg-status-err-bg p-4 text-status-err-fg">
+                        <AlertCircle aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0" />
+                        <div className="min-w-0 flex-1">
+                            <p className="font-semibold">{problem.title}</p>
+                            <p className="text-sm">{problem.detail}</p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setProblem(null)}
+                            aria-label="Dismiss"
+                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md hover:bg-black/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:h-[44px] max-sm:w-[44px]"
+                        >
+                            <X className="h-4 w-4" />
+                        </button>
+                    </div>
+                )}
+
+                <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-6 shadow-sm">
+                    <h2 className="text-center text-lg font-semibold">Sign in</h2>
+                    <Button onClick={loginWithGitHub} size="lg" variant="outline" className="w-full">
+                        <Github className="h-5 w-5" />
+                        Continue with GitHub
+                    </Button>
+                    <p className="text-center text-[13px] text-muted-foreground">You need a GitHub account that has been allowed on this server.</p>
+                </div>
+            </div>
+        </main>
+    )
+}
+
+export default Login
