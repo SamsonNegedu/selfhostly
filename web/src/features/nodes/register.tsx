@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ArrowLeft, CheckCircle2, Copy, KeyRound, Loader2 } from 'lucide-react'
 import { Button, buttonClasses } from '@/shared/components/ui/Button'
@@ -45,7 +45,13 @@ function RegisterNodePage() {
                 <p className="text-muted-foreground">Run apps on another machine and manage them from here.</p>
             </div>
 
-            <SegmentedControl aria-label="How to add" options={MODE_OPTIONS} value={mode} onValueChange={(value) => setMode(value as Mode)} className="self-start" />
+            <SegmentedControl
+                aria-label="How to add"
+                options={MODE_OPTIONS}
+                value={mode}
+                onValueChange={(value) => setMode(value as Mode)}
+                className="self-start"
+            />
 
             {mode === 'automatic' ? <AutomaticJoin /> : <ManualRegister />}
         </div>
@@ -61,13 +67,11 @@ function AutomaticJoin() {
     const [nodeUrl, setNodeUrl] = useState('')
     const issued = createToken.data
     const { data: nodes } = useNodes({ refetchInterval: issued ? POLL_MS : false })
-    const knownAtStart = useRef<Set<string> | null>(null)
+    const [knownAtStart, setKnownAtStart] = useState<Set<string> | null>(null)
 
     // Remember who was in the cluster when the token was made, so anyone new after that is the machine that joined.
-    useEffect(() => {
-        if (issued && nodes && knownAtStart.current === null) knownAtStart.current = new Set(nodes.map((node) => node.id))
-    }, [issued, nodes])
-    const joined = issued && knownAtStart.current ? nodes?.find((node) => !knownAtStart.current?.has(node.id)) : undefined
+    if (issued && nodes && knownAtStart === null) setKnownAtStart(new Set(nodes.map((node) => node.id)))
+    const joined = issued && knownAtStart ? nodes?.find((node) => !knownAtStart.has(node.id)) : undefined
 
     const env = useMemo(
         () =>
@@ -77,7 +81,7 @@ function AutomaticJoin() {
                 `REGISTRATION_TOKEN=${issued?.token ?? ''}`,
                 `NODE_API_ENDPOINT=${nodeUrl.trim() || 'http://<this-machine-address>:8080'}`,
             ].join('\n'),
-        [primaryUrl, nodeUrl, issued]
+        [primaryUrl, nodeUrl, issued],
     )
 
     return (
@@ -87,21 +91,47 @@ function AutomaticJoin() {
                     <CardTitle className="text-base">1. Make a join token</CardTitle>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-4">
-                    <p className="text-sm text-muted-foreground">The token works once and expires after an hour, so it is safe to paste into the new machine's settings.</p>
+                    <p className="text-sm text-muted-foreground">
+                        The token works once and expires after an hour, so it is safe to paste into the new machine's
+                        settings.
+                    </p>
                     <div className="grid gap-4 sm:grid-cols-2">
                         <Field label="This server's address" hint="What the new machine will use to reach this one.">
-                            <Input value={primaryUrl} onChange={(event) => setPrimaryUrl(event.target.value)} inputMode="url" className="font-mono" />
+                            <Input
+                                value={primaryUrl}
+                                onChange={(event) => setPrimaryUrl(event.target.value)}
+                                inputMode="url"
+                                className="font-mono"
+                            />
                         </Field>
                         <Field label="The new machine's address" hint="Where this server can reach the new machine.">
-                            <Input value={nodeUrl} onChange={(event) => setNodeUrl(event.target.value)} placeholder="http://192.168.1.50:8080" inputMode="url" className="font-mono" />
+                            <Input
+                                value={nodeUrl}
+                                onChange={(event) => setNodeUrl(event.target.value)}
+                                placeholder="http://192.168.1.50:8080"
+                                inputMode="url"
+                                className="font-mono"
+                            />
                         </Field>
                     </div>
                     <div className="flex flex-wrap items-center gap-3">
                         <Button onClick={() => createToken.mutate()} disabled={createToken.isPending}>
-                            {createToken.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
+                            {createToken.isPending ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <KeyRound className="h-4 w-4" />
+                            )}
                             {issued ? 'Make a new token' : 'Make a join token'}
                         </Button>
-                        {issued && <span className="text-[13px] text-muted-foreground">Expires {new Date(issued.expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
+                        {issued && (
+                            <span className="text-[13px] text-muted-foreground">
+                                Expires{' '}
+                                {new Date(issued.expires_at).toLocaleTimeString([], {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                })}
+                            </span>
+                        )}
                     </div>
                     {createToken.error && (
                         <p role="alert" className="text-sm text-status-err-fg">
@@ -117,13 +147,18 @@ function AutomaticJoin() {
                         <CardTitle className="text-base">2. Put this in the new machine's .env</CardTitle>
                     </CardHeader>
                     <CardContent className="flex flex-col gap-4">
-                        <CodeBlock lines={env.split('\n').map((text) => ({ text }))} aria-label="Settings for the new machine" />
+                        <CodeBlock
+                            lines={env.split('\n').map((text) => ({ text }))}
+                            aria-label="Settings for the new machine"
+                        />
                         <div className="flex flex-wrap items-center gap-3">
                             <Button variant="outline" onClick={() => void copy(env, toast, 'The settings')}>
                                 <Copy className="h-4 w-4" />
                                 Copy settings
                             </Button>
-                            <span className="text-[13px] text-muted-foreground">Install Selfhostly there, add these lines to its .env, and start it.</span>
+                            <span className="text-[13px] text-muted-foreground">
+                                Install Selfhostly there, add these lines to its .env, and start it.
+                            </span>
                         </div>
                     </CardContent>
                 </Card>
@@ -137,7 +172,9 @@ function AutomaticJoin() {
                                 <CheckCircle2 aria-hidden="true" className="h-5 w-5 shrink-0 text-status-ok-fg" />
                                 <div className="flex-1">
                                     <p className="font-semibold">{joined.name} joined</p>
-                                    <p className="text-[13px] text-muted-foreground">It is {joined.status}. You can put apps on it now.</p>
+                                    <p className="text-[13px] text-muted-foreground">
+                                        It is {joined.status}. You can put apps on it now.
+                                    </p>
                                 </div>
                                 <Link to={ROUTES.nodes} className={buttonClasses()}>
                                     See nodes
@@ -145,10 +182,15 @@ function AutomaticJoin() {
                             </>
                         ) : (
                             <>
-                                <Loader2 aria-hidden="true" className="h-5 w-5 shrink-0 animate-spin text-muted-foreground" />
+                                <Loader2
+                                    aria-hidden="true"
+                                    className="h-5 w-5 shrink-0 animate-spin text-muted-foreground"
+                                />
                                 <div className="flex-1">
                                     <p className="font-semibold">Waiting for the new machine</p>
-                                    <p className="text-[13px] text-muted-foreground">This page checks every few seconds and shows it here as soon as it starts.</p>
+                                    <p className="text-[13px] text-muted-foreground">
+                                        This page checks every few seconds and shows it here as soon as it starts.
+                                    </p>
                                 </div>
                             </>
                         )}
@@ -170,8 +212,15 @@ function ManualRegister() {
     const { data: nodes = [] } = useNodes()
 
     const idTaken = form.id.trim() !== '' && nodes.some((node) => node.id === form.id.trim())
-    const nameTaken = form.name.trim() !== '' && nodes.some((node) => node.name.toLowerCase() === form.name.trim().toLowerCase())
-    const valid = form.id.trim() !== '' && form.name.trim() !== '' && form.api_endpoint.trim() !== '' && form.api_key.trim() !== '' && !idTaken && !nameTaken
+    const nameTaken =
+        form.name.trim() !== '' && nodes.some((node) => node.name.toLowerCase() === form.name.trim().toLowerCase())
+    const valid =
+        form.id.trim() !== '' &&
+        form.name.trim() !== '' &&
+        form.api_endpoint.trim() !== '' &&
+        form.api_key.trim() !== '' &&
+        !idTaken &&
+        !nameTaken
     const set = (patch: Partial<RegisterNodeRequest>) => setForm({ ...form, ...patch })
 
     const submit = (event: React.FormEvent) => {
@@ -224,24 +273,71 @@ function ManualRegister() {
         <Card>
             <CardContent className="p-4 sm:p-6">
                 <form onSubmit={submit} className="flex flex-col gap-4">
-                    <p className="text-sm text-muted-foreground">Copy the ID and API key from the new machine's start-up log or its .env.</p>
-                    <Field label="Node ID" hint="From the new machine. Needed so its heartbeats are accepted." error={idTaken ? 'A node with this ID is already in the cluster.' : fieldError(register.error, 'id')}>
-                        <Input value={form.id} onChange={(event) => set({ id: event.target.value })} className="font-mono" autoComplete="off" />
+                    <p className="text-sm text-muted-foreground">
+                        Copy the ID and API key from the new machine's start-up log or its .env.
+                    </p>
+                    <Field
+                        label="Node ID"
+                        hint="From the new machine. Needed so its heartbeats are accepted."
+                        error={
+                            idTaken
+                                ? 'A node with this ID is already in the cluster.'
+                                : fieldError(register.error, 'id')
+                        }
+                    >
+                        <Input
+                            value={form.id}
+                            onChange={(event) => set({ id: event.target.value })}
+                            className="font-mono"
+                            autoComplete="off"
+                        />
                     </Field>
-                    <Field label="Name" hint="Shown on cards and in the node picker, for example garage-nas." error={nameTaken ? 'A node with this name is already in the cluster.' : fieldError(register.error, 'name')}>
-                        <Input value={form.name} onChange={(event) => set({ name: event.target.value })} placeholder="garage-nas" autoComplete="off" />
+                    <Field
+                        label="Name"
+                        hint="Shown on cards and in the node picker, for example garage-nas."
+                        error={
+                            nameTaken
+                                ? 'A node with this name is already in the cluster.'
+                                : fieldError(register.error, 'name')
+                        }
+                    >
+                        <Input
+                            value={form.name}
+                            onChange={(event) => set({ name: event.target.value })}
+                            placeholder="garage-nas"
+                            autoComplete="off"
+                        />
                     </Field>
-                    <Field label="Address" hint="Where this server reaches the machine." error={fieldError(register.error, 'api_endpoint')}>
-                        <Input type="url" value={form.api_endpoint} onChange={(event) => set({ api_endpoint: event.target.value })} placeholder="http://192.168.1.50:8080" className="font-mono" />
+                    <Field
+                        label="Address"
+                        hint="Where this server reaches the machine."
+                        error={fieldError(register.error, 'api_endpoint')}
+                    >
+                        <Input
+                            type="url"
+                            value={form.api_endpoint}
+                            onChange={(event) => set({ api_endpoint: event.target.value })}
+                            placeholder="http://192.168.1.50:8080"
+                            className="font-mono"
+                        />
                     </Field>
                     <Field label="API key" hint="The NODE_API_KEY set on the new machine.">
-                        <Input type="password" value={form.api_key} onChange={(event) => set({ api_key: event.target.value })} autoComplete="off" />
+                        <Input
+                            type="password"
+                            value={form.api_key}
+                            onChange={(event) => set({ api_key: event.target.value })}
+                            autoComplete="off"
+                        />
                     </Field>
-                    {register.error && !['id', 'name', 'api_endpoint'].some((field) => fieldError(register.error, field)) && (
-                        <p role="alert" className="rounded-lg bg-status-err-bg px-3.5 py-3 text-sm text-status-err-fg">
-                            Could not add the node. {describeError(register.error)}
-                        </p>
-                    )}
+                    {register.error &&
+                        !['id', 'name', 'api_endpoint'].some((field) => fieldError(register.error, field)) && (
+                            <p
+                                role="alert"
+                                className="rounded-lg bg-status-err-bg px-3.5 py-3 text-sm text-status-err-fg"
+                            >
+                                Could not add the node. {describeError(register.error)}
+                            </p>
+                        )}
                     <div className="flex justify-end gap-2">
                         <Link to={ROUTES.nodes} className={buttonClasses({ variant: 'ghost' })}>
                             Cancel

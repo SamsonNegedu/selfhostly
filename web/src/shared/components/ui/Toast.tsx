@@ -74,7 +74,10 @@ const ICON_TILE_CLASSES: Record<StatusKind, string> = {
 
 export function ToastContainer({ toasts, removeToast }: { toasts: Toast[]; removeToast: (id: string) => void }) {
     return (
-        <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-md:bottom-auto max-md:left-4 max-md:top-[68px]" aria-live="polite">
+        <div
+            className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-md:bottom-auto max-md:left-4 max-md:top-[68px]"
+            aria-live="polite"
+        >
             {toasts.map((toast) => {
                 const { kind, Icon } = VARIANT_STYLE[toast.variant ?? 'default']
                 return (
@@ -85,7 +88,10 @@ export function ToastContainer({ toasts, removeToast }: { toasts: Toast[]; remov
                     >
                         <div
                             aria-hidden="true"
-                            className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg', ICON_TILE_CLASSES[kind])}
+                            className={cn(
+                                'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg',
+                                ICON_TILE_CLASSES[kind],
+                            )}
                         >
                             <Icon className="h-4 w-4" />
                         </div>
@@ -107,7 +113,13 @@ export function ToastContainer({ toasts, removeToast }: { toasts: Toast[]; remov
                                 {toast.action.label}
                             </Button>
                         )}
-                        <Button variant="ghost" size="icon" className="-my-1 -mr-1.5 h-7 w-7" onClick={() => removeToast(toast.id)} aria-label="Dismiss notification">
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="-my-1 -mr-1.5 h-7 w-7"
+                            onClick={() => removeToast(toast.id)}
+                            aria-label="Dismiss notification"
+                        >
                             <X className="h-4 w-4" />
                         </Button>
                     </div>

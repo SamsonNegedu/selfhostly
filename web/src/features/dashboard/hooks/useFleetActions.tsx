@@ -60,7 +60,12 @@ export function useFleetActions({ onDeleted }: { onDeleted?: (app: App) => void 
             return next
         })
 
-    const run = (app: App, mutate: (callbacks: { onSuccess: () => void; onError: (error: Error) => void }) => void, success: [string, string], failure: string) => {
+    const run = (
+        app: App,
+        mutate: (callbacks: { onSuccess: () => void; onError: (error: Error) => void }) => void,
+        success: [string, string],
+        failure: string,
+    ) => {
         setBusy(app.id, true)
         mutate({
             onSuccess: () => {
@@ -75,7 +80,12 @@ export function useFleetActions({ onDeleted }: { onDeleted?: (app: App) => void 
     }
 
     const start = (app: App) =>
-        run(app, (callbacks) => startApp.mutate({ id: app.id, nodeId: app.node_id }, callbacks), ['App starting', `${app.name} is starting`], 'Could not start app')
+        run(
+            app,
+            (callbacks) => startApp.mutate({ id: app.id, nodeId: app.node_id }, callbacks),
+            ['App starting', `${app.name} is starting`],
+            'Could not start app',
+        )
 
     const confirm = () => {
         if (!pending) return
@@ -83,9 +93,19 @@ export function useFleetActions({ onDeleted }: { onDeleted?: (app: App) => void 
         setPending(null)
 
         if (type === 'stop') {
-            run(app, (callbacks) => stopApp.mutate({ id: app.id, nodeId: app.node_id }, callbacks), ['App stopped', `${app.name} has been stopped`], 'Could not stop app')
+            run(
+                app,
+                (callbacks) => stopApp.mutate({ id: app.id, nodeId: app.node_id }, callbacks),
+                ['App stopped', `${app.name} has been stopped`],
+                'Could not stop app',
+            )
         } else if (type === 'update') {
-            run(app, (callbacks) => updateApp.mutate({ id: app.id, nodeId: app.node_id }, callbacks), ['Update started', `${app.name} is updating`], 'Could not start update')
+            run(
+                app,
+                (callbacks) => updateApp.mutate({ id: app.id, nodeId: app.node_id }, callbacks),
+                ['Update started', `${app.name} is updating`],
+                'Could not start update',
+            )
         } else {
             run(
                 app,
@@ -99,10 +119,10 @@ export function useFleetActions({ onDeleted }: { onDeleted?: (app: App) => void 
                                 callbacks.onSuccess()
                                 onDeleted?.(app)
                             },
-                        }
+                        },
                     ),
                 ['App deleted', `${app.name} has been deleted`],
-                'Could not delete app'
+                'Could not delete app',
             )
         }
     }

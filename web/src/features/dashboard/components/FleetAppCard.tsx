@@ -1,5 +1,16 @@
 import { Link } from 'react-router-dom'
-import { AlertTriangle, ExternalLink, Globe, Loader2, Lock, MoreHorizontal, Play, RefreshCw, Square, Trash2 } from 'lucide-react'
+import {
+    AlertTriangle,
+    ExternalLink,
+    Globe,
+    Loader2,
+    Lock,
+    MoreHorizontal,
+    Play,
+    RefreshCw,
+    Square,
+    Trash2,
+} from 'lucide-react'
 import { AppTile } from '@/shared/components/ui/AppTile'
 import { Button, buttonClasses } from '@/shared/components/ui/Button'
 import { Card } from '@/shared/components/ui/Card'
@@ -45,7 +56,8 @@ function NextRun({ app }: { app: App }) {
     const [first, second] = upcomingRuns(data)
     if (!first) return null
 
-    const label = (run: { action: string; at: string }) => `${run.action === 'start' ? 'starts' : 'stops'} ${formatUntil(run.at)}`
+    const label = (run: { action: string; at: string }) =>
+        `${run.action === 'start' ? 'starts' : 'stops'} ${formatUntil(run.at)}`
     return (
         <p className="text-[12.5px] text-muted-foreground">
             {label(first).replace(/^./, (letter) => letter.toUpperCase())}
@@ -77,14 +89,21 @@ function FleetAppCard({ fleetApp, metrics, actions }: FleetAppCardProps) {
 
     return (
         <Card
-            className={cn('relative flex flex-col gap-3 p-4', isFailed && 'border-status-err/50', unreachable && 'opacity-90')}
+            className={cn(
+                'relative flex flex-col gap-3 p-4',
+                isFailed && 'border-status-err/50',
+                unreachable && 'opacity-90',
+            )}
             data-app={app.name}
         >
             <div className="flex items-start gap-3">
                 <AppTile name={app.name} size="md" />
                 <div className="min-w-0 flex-1">
                     {/* The link stretches over the whole card so the card is one large tap target. The actions sit above it. */}
-                    <Link to={appHref(app)} className="block truncate text-[15px] font-semibold hover:underline after:absolute after:inset-0 after:content-['']">
+                    <Link
+                        to={appHref(app)}
+                        className="block truncate text-[15px] font-semibold hover:underline after:absolute after:inset-0 after:content-['']"
+                    >
                         {app.name}
                     </Link>
                     <p className="truncate text-[13px] text-muted-foreground">{app.description || 'No description'}</p>
@@ -96,7 +115,11 @@ function FleetAppCard({ fleetApp, metrics, actions }: FleetAppCardProps) {
                 <div className="flex items-center gap-1.5 text-[12.5px] text-status-info-fg">
                     <Globe className="h-3.5 w-3.5 shrink-0" />
                     <span className="truncate font-mono">{hostOf(app.public_url)}</span>
-                    {app.tunnel_mode === 'quick' && <StatusPill kind="warn" size="sm">Temporary</StatusPill>}
+                    {app.tunnel_mode === 'quick' && (
+                        <StatusPill kind="warn" size="sm">
+                            Temporary
+                        </StatusPill>
+                    )}
                 </div>
             ) : (
                 <div className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
@@ -118,7 +141,11 @@ function FleetAppCard({ fleetApp, metrics, actions }: FleetAppCardProps) {
             )}
             {isRunning && metrics && (
                 <div className="grid grid-cols-3 gap-3">
-                    <Metric label="CPU" value={formatPercent(metrics.cpuPercent)} tone={resourceTone('cpu', metrics.cpuPercent)} />
+                    <Metric
+                        label="CPU"
+                        value={formatPercent(metrics.cpuPercent)}
+                        tone={resourceTone('cpu', metrics.cpuPercent)}
+                    />
                     <Metric label="Memory" value={formatBytes(metrics.memoryBytes)} />
                     <Metric label="Containers" value={String(metrics.containers)} />
                 </div>
@@ -160,7 +187,12 @@ function FleetAppCard({ fleetApp, metrics, actions }: FleetAppCardProps) {
                     </Button>
                 )}
                 {isRunning && app.public_url && (
-                    <a href={app.public_url} target="_blank" rel="noopener noreferrer" className={buttonClasses({ variant: 'outline' })}>
+                    <a
+                        href={app.public_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={buttonClasses({ variant: 'outline' })}
+                    >
                         <ExternalLink className="h-4 w-4" />
                         Open
                     </a>
@@ -178,7 +210,10 @@ function FleetAppCard({ fleetApp, metrics, actions }: FleetAppCardProps) {
                                 <Link to={appHref(app)}>Details</Link>
                             </DropdownMenuItem>
                             {!unreachable && (
-                                <DropdownMenuItem onSelect={() => actions.requestUpdate(app)} disabled={busy || inProgress}>
+                                <DropdownMenuItem
+                                    onSelect={() => actions.requestUpdate(app)}
+                                    disabled={busy || inProgress}
+                                >
                                     <RefreshCw className="mr-2 h-4 w-4" />
                                     Update
                                 </DropdownMenuItem>

@@ -19,7 +19,15 @@ import FleetToolbar, { type GroupBy } from './components/FleetToolbar'
 import NodeGroupSection from './components/NodeGroupSection'
 import { useFleetActions } from './hooks/useFleetActions'
 import { useFleetMetrics } from './hooks/useFleetMetrics'
-import { countByFilter, groupByNode, matchesFilter, matchesQuery, sortFleetApps, toFleetApps, type FleetFilter } from './lib/fleet'
+import {
+    countByFilter,
+    groupByNode,
+    matchesFilter,
+    matchesQuery,
+    sortFleetApps,
+    toFleetApps,
+    type FleetFilter,
+} from './lib/fleet'
 
 type ViewMode = 'grid' | 'list'
 
@@ -48,8 +56,12 @@ function Dashboard() {
     const [filter, setFilter] = useState<FleetFilter>('all')
     const [query, setQuery] = useState('')
     const phone = useIsPhone()
-    const [savedViewMode, setViewMode] = useState<ViewMode>(() => readStored<ViewMode>(VIEW_STORAGE_KEY, ['grid', 'list'], 'grid'))
-    const [groupBy, setGroupBy] = useState<GroupBy>(() => readStored<GroupBy>(GROUP_STORAGE_KEY, ['node', 'none'], 'node'))
+    const [savedViewMode, setViewMode] = useState<ViewMode>(() =>
+        readStored<ViewMode>(VIEW_STORAGE_KEY, ['grid', 'list'], 'grid'),
+    )
+    const [groupBy, setGroupBy] = useState<GroupBy>(() =>
+        readStored<GroupBy>(GROUP_STORAGE_KEY, ['node', 'none'], 'node'),
+    )
 
     // A table does not fit a phone, so phones always get the list of rows. The saved choice comes back on a wider screen.
     const viewMode: ViewMode = phone ? 'grid' : savedViewMode
@@ -73,11 +85,11 @@ function Dashboard() {
     const counts = useMemo(() => countByFilter(fleetApps), [fleetApps])
     const visible = useMemo(
         () => sortFleetApps(fleetApps.filter((item) => matchesFilter(item, filter) && matchesQuery(item, query))),
-        [fleetApps, filter, query]
+        [fleetApps, filter, query],
     )
     const groups = useMemo(
         () => (groupBy === 'node' ? groupByNode(visible, nodes) : [{ key: 'all', name: 'Apps', apps: visible }]),
-        [visible, nodes, groupBy]
+        [visible, nodes, groupBy],
     )
 
     const nodeCount = selectedNodeIds.length
@@ -148,8 +160,18 @@ function Dashboard() {
                         <EmptyState
                             icon={<SearchX className="h-5 w-5" />}
                             title="No apps match"
-                            description={isFiltering ? 'Try a different filter or clear it to see everything.' : 'Nothing to show.'}
-                            action={isFiltering ? <Button variant="outline" onClick={clearFilters}>Clear filters</Button> : undefined}
+                            description={
+                                isFiltering
+                                    ? 'Try a different filter or clear it to see everything.'
+                                    : 'Nothing to show.'
+                            }
+                            action={
+                                isFiltering ? (
+                                    <Button variant="outline" onClick={clearFilters}>
+                                        Clear filters
+                                    </Button>
+                                ) : undefined
+                            }
                         />
                     ) : viewMode === 'list' ? (
                         <FleetTable apps={visible} metricsFor={metrics.forApp} actions={actions} />

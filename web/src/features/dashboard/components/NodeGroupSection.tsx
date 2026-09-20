@@ -31,16 +31,28 @@ function NodeGroupSection({ group, showHeader, nodeMetrics, metricsFor, actions 
                     <h2 className="text-[15px] font-semibold">{group.name}</h2>
                     <span className="text-[13px] text-muted-foreground">
                         {count} {count === 1 ? 'app' : 'apps'}
-                        {nodeMetrics && ` · CPU ${formatPercent(nodeMetrics.cpuPercent)} · Memory ${formatPercent(nodeMetrics.memoryPercent)}`}
+                        {nodeMetrics &&
+                            ` · CPU ${formatPercent(nodeMetrics.cpuPercent)} · Memory ${formatPercent(nodeMetrics.memoryPercent)}`}
                     </span>
-                    {status && status.kind !== 'ok' && <StatusPill kind={status.kind} size="sm">{status.label}</StatusPill>}
+                    {status && status.kind !== 'ok' && (
+                        <StatusPill kind={status.kind} size="sm">
+                            {status.label}
+                        </StatusPill>
+                    )}
                     <div className="h-px flex-1 bg-border" />
                 </div>
             )}
             <div className={phone ? 'flex flex-col gap-2' : 'grid gap-4 md:grid-cols-2 xl:grid-cols-3'}>
                 {group.apps.map((fleetApp) => {
                     const Item = phone ? FleetAppRow : FleetAppCard
-                    return <Item key={fleetApp.app.id} fleetApp={fleetApp} metrics={metricsFor(fleetApp.app.node_id, fleetApp.app.name)} actions={actions} />
+                    return (
+                        <Item
+                            key={fleetApp.app.id}
+                            fleetApp={fleetApp}
+                            metrics={metricsFor(fleetApp.app.node_id, fleetApp.app.name)}
+                            actions={actions}
+                        />
+                    )
                 })}
             </div>
         </section>

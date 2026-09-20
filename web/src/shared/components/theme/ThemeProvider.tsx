@@ -25,11 +25,8 @@ function readStoredTheme(): Theme {
     return isTheme(saved) ? saved : DEFAULT_THEME
 }
 
-function resolveTheme(theme: Theme): ActualTheme {
-    if (theme === 'system') {
-        return window.matchMedia(DARK_SCHEME_QUERY).matches ? 'dark' : 'light'
-    }
-    return theme
+function systemPrefersDark(): boolean {
+    return window.matchMedia(DARK_SCHEME_QUERY).matches
 }
 
 function applyThemeClass(actual: ActualTheme) {
@@ -40,34 +37,27 @@ function applyThemeClass(actual: ActualTheme) {
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const [theme, setTheme] = useState<Theme>(readStoredTheme)
-    const [actualTheme, setActualTheme] = useState<ActualTheme>(() => resolveTheme(readStoredTheme()))
+    // The system setting is tracked on its own, so the resolved theme is worked out while rendering.
+    const [systemDark, setSystemDark] = useState(systemPrefersDark)
+    const actualTheme: ActualTheme = theme === 'system' ? (systemDark ? 'dark' : 'light') : theme
 
     useEffect(() => {
         localStorage.setItem(THEME_STORAGE_KEY, theme)
-        const actual = resolveTheme(theme)
-        applyThemeClass(actual)
-        setActualTheme(actual)
     }, [theme])
 
     useEffect(() => {
-        if (theme !== 'system') return
+        applyThemeClass(actualTheme)
+    }, [actualTheme])
 
+    useEffect(() => {
         const mediaQuery = window.matchMedia(DARK_SCHEME_QUERY)
-        const handleChange = () => {
-            const actual = resolveTheme('system')
-            applyThemeClass(actual)
-            setActualTheme(actual)
-        }
+        const handleChange = () => setSystemDark(mediaQuery.matches)
 
         mediaQuery.addEventListener('change', handleChange)
         return () => mediaQuery.removeEventListener('change', handleChange)
-    }, [theme])
+    }, [])
 
-    return (
-        <ThemeContext.Provider value={{ theme, setTheme, actualTheme }}>
-            {children}
-        </ThemeContext.Provider>
-    )
+    return <ThemeContext.Provider value={{ theme, setTheme, actualTheme }}>{children}</ThemeContext.Provider>
 }
 
 export function useTheme() {

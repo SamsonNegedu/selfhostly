@@ -18,5 +18,12 @@ export function upcomingRuns(nextRuns: ScheduleNextRuns | null | undefined): Upc
 
 // "Sun 20 Sept, 08:00" on the clock of the schedule's own timezone.
 export function formatRunTime(iso: string, timeZone?: string): string {
-    return new Date(iso).toLocaleString(undefined, { timeZone, weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    return new Date(iso).toLocaleString(undefined, {
+        timeZone,
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    })
 }

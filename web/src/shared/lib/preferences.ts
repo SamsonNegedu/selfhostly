@@ -27,4 +27,5 @@ export function applyDensity(density: Density) {
     document.documentElement.dataset.density = density
 }
 
-export const readDensity = (): Density => readPreference<Density>(DENSITY_KEY, ['comfortable', 'compact'], 'comfortable')
+export const readDensity = (): Density =>
+    readPreference<Density>(DENSITY_KEY, ['comfortable', 'compact'], 'comfortable')

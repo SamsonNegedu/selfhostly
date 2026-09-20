@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { CheckCircle2, Loader2, MinusCircle } from 'lucide-react'
 import { Button } from '@/shared/components/ui/Button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/Card'
@@ -31,11 +31,15 @@ function TunnelProviderSection() {
     const [masked, setMasked] = useState<Record<string, string>>({})
     const { data: features } = useProviderFeatures(provider)
 
-    useEffect(() => {
-        if (!settings) return
+    // Load the form from the saved settings, and again whenever they change.
+    const [loadedSettings, setLoadedSettings] = useState(settings)
+    if (settings && settings !== loadedSettings) {
+        setLoadedSettings(settings)
         setProvider(settings.active_tunnel_provider || 'cloudflare')
         try {
-            const parsed: ProviderConfig = settings.tunnel_provider_config ? JSON.parse(settings.tunnel_provider_config) : {}
+            const parsed: ProviderConfig = settings.tunnel_provider_config
+                ? JSON.parse(settings.tunnel_provider_config)
+                : {}
             const hints: Record<string, string> = {}
             for (const [name, value] of Object.entries(parsed)) {
                 if (value?.api_token?.includes('****')) {
@@ -49,7 +53,7 @@ function TunnelProviderSection() {
             setMasked({})
             setConfig({})
         }
-    }, [settings])
+    }
 
     if (!settings || !providerData) {
         return (
@@ -63,17 +67,28 @@ function TunnelProviderSection() {
     const providers = providerData.providers
     const current = providers.find((item) => item.name === provider)
     const values = config[provider] ?? {}
-    const set = (field: 'api_token' | 'account_id', value: string) => setConfig({ ...config, [provider]: { ...values, [field]: value } })
+    const set = (field: 'api_token' | 'account_id', value: string) =>
+        setConfig({ ...config, [provider]: { ...values, [field]: value } })
     const isCloudflare = provider === 'cloudflare'
-    const ready = !isCloudflare || (((values.api_token ?? '') !== '' || masked[provider] !== undefined) && (values.account_id ?? '') !== '')
+    const ready =
+        !isCloudflare ||
+        (((values.api_token ?? '') !== '' || masked[provider] !== undefined) && (values.account_id ?? '') !== '')
 
     const save = () =>
         update.mutate(
-            { active_tunnel_provider: provider, tunnel_provider_config: JSON.stringify(config), auto_start_apps: settings.auto_start_apps },
             {
-                onSuccess: () => toast.success('Tunnel provider saved', `${current?.display_name ?? provider} is now the active provider`),
+                active_tunnel_provider: provider,
+                tunnel_provider_config: JSON.stringify(config),
+                auto_start_apps: settings.auto_start_apps,
+            },
+            {
+                onSuccess: () =>
+                    toast.success(
+                        'Tunnel provider saved',
+                        `${current?.display_name ?? provider} is now the active provider`,
+                    ),
                 onError: (failure) => toast.error('Could not save', describeError(failure)),
-            }
+            },
         )
 
     return (
@@ -81,9 +96,15 @@ function TunnelProviderSection() {
             <Card className="flex flex-wrap items-center gap-3 p-4" aria-label="Provider status" role="region">
                 <div className="min-w-0 flex-1">
                     <p className="font-semibold">{current?.display_name ?? 'No provider'}</p>
-                    <p className="text-[13px] text-muted-foreground">{current?.is_configured ? 'Credentials are saved. Custom domains are available.' : 'Add credentials below to publish apps on your own domain.'}</p>
+                    <p className="text-[13px] text-muted-foreground">
+                        {current?.is_configured
+                            ? 'Credentials are saved. Custom domains are available.'
+                            : 'Add credentials below to publish apps on your own domain.'}
+                    </p>
                 </div>
-                <StatusPill kind={current?.is_configured ? 'ok' : 'idle'}>{current?.is_configured ? 'Connected' : 'Not connected'}</StatusPill>
+                <StatusPill kind={current?.is_configured ? 'ok' : 'idle'}>
+                    {current?.is_configured ? 'Connected' : 'Not connected'}
+                </StatusPill>
             </Card>
 
             <Card>
@@ -109,11 +130,30 @@ function TunnelProviderSection() {
 
                     {isCloudflare && (
                         <div className="grid gap-4 sm:grid-cols-2">
-                            <Field label="API token" hint={masked[provider] ? 'A token is saved. Enter a new one only to replace it.' : "Create a token with the 'Cloudflare Tunnel' permission."}>
-                                <Input type="password" value={values.api_token ?? ''} onChange={(event) => set('api_token', event.target.value)} placeholder={masked[provider] ?? 'Paste your API token'} autoComplete="off" className="font-mono" />
+                            <Field
+                                label="API token"
+                                hint={
+                                    masked[provider]
+                                        ? 'A token is saved. Enter a new one only to replace it.'
+                                        : "Create a token with the 'Cloudflare Tunnel' permission."
+                                }
+                            >
+                                <Input
+                                    type="password"
+                                    value={values.api_token ?? ''}
+                                    onChange={(event) => set('api_token', event.target.value)}
+                                    placeholder={masked[provider] ?? 'Paste your API token'}
+                                    autoComplete="off"
+                                    className="font-mono"
+                                />
                             </Field>
                             <Field label="Account ID" hint="Shown in your Cloudflare dashboard.">
-                                <Input value={values.account_id ?? ''} onChange={(event) => set('account_id', event.target.value)} className="font-mono" autoComplete="off" />
+                                <Input
+                                    value={values.account_id ?? ''}
+                                    onChange={(event) => set('account_id', event.target.value)}
+                                    className="font-mono"
+                                    autoComplete="off"
+                                />
                             </Field>
                         </div>
                     )}
@@ -143,7 +183,11 @@ function TunnelProviderSection() {
                                 const on = features.features[feature.key]
                                 return (
                                     <li key={feature.key} className="flex items-center gap-2">
-                                        {on ? <CheckCircle2 aria-hidden="true" className="h-4 w-4 text-status-ok-fg" /> : <MinusCircle aria-hidden="true" className="h-4 w-4 text-muted-foreground" />}
+                                        {on ? (
+                                            <CheckCircle2 aria-hidden="true" className="h-4 w-4 text-status-ok-fg" />
+                                        ) : (
+                                            <MinusCircle aria-hidden="true" className="h-4 w-4 text-muted-foreground" />
+                                        )}
                                         <span className={on ? '' : 'text-muted-foreground'}>
                                             {feature.label}
                                             <span className="sr-only">{on ? ': supported' : ': not supported'}</span>

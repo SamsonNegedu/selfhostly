@@ -34,7 +34,15 @@ function normalizeAppTab(value: string | null): AppTab {
 
 // The tabs that have content today. A tab is added here when its screen is built, so an address for one
 // that is not ready yet falls back to the overview instead of showing an empty page.
-export const AVAILABLE_APP_TABS: readonly AppTab[] = ['overview', 'config', 'environment', 'logs', 'access', 'schedule', 'history']
+export const AVAILABLE_APP_TABS: readonly AppTab[] = [
+    'overview',
+    'config',
+    'environment',
+    'logs',
+    'access',
+    'schedule',
+    'history',
+]
 
 // The tab to show for an address: normalized, and only one that exists.
 export function resolveAppTab(value: string | null): AppTab {

@@ -21,7 +21,8 @@ function MobileTabBar() {
     const { failedApps } = useAttention()
     const [moreOpen, setMoreOpen] = useState(false)
 
-    const isActive = (path: string) => (path === FLEET_PATH ? pathname === '/' || pathname.startsWith(FLEET_PATH) : pathname.startsWith(path))
+    const isActive = (path: string) =>
+        path === FLEET_PATH ? pathname === '/' || pathname.startsWith(FLEET_PATH) : pathname.startsWith(path)
     const moreActive = pathname.startsWith(ROUTES.settings)
 
     return (
@@ -56,7 +57,10 @@ function MobileTabBar() {
                             <span className="relative">
                                 <Icon className="h-[22px] w-[22px]" strokeWidth={active ? 2.4 : 2} />
                                 {showBadge && (
-                                    <span aria-hidden="true" className="absolute -right-1 -top-0.5 h-2 w-2 rounded-full border-2 border-card bg-status-err" />
+                                    <span
+                                        aria-hidden="true"
+                                        className="absolute -right-1 -top-0.5 h-2 w-2 rounded-full border-2 border-card bg-status-err"
+                                    />
                                 )}
                             </span>
                             {item.label}

@@ -15,7 +15,8 @@ function ClusterStatus({ collapsed }: ClusterStatusProps) {
     const online = nodes.filter((node) => node.status === 'online').length
     const firstDown = nodes.find((node) => node.status !== 'online')
     const kind: StatusKind = online === nodes.length ? 'ok' : 'warn'
-    const headline = online === nodes.length ? `All ${nodes.length} nodes online` : `${online} of ${nodes.length} nodes online`
+    const headline =
+        online === nodes.length ? `All ${nodes.length} nodes online` : `${online} of ${nodes.length} nodes online`
     const detail = firstDown
         ? `${firstDown.name} ${firstDown.status}${firstDown.last_seen ? ` since ${formatAgo(firstDown.last_seen).replace(' ago', '')} ago` : ''}`
         : undefined

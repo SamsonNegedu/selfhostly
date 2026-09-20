@@ -33,7 +33,11 @@ const THEMES: { value: ThemeChoice; label: string; preview: keyof typeof PREVIEW
 
 function ThemePreview({ colors }: { colors: (typeof PREVIEWS)[keyof typeof PREVIEWS] }) {
     return (
-        <span aria-hidden="true" className="flex h-[84px] w-full flex-col gap-1.5 rounded-lg border p-2.5" style={{ background: colors.page, borderColor: colors.line }}>
+        <span
+            aria-hidden="true"
+            className="flex h-[84px] w-full flex-col gap-1.5 rounded-lg border p-2.5"
+            style={{ background: colors.page, borderColor: colors.line }}
+        >
             <span className="h-2 w-3/5 rounded" style={{ background: colors.ink }} />
             <span className="h-6 rounded-md border" style={{ background: colors.card, borderColor: colors.line }} />
             <span className="flex items-center gap-1">
@@ -45,7 +49,15 @@ function ThemePreview({ colors }: { colors: (typeof PREVIEWS)[keyof typeof PREVI
     )
 }
 
-function PreferenceRow({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
+function PreferenceRow({
+    title,
+    description,
+    children,
+}: {
+    title: string
+    description: string
+    children: React.ReactNode
+}) {
     return (
         <div className="flex items-center gap-3.5 border-t border-border py-3.5 first:border-t-0 first:pt-0 last:pb-0">
             <div className="min-w-0 flex-1">
@@ -62,7 +74,9 @@ function AppearanceSection() {
     const { theme, setTheme } = useTheme()
     const [view, setView] = useState(() => readPreference(FLEET_VIEW_KEY, ['grid', 'list'], 'grid'))
     const [density, setDensity] = useState<Density>(readDensity)
-    const [groupByNode, setGroupByNode] = useState(() => readPreference(FLEET_GROUP_KEY, ['node', 'none'], 'node') === 'node')
+    const [groupByNode, setGroupByNode] = useState(
+        () => readPreference(FLEET_GROUP_KEY, ['node', 'none'], 'node') === 'node',
+    )
 
     return (
         <div className="flex flex-col gap-4">
@@ -70,16 +84,23 @@ function AppearanceSection() {
                 <CardContent className="flex flex-col gap-4 p-6">
                     <div>
                         <h3 className="text-base font-semibold">Theme</h3>
-                        <p className="text-[13.5px] text-muted-foreground">Dark is the default. System follows your device.</p>
+                        <p className="text-[13.5px] text-muted-foreground">
+                            Dark is the default. System follows your device.
+                        </p>
                     </div>
-                    <RadioGroupPrimitive.Root value={theme} onValueChange={(value) => setTheme(value as ThemeChoice)} aria-label="Theme" className="grid grid-cols-3 gap-3">
+                    <RadioGroupPrimitive.Root
+                        value={theme}
+                        onValueChange={(value) => setTheme(value as ThemeChoice)}
+                        aria-label="Theme"
+                        className="grid grid-cols-3 gap-3"
+                    >
                         {THEMES.map((option) => (
                             <RadioGroupPrimitive.Item
                                 key={option.value}
                                 value={option.value}
                                 className={cn(
                                     'flex flex-col gap-2 rounded-xl border bg-card p-3 text-left transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background',
-                                    theme === option.value ? 'border-2 border-primary p-[11px]' : 'border-border'
+                                    theme === option.value ? 'border-2 border-primary p-[11px]' : 'border-border',
                                 )}
                             >
                                 <ThemePreview colors={PREVIEWS[option.preview]} />

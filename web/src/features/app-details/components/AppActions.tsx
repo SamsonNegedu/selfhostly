@@ -43,7 +43,7 @@ export function AppActions({
     onUpdate,
     onDelete,
     onRefresh,
-    sticky = false
+    sticky = false,
 }: AppActionsProps) {
     const queryClient = useQueryClient()
     const { toast } = useToast()
@@ -57,15 +57,11 @@ export function AppActions({
     const { data: jobs } = useAppJobs(appId, nodeId)
 
     // Find the most recent active job (pending or running)
-    const activeJob = jobs?.find(j => j.status === 'pending' || j.status === 'running')
+    const activeJob = jobs?.find((j) => j.status === 'pending' || j.status === 'running')
     const hasActiveJobs = !!activeJob
 
     // Poll the active job if one exists
-    const { data: polledJob } = useJobPolling(
-        activeJob?.id || activeJobId,
-        nodeId,
-        !!(activeJob?.id || activeJobId)
-    )
+    const { data: polledJob } = useJobPolling(activeJob?.id || activeJobId, nodeId, !!(activeJob?.id || activeJobId))
 
     // Use the polled job data if available, otherwise use the job from the list
     const currentJob = polledJob || activeJob
@@ -128,7 +124,11 @@ export function AppActions({
             queryClient.refetchQueries({ queryKey: ['app', appId], type: 'active' })
 
             // If it's a tunnel job, also refresh tunnel data
-            if (currentJob.type === 'tunnel_create' || currentJob.type === 'tunnel_delete' || currentJob.type === 'quick_tunnel') {
+            if (
+                currentJob.type === 'tunnel_create' ||
+                currentJob.type === 'tunnel_delete' ||
+                currentJob.type === 'quick_tunnel'
+            ) {
                 queryClient.invalidateQueries({ queryKey: ['tunnels', 'app', appId, nodeId] })
                 queryClient.invalidateQueries({ queryKey: ['tunnels', 'list'] })
                 queryClient.refetchQueries({ queryKey: ['tunnels', 'app', appId, nodeId], type: 'active' })
@@ -147,7 +147,11 @@ export function AppActions({
             queryClient.refetchQueries({ queryKey: ['app', appId, nodeId], type: 'active' })
 
             // If it's a tunnel job, also refresh tunnel data (even on failure to update status)
-            if (currentJob.type === 'tunnel_create' || currentJob.type === 'tunnel_delete' || currentJob.type === 'quick_tunnel') {
+            if (
+                currentJob.type === 'tunnel_create' ||
+                currentJob.type === 'tunnel_delete' ||
+                currentJob.type === 'quick_tunnel'
+            ) {
                 queryClient.invalidateQueries({ queryKey: ['tunnels', 'app', appId, nodeId] })
                 queryClient.refetchQueries({ queryKey: ['tunnels', 'app', appId, nodeId], type: 'active' })
             }
@@ -159,11 +163,11 @@ export function AppActions({
         if (processedJobIdsRef.current.size > 10) {
             const ids = Array.from(processedJobIdsRef.current)
             processedJobIdsRef.current.clear()
-            ids.slice(-10).forEach(id => processedJobIdsRef.current.add(id))
+            ids.slice(-10).forEach((id) => processedJobIdsRef.current.add(id))
         }
-    // Each job is handled once (processedJobIdsRef), when its id or status changes. Its message fields are read
-    // at that moment and must not retrigger this.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // Each job is handled once (processedJobIdsRef), when its id or status changes. Its message fields are read
+        // at that moment and must not retrigger this.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentJob?.id, currentJob?.status, currentJob?.type, appId, nodeId, toast, queryClient])
 
     const isRunning = appStatus === 'running'
@@ -184,13 +188,25 @@ export function AppActions({
         </Button>
     )
     const updateButton = (
-        <Button variant="outline" onClick={onUpdate} disabled={disabled} title="Pull the latest images and restart" className={sticky && !canStart && !isRunning ? 'flex-1' : undefined}>
+        <Button
+            variant="outline"
+            onClick={onUpdate}
+            disabled={disabled}
+            title="Pull the latest images and restart"
+            className={sticky && !canStart && !isRunning ? 'flex-1' : undefined}
+        >
             <RotateCcw className="h-4 w-4" />
             Update
         </Button>
     )
     const openLink = isRunning && publicUrl && (
-        <a href={publicUrl} target="_blank" rel="noopener noreferrer" aria-label={sticky ? 'Open the app' : undefined} className={buttonClasses({ variant: 'outline', size: sticky ? 'icon' : 'default' })}>
+        <a
+            href={publicUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={sticky ? 'Open the app' : undefined}
+            className={buttonClasses({ variant: 'outline', size: sticky ? 'icon' : 'default' })}
+        >
             <ExternalLink className="h-4 w-4" />
             {!sticky && 'Open'}
         </a>
@@ -210,7 +226,11 @@ export function AppActions({
                     </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={onDelete} disabled={disabled} className="text-destructive focus:text-destructive">
+                <DropdownMenuItem
+                    onSelect={onDelete}
+                    disabled={disabled}
+                    className="text-destructive focus:text-destructive"
+                >
                     <Trash2 className="mr-2 h-4 w-4" />
                     Delete
                 </DropdownMenuItem>
@@ -220,7 +240,11 @@ export function AppActions({
 
     if (sticky) {
         return createPortal(
-            <div role="region" aria-label="App actions" className="fixed inset-x-0 bottom-[var(--mobile-nav-h)] z-30 flex flex-col gap-2 border-t border-border bg-card p-3">
+            <div
+                role="region"
+                aria-label="App actions"
+                className="fixed inset-x-0 bottom-[var(--mobile-nav-h)] z-30 flex flex-col gap-2 border-t border-border bg-card p-3"
+            >
                 {hasActiveJob && currentJob && <JobProgress job={currentJob} compact />}
                 <div className="flex items-center gap-2">
                     {startButton}
@@ -230,7 +254,7 @@ export function AppActions({
                     {menu}
                 </div>
             </div>,
-            document.body
+            document.body,
         )
     }
 

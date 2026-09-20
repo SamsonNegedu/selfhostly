@@ -16,7 +16,8 @@ const CREDENTIAL_URL_PATTERN = /:\/\/[^/\s:@]+:[^@\s]+@/
 
 // Entries that look like they should not be shown on a shared screen: a name such as PASSWORD or TOKEN, or a value
 // that is a URL with a login inside it. This is a guess, not a guarantee.
-export const isSecretEntry = (key: string, value: string) => SECRET_KEY_PATTERN.test(key) || CREDENTIAL_URL_PATTERN.test(value)
+export const isSecretEntry = (key: string, value: string) =>
+    SECRET_KEY_PATTERN.test(key) || CREDENTIAL_URL_PATTERN.test(value)
 
 function servicesOf(doc: Document): YAMLMap | null {
     const services = doc.get('services', true)
@@ -46,13 +47,21 @@ export function readEnv(content: string): { entries: EnvEntry[]; error?: string 
         const env = serviceMap(doc, service)?.get('environment', true)
         if (isMap(env)) {
             for (const pair of env.items) {
-                entries.push({ service, key: stringify((pair.key as { value?: unknown })?.value ?? pair.key), value: stringify((pair.value as { value?: unknown })?.value ?? pair.value) })
+                entries.push({
+                    service,
+                    key: stringify((pair.key as { value?: unknown })?.value ?? pair.key),
+                    value: stringify((pair.value as { value?: unknown })?.value ?? pair.value),
+                })
             }
         } else if (isSeq(env)) {
             for (const item of env.items) {
                 const text = stringify((item as { value?: unknown })?.value ?? item)
                 const split = text.indexOf('=')
-                entries.push(split === -1 ? { service, key: text, value: '' } : { service, key: text.slice(0, split), value: text.slice(split + 1) })
+                entries.push(
+                    split === -1
+                        ? { service, key: text, value: '' }
+                        : { service, key: text.slice(0, split), value: text.slice(split + 1) },
+                )
             }
         }
     }
@@ -68,7 +77,9 @@ export function setEnv(content: string, service: string, key: string, value: str
     const env = target.get('environment', true)
     if (isSeq(env)) {
         const line = `${key}=${value}`
-        const index = env.items.findIndex((item) => stringify((item as { value?: unknown })?.value ?? item).split('=')[0] === key)
+        const index = env.items.findIndex(
+            (item) => stringify((item as { value?: unknown })?.value ?? item).split('=')[0] === key,
+        )
         if (index === -1) env.add(doc.createNode(line))
         else env.set(index, doc.createNode(line))
     } else if (isMap(env)) {
@@ -88,7 +99,9 @@ export function removeEnv(content: string, service: string, key: string): string
         env.delete(key)
         if (env.items.length === 0) serviceMap(doc, service)?.delete('environment')
     } else if (isSeq(env)) {
-        const index = env.items.findIndex((item) => stringify((item as { value?: unknown })?.value ?? item).split('=')[0] === key)
+        const index = env.items.findIndex(
+            (item) => stringify((item as { value?: unknown })?.value ?? item).split('=')[0] === key,
+        )
         if (index !== -1) env.delete(index)
         if (env.items.length === 0) serviceMap(doc, service)?.delete('environment')
     }
@@ -106,7 +119,8 @@ export function parseDotenv(text: string): { key: string; value: string }[] {
         if (split < 1) continue
         const key = line.slice(0, split).trim()
         let value = line.slice(split + 1).trim()
-        if (value.length >= 2 && (value[0] === '"' || value[0] === "'") && value.endsWith(value[0])) value = value.slice(1, -1)
+        if (value.length >= 2 && (value[0] === '"' || value[0] === "'") && value.endsWith(value[0]))
+            value = value.slice(1, -1)
         if (isValidEnvKey(key)) result.push({ key, value })
     }
     return result

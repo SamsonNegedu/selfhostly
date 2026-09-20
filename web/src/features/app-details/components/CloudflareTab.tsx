@@ -49,7 +49,13 @@ function CloudflareTab({ appId, nodeId, composeContent }: CloudflareTabProps) {
     const [dialog, setDialog] = useState<Dialog>(null)
     const [confirmDelete, setConfirmDelete] = useState(false)
 
-    const dialogProps = (name: Exclude<Dialog, null>) => ({ open: dialog === name, onOpenChange: (open: boolean) => setDialog(open ? name : null), appId, nodeId, composeContent })
+    const dialogProps = (name: Exclude<Dialog, null>) => ({
+        open: dialog === name,
+        onOpenChange: (open: boolean) => setDialog(open ? name : null),
+        appId,
+        nodeId,
+        composeContent,
+    })
     const dialogs = (
         <>
             <QuickTunnelDialog {...dialogProps('quick')} />
@@ -80,7 +86,14 @@ function CloudflareTab({ appId, nodeId, composeContent }: CloudflareTabProps) {
     if (error) return <ErrorState title="Could not load access" error={error} onRetry={() => refetch()} />
 
     if (!tunnel) {
-        return <EmptyState icon={<Globe className="h-5 w-5" />} title="Only reachable on your network" description="This app has no public address. Tunnels give it one without opening ports on your router." className="py-14" />
+        return (
+            <EmptyState
+                icon={<Globe className="h-5 w-5" />}
+                title="Only reachable on your network"
+                description="This app has no public address. Tunnels give it one without opening ports on your router."
+                className="py-14"
+            />
+        )
     }
 
     if (isNoTunnelResponse(tunnel)) {
@@ -98,12 +111,21 @@ function CloudflareTab({ appId, nodeId, composeContent }: CloudflareTabProps) {
                                 </CardTitle>
                             </CardHeader>
                             <CardContent className="flex flex-col gap-3">
-                                <a href={tunnel.public_url} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[44px] items-center break-all font-mono text-sm font-medium text-status-info-fg hover:underline md:min-h-0">
+                                <a
+                                    href={tunnel.public_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex min-h-[44px] items-center break-all font-mono text-sm font-medium text-status-info-fg hover:underline md:min-h-0"
+                                >
                                     {tunnel.public_url}
                                 </a>
                                 <div className="flex items-start gap-2 rounded-lg bg-status-warn-bg px-3 py-2.5 text-[13px] text-status-warn-fg">
                                     <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
-                                    <p>The address can change when the app restarts, it is limited to 200 requests at a time, and it does not support server-sent events. Use your own domain for anything you rely on.</p>
+                                    <p>
+                                        The address can change when the app restarts, it is limited to 200 requests at a
+                                        time, and it does not support server-sent events. Use your own domain for
+                                        anything you rely on.
+                                    </p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
                                     <Button onClick={() => setDialog('switch')}>Switch to my own domain</Button>
@@ -123,7 +145,9 @@ function CloudflareTab({ appId, nodeId, composeContent }: CloudflareTabProps) {
                         action={
                             <div className="flex flex-wrap justify-center gap-2">
                                 <Button onClick={() => setDialog('custom')}>Use my own domain</Button>
-                                <Button variant="outline" onClick={() => setDialog('quick')}>Create a Quick Tunnel</Button>
+                                <Button variant="outline" onClick={() => setDialog('quick')}>
+                                    Create a Quick Tunnel
+                                </Button>
                             </div>
                         }
                         className="py-14"
@@ -144,7 +168,7 @@ function CloudflareTab({ appId, nodeId, composeContent }: CloudflareTabProps) {
                     refetch()
                 },
                 onError: (failure) => toast.error('Could not sync', describeError(failure)),
-            }
+            },
         )
     const remove = () =>
         deleteTunnel.mutate(
@@ -152,7 +176,7 @@ function CloudflareTab({ appId, nodeId, composeContent }: CloudflareTabProps) {
             {
                 onSuccess: () => setConfirmDelete(false),
                 onError: (failure) => toast.error('Could not delete the tunnel', describeError(failure)),
-            }
+            },
         )
 
     return (
@@ -176,10 +200,20 @@ function CloudflareTab({ appId, nodeId, composeContent }: CloudflareTabProps) {
                     <CardContent className="flex flex-col gap-5">
                         {data.public_url ? (
                             <div className="flex items-center gap-1">
-                                <a href={data.public_url} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[44px] items-center break-all font-mono text-sm font-medium text-status-info-fg hover:underline md:min-h-0">
+                                <a
+                                    href={data.public_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex min-h-[44px] items-center break-all font-mono text-sm font-medium text-status-info-fg hover:underline md:min-h-0"
+                                >
                                     {data.public_url}
                                 </a>
-                                <Button variant="ghost" size="icon" onClick={() => void copy(data.public_url)} aria-label="Copy URL">
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => void copy(data.public_url)}
+                                    aria-label="Copy URL"
+                                >
                                     <Copy className="h-4 w-4" />
                                 </Button>
                             </div>
@@ -188,18 +222,38 @@ function CloudflareTab({ appId, nodeId, composeContent }: CloudflareTabProps) {
                         )}
 
                         <dl className="grid grid-cols-2 gap-4 text-sm md:grid-cols-4">
-                            <div><dt className="text-muted-foreground">Name</dt><dd className="mt-1 truncate font-medium">{data.tunnel_name}</dd></div>
-                            <div><dt className="text-muted-foreground">ID</dt><dd className="mt-1 truncate font-mono text-xs font-medium">{data.tunnel_id}</dd></div>
-                            <div><dt className="text-muted-foreground">Created</dt><dd className="mt-1 font-medium">{formatDate(data.created_at)}</dd></div>
-                            <div><dt className="text-muted-foreground">Last synced</dt><dd className="mt-1 font-medium">{formatDate(data.last_synced_at)}</dd></div>
+                            <div>
+                                <dt className="text-muted-foreground">Name</dt>
+                                <dd className="mt-1 truncate font-medium">{data.tunnel_name}</dd>
+                            </div>
+                            <div>
+                                <dt className="text-muted-foreground">ID</dt>
+                                <dd className="mt-1 truncate font-mono text-xs font-medium">{data.tunnel_id}</dd>
+                            </div>
+                            <div>
+                                <dt className="text-muted-foreground">Created</dt>
+                                <dd className="mt-1 font-medium">{formatDate(data.created_at)}</dd>
+                            </div>
+                            <div>
+                                <dt className="text-muted-foreground">Last synced</dt>
+                                <dd className="mt-1 font-medium">{formatDate(data.last_synced_at)}</dd>
+                            </div>
                         </dl>
 
                         <div className="flex flex-wrap gap-2 border-t border-border pt-4">
                             <Button variant="outline" onClick={sync} disabled={syncTunnel.isPending}>
-                                {syncTunnel.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                                {syncTunnel.isPending ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                    <RefreshCw className="h-4 w-4" />
+                                )}
                                 Sync from Cloudflare
                             </Button>
-                            <Button variant="danger" onClick={() => setConfirmDelete(true)} disabled={deleteTunnel.isPending}>
+                            <Button
+                                variant="danger"
+                                onClick={() => setConfirmDelete(true)}
+                                disabled={deleteTunnel.isPending}
+                            >
                                 <Trash2 className="h-4 w-4" />
                                 Delete tunnel
                             </Button>

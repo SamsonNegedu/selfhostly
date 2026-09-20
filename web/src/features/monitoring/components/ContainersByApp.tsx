@@ -5,7 +5,12 @@ import { AppTile } from '@/shared/components/ui/AppTile'
 import { Button } from '@/shared/components/ui/Button'
 import { Card } from '@/shared/components/ui/Card'
 import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/shared/components/ui/DropdownMenu'
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/shared/components/ui/DropdownMenu'
 import { StatusPill } from '@/shared/components/ui/StatusPill'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/components/ui/Table'
 import { useToast } from '@/shared/components/ui/Toast'
@@ -44,13 +49,17 @@ function groupContainers(containers: ContainerInfo[], apps: App[]): Group[] {
             groups.set(key, {
                 key,
                 name: managed ? container.app_name : 'Not managed by Selfhostly',
-                app: managed ? apps.find((app) => app.name === container.app_name && app.node_id === container.node_id) : undefined,
+                app: managed
+                    ? apps.find((app) => app.name === container.app_name && app.node_id === container.node_id)
+                    : undefined,
                 managed,
                 containers: [container],
             })
         }
     }
-    return [...groups.values()].sort((a, b) => (a.managed === b.managed ? a.name.localeCompare(b.name) : a.managed ? -1 : 1))
+    return [...groups.values()].sort((a, b) =>
+        a.managed === b.managed ? a.name.localeCompare(b.name) : a.managed ? -1 : 1,
+    )
 }
 
 // Every container that is running on the nodes, grouped under the app it belongs to. Containers that Selfhostly
@@ -72,7 +81,14 @@ function ContainersByApp({ containers, apps, nodeName }: ContainersByAppProps) {
             if (action === 'restart') await restart.mutateAsync(args)
             else if (action === 'stop') await stop.mutateAsync(args)
             else await remove.mutateAsync(args)
-            toast.success(action === 'restart' ? 'Container restarted' : action === 'stop' ? 'Container stopped' : 'Container deleted', container.name)
+            toast.success(
+                action === 'restart'
+                    ? 'Container restarted'
+                    : action === 'stop'
+                      ? 'Container stopped'
+                      : 'Container deleted',
+                container.name,
+            )
         } catch (failure) {
             toast.error(`Could not ${action} the container`, describeError(failure))
         }
@@ -80,9 +96,26 @@ function ContainersByApp({ containers, apps, nodeName }: ContainersByAppProps) {
 
     const copy = pending
         ? {
-              restart: { title: `${pending.container.state === 'stopped' ? 'Start' : 'Restart'} ${pending.container.name}?`, text: pending.container.state === 'stopped' ? 'Start' : 'Restart', body: pending.container.state === 'stopped' ? 'It starts running again.' : 'It is unavailable for a moment while it restarts.' },
-              stop: { title: `Stop ${pending.container.name}?`, text: 'Stop', body: 'It stays stopped until you start it again.' },
-              delete: { title: `Delete ${pending.container.name}?`, text: 'Delete container', body: pending.container.is_managed ? `It belongs to ${pending.container.app_name}. Deleting it can break that app. Stopping the whole app from Fleet is safer.` : 'This removes the container. Volumes may stay behind.' },
+              restart: {
+                  title: `${pending.container.state === 'stopped' ? 'Start' : 'Restart'} ${pending.container.name}?`,
+                  text: pending.container.state === 'stopped' ? 'Start' : 'Restart',
+                  body:
+                      pending.container.state === 'stopped'
+                          ? 'It starts running again.'
+                          : 'It is unavailable for a moment while it restarts.',
+              },
+              stop: {
+                  title: `Stop ${pending.container.name}?`,
+                  text: 'Stop',
+                  body: 'It stays stopped until you start it again.',
+              },
+              delete: {
+                  title: `Delete ${pending.container.name}?`,
+                  text: 'Delete container',
+                  body: pending.container.is_managed
+                      ? `It belongs to ${pending.container.app_name}. Deleting it can break that app. Stopping the whole app from Fleet is safer.`
+                      : 'This removes the container. Volumes may stay behind.',
+              },
           }[pending.action]
         : null
 
@@ -93,7 +126,10 @@ function ContainersByApp({ containers, apps, nodeName }: ContainersByAppProps) {
                     <div className="flex items-center gap-3 border-b border-border p-4">
                         {group.managed && <AppTile name={group.name} size="sm" />}
                         {group.app ? (
-                            <Link to={appHref(group.app)} className="min-h-[44px] content-center text-[15px] font-semibold hover:underline md:min-h-0">
+                            <Link
+                                to={appHref(group.app)}
+                                className="min-h-[44px] content-center text-[15px] font-semibold hover:underline md:min-h-0"
+                            >
                                 {group.name}
                             </Link>
                         ) : (
@@ -122,36 +158,67 @@ function ContainersByApp({ containers, apps, nodeName }: ContainersByAppProps) {
                                     <TableCell className="max-w-[180px]">
                                         <p className="truncate font-mono text-[13px] font-medium">{container.name}</p>
                                         <p className="text-xs text-muted-foreground md:hidden">
-                                            {container.state === 'running' ? `${formatPercent(container.cpu_percent)} CPU · ${formatBytes(container.memory_usage_bytes)}` : container.status}
+                                            {container.state === 'running'
+                                                ? `${formatPercent(container.cpu_percent)} CPU · ${formatBytes(container.memory_usage_bytes)}`
+                                                : container.status}
                                         </p>
                                     </TableCell>
                                     <TableCell>
-                                        <StatusPill kind={STATE_KIND[container.state] ?? 'idle'}>{container.state === 'running' ? 'Running' : container.state === 'paused' ? 'Paused' : 'Stopped'}</StatusPill>
+                                        <StatusPill kind={STATE_KIND[container.state] ?? 'idle'}>
+                                            {container.state === 'running'
+                                                ? 'Running'
+                                                : container.state === 'paused'
+                                                  ? 'Paused'
+                                                  : 'Stopped'}
+                                        </StatusPill>
                                     </TableCell>
-                                    <TableCell className="tabular-nums max-md:hidden">{container.state === 'running' ? formatPercent(container.cpu_percent) : '-'}</TableCell>
                                     <TableCell className="tabular-nums max-md:hidden">
-                                        {container.state === 'running' ? formatBytes(container.memory_usage_bytes) : '-'}
-                                        {container.state === 'running' && container.memory_limit_bytes > 0 && <span className="text-muted-foreground"> / {formatBytes(container.memory_limit_bytes)}</span>}
+                                        {container.state === 'running' ? formatPercent(container.cpu_percent) : '-'}
                                     </TableCell>
-                                    <TableCell className="text-muted-foreground max-lg:hidden">{nodeName(container.node_id)}</TableCell>
+                                    <TableCell className="tabular-nums max-md:hidden">
+                                        {container.state === 'running'
+                                            ? formatBytes(container.memory_usage_bytes)
+                                            : '-'}
+                                        {container.state === 'running' && container.memory_limit_bytes > 0 && (
+                                            <span className="text-muted-foreground">
+                                                {' '}
+                                                / {formatBytes(container.memory_limit_bytes)}
+                                            </span>
+                                        )}
+                                    </TableCell>
+                                    <TableCell className="text-muted-foreground max-lg:hidden">
+                                        {nodeName(container.node_id)}
+                                    </TableCell>
                                     <TableCell>
                                         <DropdownMenu>
                                             <DropdownMenuTrigger asChild>
-                                                <Button variant="ghost" size="icon" aria-label={`Actions for ${container.name}`}>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    aria-label={`Actions for ${container.name}`}
+                                                >
                                                     <MoreHorizontal className="h-4 w-4" />
                                                 </Button>
                                             </DropdownMenuTrigger>
                                             <DropdownMenuContent align="end" className="w-44">
-                                                <DropdownMenuItem onSelect={() => setPending({ action: 'restart', container })}>
+                                                <DropdownMenuItem
+                                                    onSelect={() => setPending({ action: 'restart', container })}
+                                                >
                                                     <RotateCw className="mr-2 h-4 w-4" />
                                                     {container.state === 'stopped' ? 'Start' : 'Restart'}
                                                 </DropdownMenuItem>
-                                                <DropdownMenuItem onSelect={() => setPending({ action: 'stop', container })} disabled={container.state !== 'running'}>
+                                                <DropdownMenuItem
+                                                    onSelect={() => setPending({ action: 'stop', container })}
+                                                    disabled={container.state !== 'running'}
+                                                >
                                                     <Square className="mr-2 h-4 w-4" />
                                                     Stop
                                                 </DropdownMenuItem>
                                                 {container.state === 'stopped' && (
-                                                    <DropdownMenuItem onSelect={() => setPending({ action: 'delete', container })} className="text-destructive focus:text-destructive">
+                                                    <DropdownMenuItem
+                                                        onSelect={() => setPending({ action: 'delete', container })}
+                                                        className="text-destructive focus:text-destructive"
+                                                    >
                                                         <Trash2 className="mr-2 h-4 w-4" />
                                                         Delete
                                                     </DropdownMenuItem>

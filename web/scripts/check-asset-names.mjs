@@ -28,7 +28,9 @@ const risky = [...walk(DIST)]
 
 if (risky.length > 0) {
     console.error(`These build files could be routed to the gateway instead of the frontend:\n  ${risky.join('\n  ')}`)
-    console.error(`No file path may contain ${GATEWAY_PREFIXES.join(', ')}. Adjust the file names in vite.config.ts. (If it is only the random hash, change any source file and rebuild.)`)
+    console.error(
+        `No file path may contain ${GATEWAY_PREFIXES.join(', ')}. Adjust the file names in vite.config.ts. (If it is only the random hash, change any source file and rebuild.)`,
+    )
     process.exit(1)
 }
 console.log(`asset names ok: no file path contains ${GATEWAY_PREFIXES.join(', ')}`)

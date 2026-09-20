@@ -58,11 +58,11 @@ function CommandPalette() {
     const go = (path: string) => () => navigate(path)
 
     const actions: PaletteAction[] = [
-            { id: 'new-app', label: 'New app', icon: Plus, run: go(ROUTES.newApp) },
-            { id: 'register-node', label: 'Register node', icon: Server, run: go(ROUTES.registerNode) },
-            { id: 'theme-dark', label: 'Use dark theme', icon: Moon, run: () => setTheme('dark') },
-            { id: 'theme-light', label: 'Use light theme', icon: Sun, run: () => setTheme('light') },
-            { id: 'theme-system', label: 'Follow system theme', icon: Monitor, run: () => setTheme('system') },
+        { id: 'new-app', label: 'New app', icon: Plus, run: go(ROUTES.newApp) },
+        { id: 'register-node', label: 'Register node', icon: Server, run: go(ROUTES.registerNode) },
+        { id: 'theme-dark', label: 'Use dark theme', icon: Moon, run: () => setTheme('dark') },
+        { id: 'theme-light', label: 'Use light theme', icon: Sun, run: () => setTheme('light') },
+        { id: 'theme-system', label: 'Follow system theme', icon: Monitor, run: () => setTheme('system') },
     ]
 
     const destinations: PaletteAction[] = [
@@ -84,7 +84,7 @@ function CommandPalette() {
             {
                 onSuccess: () => toast.success(`${app.name} is starting`),
                 onError: (error) => toast.error(`Could not start ${app.name}`, describeError(error)),
-            }
+            },
         )
     }
 
@@ -92,7 +92,12 @@ function CommandPalette() {
 
     return (
         <>
-            <CommandDialog open={open} onOpenChange={setOpen} title="Command palette" description="Search apps, actions and pages, then press Enter to go.">
+            <CommandDialog
+                open={open}
+                onOpenChange={setOpen}
+                title="Command palette"
+                description="Search apps, actions and pages, then press Enter to go."
+            >
                 <CommandInput placeholder="Search apps, actions and pages" />
                 <CommandList>
                     <CommandEmpty>Nothing matches. Try an app name or an action such as start.</CommandEmpty>
@@ -155,7 +160,11 @@ function CommandPalette() {
 
                     <CommandGroup heading="Go to">
                         {destinations.map((destination) => (
-                            <CommandItem key={destination.id} value={`Go to ${destination.label}`} onSelect={runAndClose(destination.run)}>
+                            <CommandItem
+                                key={destination.id}
+                                value={`Go to ${destination.label}`}
+                                onSelect={runAndClose(destination.run)}
+                            >
                                 <destination.icon className="h-[17px] w-[17px] text-muted-foreground" />
                                 {destination.label}
                             </CommandItem>

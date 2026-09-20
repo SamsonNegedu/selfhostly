@@ -15,4 +15,10 @@ export function resourceTone(resource: Resource, percent: number): StatusKind {
     return percent > err ? 'err' : percent > warn ? 'warn' : 'ok'
 }
 
-export const TONE_WORD: Record<StatusKind, string> = { ok: 'Healthy', warn: 'High', err: 'Critical', info: 'Info', idle: 'Idle' }
+export const TONE_WORD: Record<StatusKind, string> = {
+    ok: 'Healthy',
+    warn: 'High',
+    err: 'Critical',
+    info: 'Info',
+    idle: 'Idle',
+}

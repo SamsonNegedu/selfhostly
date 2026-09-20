@@ -1,7 +1,12 @@
 import { Globe, MoreHorizontal, Trash2 } from 'lucide-react'
 import { Button } from '@/shared/components/ui/Button'
 import { Card } from '@/shared/components/ui/Card'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/shared/components/ui/DropdownMenu'
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/shared/components/ui/DropdownMenu'
 import { ProgressBar } from '@/shared/components/ui/ProgressBar'
 import { StatusDot, StatusPill } from '@/shared/components/ui/StatusPill'
 import { resourceTone, type Resource } from '@/shared/lib/thresholds'
@@ -25,7 +30,10 @@ function checkSummary(node: Node): string {
     if (!node.last_health_check) return node.status === 'unknown' ? 'First check running' : 'Not checked yet'
     const parts = [`Checked ${formatAgo(node.last_health_check)}`]
     if (node.status === 'online' && node.last_latency_ms) parts.push(`${node.last_latency_ms} ms`)
-    if ((node.consecutive_failures ?? 0) > 0) parts.push(`${node.consecutive_failures} failed ${node.consecutive_failures === 1 ? 'check' : 'checks'} in a row`)
+    if ((node.consecutive_failures ?? 0) > 0)
+        parts.push(
+            `${node.consecutive_failures} failed ${node.consecutive_failures === 1 ? 'check' : 'checks'} in a row`,
+        )
     return parts.join(' · ')
 }
 
@@ -75,7 +83,10 @@ function NodeCard({ node, isCurrent, appCount, metrics, onRemove }: NodeCardProp
                             </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-44">
-                            <DropdownMenuItem onSelect={() => onRemove(node)} className="text-destructive focus:text-destructive">
+                            <DropdownMenuItem
+                                onSelect={() => onRemove(node)}
+                                className="text-destructive focus:text-destructive"
+                            >
                                 <Trash2 className="mr-2 h-4 w-4" />
                                 Remove node
                             </DropdownMenuItem>

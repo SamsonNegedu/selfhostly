@@ -34,13 +34,28 @@ export function getInsightAlerts(stats: SystemStats[]): InsightAlert[] {
         }
 
         const containers = node.containers ?? []
-        const memoryHeavy = containers.filter((c) => c.state === 'running' && c.memory_limit_bytes > 0 && (c.memory_usage_bytes / c.memory_limit_bytes) * 100 > CONTAINER_MEMORY_WARN)
+        const memoryHeavy = containers.filter(
+            (c) =>
+                c.state === 'running' &&
+                c.memory_limit_bytes > 0 &&
+                (c.memory_usage_bytes / c.memory_limit_bytes) * 100 > CONTAINER_MEMORY_WARN,
+        )
         if (memoryHeavy.length > 0) {
-            alerts.push({ id: `${node.node_id}-container-memory`, kind: 'warn', title: `${memoryHeavy.length} ${memoryHeavy.length === 1 ? 'container is close to its' : 'containers are close to their'} memory limit`, detail: `${memoryHeavy.map((c) => c.name).join(', ')} on ${node.node_name}` })
+            alerts.push({
+                id: `${node.node_id}-container-memory`,
+                kind: 'warn',
+                title: `${memoryHeavy.length} ${memoryHeavy.length === 1 ? 'container is close to its' : 'containers are close to their'} memory limit`,
+                detail: `${memoryHeavy.map((c) => c.name).join(', ')} on ${node.node_name}`,
+            })
         }
         const stopped = containers.filter((c) => c.state === 'stopped' && c.is_managed)
         if (stopped.length > 0) {
-            alerts.push({ id: `${node.node_id}-stopped`, kind: 'warn', title: `${stopped.length} ${stopped.length === 1 ? 'container is' : 'containers are'} stopped`, detail: `${stopped.map((c) => c.name).join(', ')} on ${node.node_name}` })
+            alerts.push({
+                id: `${node.node_id}-stopped`,
+                kind: 'warn',
+                title: `${stopped.length} ${stopped.length === 1 ? 'container is' : 'containers are'} stopped`,
+                detail: `${stopped.map((c) => c.name).join(', ')} on ${node.node_name}`,
+            })
         }
     }
 

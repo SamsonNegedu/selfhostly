@@ -17,9 +17,15 @@ function GeneralSection() {
         update.mutate(
             { auto_start_apps: autoStart },
             {
-                onSuccess: () => toast.success('Saved', autoStart ? 'Apps start when the server boots' : 'Apps stay stopped after a reboot until you start them'),
+                onSuccess: () =>
+                    toast.success(
+                        'Saved',
+                        autoStart
+                            ? 'Apps start when the server boots'
+                            : 'Apps stay stopped after a reboot until you start them',
+                    ),
                 onError: (failure) => toast.error('Could not save', describeError(failure)),
-            }
+            },
         )
 
     return (
@@ -29,9 +35,16 @@ function GeneralSection() {
                     <label htmlFor="auto-start" className="text-sm font-medium">
                         Start apps when the server boots
                     </label>
-                    <p className="mt-1 text-[13px] text-muted-foreground">After a reboot or power cut, every app that was running starts again by itself.</p>
+                    <p className="mt-1 text-[13px] text-muted-foreground">
+                        After a reboot or power cut, every app that was running starts again by itself.
+                    </p>
                 </div>
-                <Switch id="auto-start" checked={settings.auto_start_apps} onCheckedChange={toggle} disabled={update.isPending} />
+                <Switch
+                    id="auto-start"
+                    checked={settings.auto_start_apps}
+                    onCheckedChange={toggle}
+                    disabled={update.isPending}
+                />
             </CardContent>
         </Card>
     )

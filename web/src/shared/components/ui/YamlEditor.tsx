@@ -13,11 +13,15 @@ export const yamlEditorTheme = (isDark: boolean) => [
     EditorView.theme(
         {
             '&': { backgroundColor: 'hsl(var(--card))', color: 'hsl(var(--foreground))' },
-            '.cm-gutters': { backgroundColor: 'hsl(var(--card))', color: 'hsl(var(--muted-foreground))', border: 'none' },
+            '.cm-gutters': {
+                backgroundColor: 'hsl(var(--card))',
+                color: 'hsl(var(--muted-foreground))',
+                border: 'none',
+            },
             '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'hsl(var(--muted) / 0.5)' },
             '&.cm-focused': { outline: '2px solid hsl(var(--ring))', outlineOffset: '-2px' },
         },
-        { dark: isDark }
+        { dark: isDark },
     ),
     ...(isDark ? [oneDark] : []),
 ]
@@ -73,7 +77,9 @@ function YamlEditor({ value, onChange, readOnly = false, height = 320, className
         })
         view.current = editor
 
-        const observer = new MutationObserver(() => editor.dispatch({ effects: theme.current.reconfigure(yamlEditorTheme(isDarkMode())) }))
+        const observer = new MutationObserver(() =>
+            editor.dispatch({ effects: theme.current.reconfigure(yamlEditorTheme(isDarkMode())) }),
+        )
         observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
 
         return () => {

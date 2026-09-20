@@ -59,7 +59,8 @@ export function buildCron({ hour, minute, days }: SimpleSchedule): string {
     return `${minute} ${hour} * * ${compressDays([...days].sort((a, b) => a - b))}`
 }
 
-export const formatTime = ({ hour, minute }: SimpleTime) => `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+export const formatTime = ({ hour, minute }: SimpleTime) =>
+    `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
 
 export function parseTime(value: string): SimpleTime | null {
     const match = value.match(/^(\d{2}):(\d{2})$/)
@@ -81,7 +82,9 @@ export function runningWindow(start: SimpleTime, stop: SimpleTime): { from: numb
 }
 
 export function windowHours(start: SimpleTime, stop: SimpleTime): number {
-    return runningWindow(start, stop).reduce((total, segment) => total + (segment.to - segment.from), 0) / MINUTES_PER_HOUR
+    return (
+        runningWindow(start, stop).reduce((total, segment) => total + (segment.to - segment.from), 0) / MINUTES_PER_HOUR
+    )
 }
 
 export const MINUTES_IN_DAY = MINUTES_PER_DAY
@@ -108,10 +111,19 @@ export const PRESETS: { label: string; days: number[] }[] = [
 // zone's clock, so "today" and "now" must come from it and not from the browser's own zone.
 export function nowInZone(timezone: string, date: Date = new Date()): { day: number; minutes: number } {
     try {
-        const parts = new Intl.DateTimeFormat('en-US', { timeZone: timezone, weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(date)
+        const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: timezone,
+            weekday: 'short',
+            hour: '2-digit',
+            minute: '2-digit',
+            hourCycle: 'h23',
+        }).formatToParts(date)
         const get = (type: string) => parts.find((part) => part.type === type)?.value ?? ''
         const day = DAY_LABELS.indexOf(get('weekday'))
-        return { day: day === -1 ? date.getDay() : day, minutes: Number(get('hour')) * MINUTES_PER_HOUR + Number(get('minute')) }
+        return {
+            day: day === -1 ? date.getDay() : day,
+            minutes: Number(get('hour')) * MINUTES_PER_HOUR + Number(get('minute')),
+        }
     } catch {
         return { day: date.getDay(), minutes: date.getHours() * MINUTES_PER_HOUR + date.getMinutes() }
     }

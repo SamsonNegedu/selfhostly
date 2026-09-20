@@ -45,7 +45,9 @@ function NotificationsMenu() {
                 <DropdownMenuLabel>Needs attention</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 {count === 0 ? (
-                    <p className="px-2 py-6 text-center text-sm text-muted-foreground">All clear. Nothing needs you right now.</p>
+                    <p className="px-2 py-6 text-center text-sm text-muted-foreground">
+                        All clear. Nothing needs you right now.
+                    </p>
                 ) : (
                     items.map((item) => {
                         const Icon = item.kind === 'app-error' ? AlertTriangle : Server

@@ -31,10 +31,13 @@ function NodesPage() {
         if (!toRemove) return
         const node = toRemove
         setToRemove(null)
-        deleteNode.mutate({ id: node.id, force: removeDropsApps }, {
-            onSuccess: () => toast.success('Node removed', `${node.name} is no longer part of the cluster`),
-            onError: (failure) => toast.error('Could not remove the node', describeError(failure)),
-        })
+        deleteNode.mutate(
+            { id: node.id, force: removeDropsApps },
+            {
+                onSuccess: () => toast.success('Node removed', `${node.name} is no longer part of the cluster`),
+                onError: (failure) => toast.error('Could not remove the node', describeError(failure)),
+            },
+        )
     }
 
     if (nodes === undefined) {
@@ -98,7 +101,11 @@ function NodesPage() {
 
             {nodes.length === 1 && (
                 <p className="text-sm text-muted-foreground">
-                    Only one machine so far. <Link to={ROUTES.registerNode} className="font-medium text-foreground underline underline-offset-2">Add another</Link> to run apps in more than one place.
+                    Only one machine so far.{' '}
+                    <Link to={ROUTES.registerNode} className="font-medium text-foreground underline underline-offset-2">
+                        Add another
+                    </Link>{' '}
+                    to run apps in more than one place.
                 </p>
             )}
 

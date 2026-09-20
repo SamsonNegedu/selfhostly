@@ -21,9 +21,15 @@ function HistoryTab({ app }: { app: App }) {
                 </CardHeader>
                 <CardContent>
                     <p className="mb-3 text-sm text-muted-foreground">
-                        Each save keeps the file it replaced. Restore makes an old version the current one, then update the app to run it.
+                        Each save keeps the file it replaced. Restore makes an old version the current one, then update
+                        the app to run it.
                     </p>
-                    <ComposeVersionHistory appId={app.id} nodeId={app.node_id} onVersionSelect={setViewing} showLabels />
+                    <ComposeVersionHistory
+                        appId={app.id}
+                        nodeId={app.node_id}
+                        onVersionSelect={setViewing}
+                        showLabels
+                    />
                 </CardContent>
             </Card>
 
@@ -39,7 +45,12 @@ function HistoryTab({ app }: { app: App }) {
                 </CardContent>
             </Card>
 
-            <VersionCompareDialog version={viewing} against={app.compose_content} againstLabel="the current file" onClose={() => setViewing(null)} />
+            <VersionCompareDialog
+                version={viewing}
+                against={app.compose_content}
+                againstLabel="the current file"
+                onClose={() => setViewing(null)}
+            />
         </div>
     )
 }

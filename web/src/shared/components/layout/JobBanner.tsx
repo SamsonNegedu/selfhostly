@@ -26,7 +26,10 @@ function JobBanner() {
                             <Loader2 aria-hidden="true" className="h-4 w-4 shrink-0 animate-spin text-status-info-fg" />
                             <span>
                                 {(job && VERBS[job.type]) ?? 'Working on'}{' '}
-                                <Link to={appHref(app)} className="inline-flex min-h-[44px] items-center font-semibold hover:underline md:min-h-0">
+                                <Link
+                                    to={appHref(app)}
+                                    className="inline-flex min-h-[44px] items-center font-semibold hover:underline md:min-h-0"
+                                >
                                     {app.name}
                                 </Link>
                             </span>

@@ -27,8 +27,8 @@ function ScopeSwitcher() {
     const label = allSelected
         ? 'All nodes'
         : selectedNodes.length <= MAX_LABEL_NAMES
-            ? (selectedNodes[0]?.name ?? 'No node')
-            : `${selectedNodes.length} nodes`
+          ? (selectedNodes[0]?.name ?? 'No node')
+          : `${selectedNodes.length} nodes`
 
     const toggleNode = (nodeId: string, checked: boolean) => {
         const next = checked ? [...selectedNodeIds, nodeId] : selectedNodeIds.filter((id) => id !== nodeId)
@@ -67,7 +67,9 @@ function ScopeSwitcher() {
                             <span className="flex w-full items-center justify-between gap-2">
                                 <span className="truncate">{node.name}</span>
                                 {node.status !== 'online' && (
-                                    <StatusPill kind={meta.kind} size="sm">{meta.label}</StatusPill>
+                                    <StatusPill kind={meta.kind} size="sm">
+                                        {meta.label}
+                                    </StatusPill>
                                 )}
                             </span>
                         </DropdownMenuCheckboxItem>

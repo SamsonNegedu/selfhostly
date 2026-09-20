@@ -41,7 +41,7 @@ function AppOverview({ app }: AppOverviewProps) {
     const composeInfo: ComposeInfo = useMemo(() => {
         const info: ComposeInfo = {
             networks: [],
-            volumes: []
+            volumes: [],
         }
 
         try {
@@ -145,7 +145,7 @@ function AppOverview({ app }: AppOverviewProps) {
                 onError: (error) => {
                     toast.error('Failed to restart service', error instanceof Error ? error.message : 'Unknown error')
                 },
-            }
+            },
         )
     }
 
@@ -165,7 +165,9 @@ function AppOverview({ app }: AppOverviewProps) {
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                 {tiles.map((tile) => (
                     <Card key={tile.label} className="flex flex-col gap-1 p-4">
-                        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{tile.label}</span>
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                            {tile.label}
+                        </span>
                         <span className="text-2xl font-semibold tabular-nums">{tile.value}</span>
                     </Card>
                 ))}
@@ -186,8 +188,13 @@ function AppOverview({ app }: AppOverviewProps) {
                                     {services.map((service) => {
                                         const isRestarting = restartService.isPending && serviceToRestart === service
                                         return (
-                                            <li key={service} className="flex items-center justify-between gap-3 rounded-lg bg-muted/50 px-3 py-2">
-                                                <span className="truncate font-mono text-sm font-medium">{service}</span>
+                                            <li
+                                                key={service}
+                                                className="flex items-center justify-between gap-3 rounded-lg bg-muted/50 px-3 py-2"
+                                            >
+                                                <span className="truncate font-mono text-sm font-medium">
+                                                    {service}
+                                                </span>
                                                 <div className="flex items-center gap-2">
                                                     <StatusPill kind={isRunning ? 'ok' : 'idle'} size="sm">
                                                         {isRunning ? 'Running' : 'Stopped'}
@@ -200,7 +207,11 @@ function AppOverview({ app }: AppOverviewProps) {
                                                             onClick={() => setServiceToRestart(service)}
                                                             disabled={isRestarting}
                                                         >
-                                                            {isRestarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                                                            {isRestarting ? (
+                                                                <Loader2 className="h-4 w-4 animate-spin" />
+                                                            ) : (
+                                                                <RefreshCw className="h-4 w-4" />
+                                                            )}
                                                         </Button>
                                                     )}
                                                 </div>
@@ -224,15 +235,29 @@ function AppOverview({ app }: AppOverviewProps) {
                         <CardContent className="flex flex-col gap-3">
                             {app.public_url ? (
                                 <div className="flex flex-wrap items-center gap-2">
-                                    <a href={app.public_url} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[44px] items-center break-all font-mono text-sm text-status-info-fg hover:underline md:min-h-0">
+                                    <a
+                                        href={app.public_url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex min-h-[44px] items-center break-all font-mono text-sm text-status-info-fg hover:underline md:min-h-0"
+                                    >
                                         {app.public_url.replace(/^https?:\/\//, '')}
                                     </a>
-                                    {app.tunnel_mode === 'quick' && <StatusPill kind="warn" size="sm">Temporary</StatusPill>}
+                                    {app.tunnel_mode === 'quick' && (
+                                        <StatusPill kind="warn" size="sm">
+                                            Temporary
+                                        </StatusPill>
+                                    )}
                                 </div>
                             ) : (
-                                <p className="text-sm text-muted-foreground">Only reachable on your network. Add a public address when you want to share it.</p>
+                                <p className="text-sm text-muted-foreground">
+                                    Only reachable on your network. Add a public address when you want to share it.
+                                </p>
                             )}
-                            <Link to={appHref(app, 'access')} className="inline-flex min-h-[44px] items-center text-sm font-medium hover:underline md:min-h-0">
+                            <Link
+                                to={appHref(app, 'access')}
+                                className="inline-flex min-h-[44px] items-center text-sm font-medium hover:underline md:min-h-0"
+                            >
                                 Manage access
                             </Link>
                         </CardContent>
@@ -250,15 +275,34 @@ function AppOverview({ app }: AppOverviewProps) {
                                 upcoming.length > 0 ? (
                                     <ol className="flex flex-col gap-2.5">
                                         {upcoming.slice(0, OVERVIEW_RUNS).map((run) => (
-                                            <li key={`${run.action}-${run.at}`} className="flex items-center justify-between gap-3 text-sm">
+                                            <li
+                                                key={`${run.action}-${run.at}`}
+                                                className="flex items-center justify-between gap-3 text-sm"
+                                            >
                                                 <span className="flex items-center gap-2">
-                                                    {run.action === 'start' ? <Play aria-hidden="true" className="h-4 w-4 text-status-ok-fg" /> : <Square aria-hidden="true" className="h-4 w-4 text-muted-foreground" />}
+                                                    {run.action === 'start' ? (
+                                                        <Play
+                                                            aria-hidden="true"
+                                                            className="h-4 w-4 text-status-ok-fg"
+                                                        />
+                                                    ) : (
+                                                        <Square
+                                                            aria-hidden="true"
+                                                            className="h-4 w-4 text-muted-foreground"
+                                                        />
+                                                    )}
                                                     <span>
-                                                        <span className="font-medium">{run.action === 'start' ? 'Starts' : 'Stops'}</span>{' '}
-                                                        <span className="text-muted-foreground">{formatRunTime(run.at, app.schedule?.timezone)}</span>
+                                                        <span className="font-medium">
+                                                            {run.action === 'start' ? 'Starts' : 'Stops'}
+                                                        </span>{' '}
+                                                        <span className="text-muted-foreground">
+                                                            {formatRunTime(run.at, app.schedule?.timezone)}
+                                                        </span>
                                                     </span>
                                                 </span>
-                                                <span className="shrink-0 text-[13px] tabular-nums text-muted-foreground">{formatUntil(run.at)}</span>
+                                                <span className="shrink-0 text-[13px] tabular-nums text-muted-foreground">
+                                                    {formatUntil(run.at)}
+                                                </span>
                                             </li>
                                         ))}
                                     </ol>
@@ -266,9 +310,14 @@ function AppOverview({ app }: AppOverviewProps) {
                                     <p className="text-sm text-muted-foreground">No upcoming scheduled actions</p>
                                 )
                             ) : (
-                                <p className="text-sm text-muted-foreground">Runs all the time. Set a schedule to start and stop it automatically.</p>
+                                <p className="text-sm text-muted-foreground">
+                                    Runs all the time. Set a schedule to start and stop it automatically.
+                                </p>
                             )}
-                            <Link to={appHref(app, 'schedule')} className="inline-flex min-h-[44px] items-center text-sm font-medium hover:underline md:min-h-0">
+                            <Link
+                                to={appHref(app, 'schedule')}
+                                className="inline-flex min-h-[44px] items-center text-sm font-medium hover:underline md:min-h-0"
+                            >
                                 {app.schedule?.enabled ? 'Edit schedule' : 'Set a schedule'}
                             </Link>
                         </CardContent>
@@ -285,14 +334,23 @@ function AppOverview({ app }: AppOverviewProps) {
                             <div className="flex items-center justify-between gap-3">
                                 <span className="text-muted-foreground">Networks</span>
                                 <div className="flex flex-wrap justify-end gap-1">
-                                    {(composeInfo.networks.length > 0 ? composeInfo.networks : ['default']).map((network) => (
-                                        <span key={network} className="rounded-full bg-muted px-2.5 py-0.5 font-mono text-xs">{network}</span>
-                                    ))}
+                                    {(composeInfo.networks.length > 0 ? composeInfo.networks : ['default']).map(
+                                        (network) => (
+                                            <span
+                                                key={network}
+                                                className="rounded-full bg-muted px-2.5 py-0.5 font-mono text-xs"
+                                            >
+                                                {network}
+                                            </span>
+                                        ),
+                                    )}
                                 </div>
                             </div>
                             <div className="flex items-center justify-between gap-3">
                                 <span className="text-muted-foreground">Volumes</span>
-                                <span className="text-right font-medium">{composeInfo.volumes.length > 0 ? composeInfo.volumes.join(', ') : 'None'}</span>
+                                <span className="text-right font-medium">
+                                    {composeInfo.volumes.length > 0 ? composeInfo.volumes.join(', ') : 'None'}
+                                </span>
                             </div>
                             <div className="flex items-center justify-between gap-3">
                                 <span className="text-muted-foreground">Last updated</span>

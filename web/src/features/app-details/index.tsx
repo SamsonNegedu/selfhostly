@@ -37,7 +37,7 @@ function AppDetails() {
 
     // Get node_id from app store if available (for initial load)
     const apps = useAppStore((state) => state.apps)
-    const cachedApp = apps.find(a => a.id === appId)
+    const cachedApp = apps.find((a) => a.id === appId)
 
     // Fetch apps list if nodeId is not available from cache or URL
     const shouldFetchApps = !nodeIdFromUrl && !cachedApp?.node_id
@@ -48,7 +48,7 @@ function AppDetails() {
         if (nodeIdFromUrl) return nodeIdFromUrl
         if (cachedApp?.node_id) return cachedApp.node_id
         if (appsList) {
-            const foundApp = appsList.find(a => a.id === appId)
+            const foundApp = appsList.find((a) => a.id === appId)
             return foundApp?.node_id
         }
         return undefined
@@ -85,11 +85,14 @@ function AppDetails() {
 
     // Update URL when tab changes
     const setActiveTab = (tab: TabType) => {
-        setSearchParams(prev => {
-            const newParams = new URLSearchParams(prev)
-            newParams.set('tab', tab)
-            return newParams
-        }, { replace: true }) // Use replace to avoid cluttering browser history
+        setSearchParams(
+            (prev) => {
+                const newParams = new URLSearchParams(prev)
+                newParams.set('tab', tab)
+                return newParams
+            },
+            { replace: true },
+        ) // Use replace to avoid cluttering browser history
     }
 
     if (isLoading) {
@@ -98,10 +101,7 @@ function AppDetails() {
 
     if (!app) {
         return (
-            <ErrorState
-                title="App not found"
-                description="This app does not exist or has been deleted."
-            >
+            <ErrorState title="App not found" description="This app does not exist or has been deleted.">
                 <Button onClick={() => navigate('/apps')}>Back to Fleet</Button>
             </ErrorState>
         )
@@ -109,7 +109,10 @@ function AppDetails() {
 
     const meta = appStatusMeta(app.status)
     const nodeName = nodes.find((node) => node.id === app.node_id)?.name ?? app.node_id
-    const tabs = AVAILABLE_APP_TABS.map((tab) => ({ id: tab as TabType, label: tab === 'overview' ? 'Overview' : APP_TAB_LABELS[tab] }))
+    const tabs = AVAILABLE_APP_TABS.map((tab) => ({
+        id: tab as TabType,
+        label: tab === 'overview' ? 'Overview' : APP_TAB_LABELS[tab],
+    }))
     const missingNode = (what: string) => (
         <div className="flex min-h-[200px] items-center justify-center text-muted-foreground">
             <AlertTriangle className="mr-2 h-5 w-5" />
@@ -174,15 +177,31 @@ function AppDetails() {
                 {activeTab === 'overview' && <AppOverview app={app} />}
                 {activeTab === 'config' &&
                     (app.node_id ? (
-                        <ComposeEditor appId={app.id} nodeId={app.node_id} initialComposeContent={app.compose_content} />
+                        <ComposeEditor
+                            appId={app.id}
+                            nodeId={app.node_id}
+                            initialComposeContent={app.compose_content}
+                        />
                     ) : (
                         missingNode('the compose editor')
                     ))}
-                {activeTab === 'environment' && (app.node_id ? <EnvironmentTab app={app} /> : missingNode('the environment'))}
-                {activeTab === 'logs' && (app.node_id ? <AppLogsPanel appId={app.id} nodeId={app.node_id} /> : missingNode('logs'))}
-                {activeTab === 'access' && (app.node_id ? <CloudflareTab appId={app.id} nodeId={app.node_id} composeContent={app.compose_content} /> : missingNode('tunnel info'))}
+                {activeTab === 'environment' &&
+                    (app.node_id ? <EnvironmentTab app={app} /> : missingNode('the environment'))}
+                {activeTab === 'logs' &&
+                    (app.node_id ? <AppLogsPanel appId={app.id} nodeId={app.node_id} /> : missingNode('logs'))}
+                {activeTab === 'access' &&
+                    (app.node_id ? (
+                        <CloudflareTab appId={app.id} nodeId={app.node_id} composeContent={app.compose_content} />
+                    ) : (
+                        missingNode('tunnel info')
+                    ))}
                 {activeTab === 'history' && (app.node_id ? <HistoryTab app={app} /> : missingNode('the history'))}
-                {activeTab === 'schedule' && (app.node_id ? <ScheduleEditor appId={app.id} nodeId={app.node_id} /> : missingNode('the schedule'))}
+                {activeTab === 'schedule' &&
+                    (app.node_id ? (
+                        <ScheduleEditor appId={app.id} nodeId={app.node_id} />
+                    ) : (
+                        missingNode('the schedule')
+                    ))}
             </div>
 
             {actions.dialog}

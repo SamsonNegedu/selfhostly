@@ -59,9 +59,13 @@ function useContainerLogs(appId: string, nodeId: string, service: string, enable
 
     useEffect(() => {
         if (!enabled) return
-        void refresh()
+        // The first load waits a tick, so the loading flag is not set from inside the effect itself.
+        const first = setTimeout(() => void refresh(), 0)
         const interval = setInterval(() => void refresh(), REFRESH_MS)
-        return () => clearInterval(interval)
+        return () => {
+            clearTimeout(first)
+            clearInterval(interval)
+        }
     }, [enabled, refresh])
 
     return { logs, error, isLoading, refresh: () => void refresh() }
@@ -106,13 +110,21 @@ export function AppLogsPanel({ appId, nodeId }: { appId: string; nodeId: string 
         <Card>
             <CardContent className="flex flex-col gap-4 p-4">
                 <div className="flex flex-wrap items-center gap-2">
-                    <SegmentedControl aria-label="Log type" options={SUB_TAB_OPTIONS} value={subTab} onValueChange={(value) => setSubTab(value as LogsSubTab)} />
+                    <SegmentedControl
+                        aria-label="Log type"
+                        options={SUB_TAB_OPTIONS}
+                        value={subTab}
+                        onValueChange={(value) => setSubTab(value as LogsSubTab)}
+                    />
 
                     {containersActive && (
                         <div className="ml-auto flex flex-wrap items-center gap-2">
                             {services.length > 0 && (
                                 <div className="w-[180px] max-md:flex-1">
-                                    <Select value={service || ALL_SERVICES} onValueChange={(value) => setService(value === ALL_SERVICES ? '' : value)}>
+                                    <Select
+                                        value={service || ALL_SERVICES}
+                                        onValueChange={(value) => setService(value === ALL_SERVICES ? '' : value)}
+                                    >
                                         <SelectTrigger aria-label="Container">
                                             <SelectValue />
                                         </SelectTrigger>
@@ -127,10 +139,22 @@ export function AppLogsPanel({ appId, nodeId }: { appId: string; nodeId: string 
                                     </Select>
                                 </div>
                             )}
-                            <Button variant="outline" size="icon" aria-label="Refresh logs" onClick={container.refresh} disabled={container.isLoading}>
+                            <Button
+                                variant="outline"
+                                size="icon"
+                                aria-label="Refresh logs"
+                                onClick={container.refresh}
+                                disabled={container.isLoading}
+                            >
                                 <RefreshCw className={`h-4 w-4 ${container.isLoading ? 'animate-spin' : ''}`} />
                             </Button>
-                            <Button variant="outline" size="icon" aria-label="Download logs" onClick={() => download(appId, 'container-logs', containerLines)} disabled={containerLines.length === 0}>
+                            <Button
+                                variant="outline"
+                                size="icon"
+                                aria-label="Download logs"
+                                onClick={() => download(appId, 'container-logs', containerLines)}
+                                disabled={containerLines.length === 0}
+                            >
                                 <Download className="h-4 w-4" />
                             </Button>
                         </div>
@@ -170,7 +194,12 @@ export function AppLogsPanel({ appId, nodeId }: { appId: string; nodeId: string 
                                 Could not refresh. {describeError(container.error)} Showing the last output.
                             </p>
                         )}
-                        <Terminal lines={containerLines} aria-label="Container logs" className={TERMINAL_CLASS} follow />
+                        <Terminal
+                            lines={containerLines}
+                            aria-label="Container logs"
+                            className={TERMINAL_CLASS}
+                            follow
+                        />
                     </>
                 )}
             </CardContent>
@@ -191,22 +220,37 @@ function DeploymentLogBody({ job, nodeId, appId }: { job: Job; nodeId: string; a
                     {active ? 'Live' : meta.label}
                 </StatusPill>
                 <span>
-                    <span className="font-mono">[step]</span> milestones · <span className="font-mono">[pull]</span> and <span className="font-mono">[up]</span> compose output
+                    <span className="font-mono">[step]</span> milestones · <span className="font-mono">[pull]</span> and{' '}
+                    <span className="font-mono">[up]</span> compose output
                 </span>
                 {terminalLines.length > 0 && (
-                    <Button variant="ghost" size="sm" className="ml-auto" onClick={() => download(appId, 'deployment-log', terminalLines)}>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="ml-auto"
+                        onClick={() => download(appId, 'deployment-log', terminalLines)}
+                    >
                         <Download className="h-4 w-4" />
                         Download
                     </Button>
                 )}
             </div>
             {terminalLines.length > 0 ? (
-                <Terminal lines={terminalLines} aria-label="Deployment log" className={TERMINAL_CLASS} follow={active} />
+                <Terminal
+                    lines={terminalLines}
+                    aria-label="Deployment log"
+                    className={TERMINAL_CLASS}
+                    follow={active}
+                />
             ) : (
                 <EmptyState
                     icon={<TerminalSquare className="h-5 w-5" />}
                     title={active ? 'Waiting for output' : 'No output was captured'}
-                    description={active ? 'The first lines appear as soon as the deployment writes them.' : 'This run finished without writing any output.'}
+                    description={
+                        active
+                            ? 'The first lines appear as soon as the deployment writes them.'
+                            : 'This run finished without writing any output.'
+                    }
                     className="py-12"
                 />
             )}

@@ -51,9 +51,12 @@ function ConfirmationDialog({
     const needsTyping = confirmationText !== undefined
     const typingMatches = !needsTyping || typed === confirmationText
 
-    React.useEffect(() => {
+    // Clear what was typed when the dialog closes.
+    const [wasOpen, setWasOpen] = React.useState(open)
+    if (open !== wasOpen) {
+        setWasOpen(open)
         if (!open) setTyped('')
-    }, [open])
+    }
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -69,7 +72,8 @@ function ConfirmationDialog({
                                     : 'flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] bg-status-info-bg text-status-info-fg'
                             }
                         >
-                            {icon ?? (isDestructive ? <AlertTriangle className="h-5 w-5" /> : <Info className="h-5 w-5" />)}
+                            {icon ??
+                                (isDestructive ? <AlertTriangle className="h-5 w-5" /> : <Info className="h-5 w-5" />)}
                         </div>
                         <DialogHeader className="space-y-1 pr-6 text-left">
                             <DialogTitle>{title}</DialogTitle>

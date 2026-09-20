@@ -13,35 +13,53 @@ interface LoginProblem {
 // because it is the one they can do something about.
 function describeProblem(error: string, description: string | null): LoginProblem {
     const text = `${error} ${description ?? ''}`.toLowerCase()
-    if (error === 'access_denied' || error === 'unauthorized' || text.includes('whitelist') || text.includes('not authorized')) {
+    if (
+        error === 'access_denied' ||
+        error === 'unauthorized' ||
+        text.includes('whitelist') ||
+        text.includes('not authorized')
+    ) {
         return {
             title: 'This GitHub account is not allowed',
             detail: 'Only accounts on the allow list can sign in. Ask whoever runs this server to add your GitHub username.',
         }
     }
-    return { title: 'Sign in did not finish', detail: description ? `${description}.` : 'Something went wrong with GitHub. Try again.' }
+    return {
+        title: 'Sign in did not finish',
+        detail: description ? `${description}.` : 'Something went wrong with GitHub. Try again.',
+    }
 }
 
 function Login() {
     const [params, setParams] = useSearchParams()
     const [problem, setProblem] = useState<LoginProblem | null>(null)
+    const [handled, setHandled] = useState<string | null>(null)
+
+    const error = params.get('error')
+    const description = params.get('error_description')
+    const errorKey = error ? `${error}|${description ?? ''}` : null
+    if (error && errorKey !== handled) {
+        setHandled(errorKey)
+        setProblem(describeProblem(error, description))
+    }
 
     useEffect(() => {
-        const error = params.get('error')
         if (!error) return
-        setProblem(describeProblem(error, params.get('error_description')))
         // The message is kept in state, so the address can be cleaned and a refresh does not show it again.
         const next = new URLSearchParams(params)
         next.delete('error')
         next.delete('error_description')
         setParams(next, { replace: true })
-    }, [params, setParams])
+    }, [error, params, setParams])
 
     return (
         <main className="flex min-h-screen items-center justify-center bg-background p-4">
             <div className="flex w-full max-w-sm flex-col gap-6">
                 <div className="flex flex-col items-center gap-3 text-center">
-                    <div aria-hidden="true" className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+                    <div
+                        aria-hidden="true"
+                        className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground"
+                    >
                         <Server className="h-6 w-6" />
                     </div>
                     <div>
@@ -51,7 +69,10 @@ function Login() {
                 </div>
 
                 {problem && (
-                    <div role="alert" className="flex items-start gap-3 rounded-xl bg-status-err-bg p-4 text-status-err-fg">
+                    <div
+                        role="alert"
+                        className="flex items-start gap-3 rounded-xl bg-status-err-bg p-4 text-status-err-fg"
+                    >
                         <AlertCircle aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0" />
                         <div className="min-w-0 flex-1">
                             <p className="font-semibold">{problem.title}</p>
@@ -74,7 +95,9 @@ function Login() {
                         <Github className="h-5 w-5" />
                         Continue with GitHub
                     </Button>
-                    <p className="text-center text-[13px] text-muted-foreground">You need a GitHub account that has been allowed on this server.</p>
+                    <p className="text-center text-[13px] text-muted-foreground">
+                        You need a GitHub account that has been allowed on this server.
+                    </p>
                 </div>
             </div>
         </main>

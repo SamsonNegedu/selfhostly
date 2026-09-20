@@ -32,7 +32,8 @@ function AccountSection() {
                 <CardContent className="flex flex-col gap-1 p-4">
                     <p className="font-semibold">Sign-in is turned off</p>
                     <p className="text-[13px] text-muted-foreground">
-                        This server does not ask anyone to sign in, so there are no sessions to end. To require GitHub sign-in, set <code className="font-mono">AUTH_ENABLED=true</code> and restart it.
+                        This server does not ask anyone to sign in, so there are no sessions to end. To require GitHub
+                        sign-in, set <code className="font-mono">AUTH_ENABLED=true</code> and restart it.
                     </p>
                 </CardContent>
             </Card>
@@ -46,7 +47,10 @@ function AccountSection() {
                     {user?.picture ? (
                         <img src={user.picture} alt="" className="h-11 w-11 rounded-full" />
                     ) : (
-                        <div aria-hidden="true" className="flex h-11 w-11 items-center justify-center rounded-full bg-muted text-base font-semibold">
+                        <div
+                            aria-hidden="true"
+                            className="flex h-11 w-11 items-center justify-center rounded-full bg-muted text-base font-semibold"
+                        >
                             {(user?.name ?? '?').slice(0, 1).toUpperCase()}
                         </div>
                     )}
@@ -65,7 +69,10 @@ function AccountSection() {
                 <CardContent className="flex flex-wrap items-center gap-4 p-4">
                     <div className="min-w-0 flex-1">
                         <p className="font-semibold">Sign out everywhere</p>
-                        <p className="text-[13px] text-muted-foreground">Ends every session on every device, including this one. Use it if a device is lost or you think someone else has access.</p>
+                        <p className="text-[13px] text-muted-foreground">
+                            Ends every session on every device, including this one. Use it if a device is lost or you
+                            think someone else has access.
+                        </p>
                     </div>
                     <Button variant="danger" onClick={() => setConfirming(true)} disabled={revoke.isPending}>
                         <ShieldOff className="h-4 w-4" />

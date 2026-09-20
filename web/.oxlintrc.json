@@ -1,0 +1,25 @@
+{
+    "$schema": "./node_modules/oxlint/configuration_schema.json",
+    "plugins": ["typescript", "react", "unicorn", "oxc"],
+    "env": {
+        "browser": true,
+        "es2020": true
+    },
+    "categories": {
+        "correctness": "error"
+    },
+    "ignorePatterns": ["dist", "node_modules"],
+    "rules": {
+        "react-hooks/rules-of-hooks": "error",
+        "react-hooks/exhaustive-deps": "warn",
+        "typescript/no-explicit-any": "off",
+        "no-unused-vars": [
+            "error",
+            {
+                "argsIgnorePattern": "^_",
+                "varsIgnorePattern": "^_",
+                "ignoreRestSiblings": true
+            }
+        ]
+    }
+}

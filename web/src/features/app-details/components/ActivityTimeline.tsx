@@ -1,6 +1,19 @@
 import { formatAgo } from '@/shared/lib/attention'
 import React from 'react'
-import { Clock, Play, Pause, RefreshCw, AlertTriangle, CheckCircle, Upload, Globe, Zap, Loader2, ChevronDown, ChevronRight } from 'lucide-react'
+import {
+    Clock,
+    Play,
+    Pause,
+    RefreshCw,
+    AlertTriangle,
+    CheckCircle,
+    Upload,
+    Globe,
+    Zap,
+    Loader2,
+    ChevronDown,
+    ChevronRight,
+} from 'lucide-react'
 import { useAppJobs } from '@/shared/services/api'
 import { StatusPill } from '@/shared/components/ui/StatusPill'
 import type { App, Job } from '@/shared/types/api'
@@ -27,12 +40,18 @@ const getJobIcon = (job: Job) => {
     if (job.status === 'failed') return <AlertTriangle className="h-3.5 w-3.5" />
 
     switch (job.type) {
-        case 'app_create': return <CheckCircle className="h-3.5 w-3.5" />
-        case 'app_update': return <Upload className="h-3.5 w-3.5" />
-        case 'app_start': return <Play className="h-3.5 w-3.5" />
-        case 'tunnel_create': return <Globe className="h-3.5 w-3.5" />
-        case 'quick_tunnel': return <Zap className="h-3.5 w-3.5" />
-        default: return <RefreshCw className="h-3.5 w-3.5" />
+        case 'app_create':
+            return <CheckCircle className="h-3.5 w-3.5" />
+        case 'app_update':
+            return <Upload className="h-3.5 w-3.5" />
+        case 'app_start':
+            return <Play className="h-3.5 w-3.5" />
+        case 'tunnel_create':
+            return <Globe className="h-3.5 w-3.5" />
+        case 'quick_tunnel':
+            return <Zap className="h-3.5 w-3.5" />
+        default:
+            return <RefreshCw className="h-3.5 w-3.5" />
     }
 }
 
@@ -52,11 +71,11 @@ const getJobDotColor = (job: Job) => {
 
 const getJobDescription = (job: Job) => {
     const typeMap: Record<string, string> = {
-        'app_create': 'App creation',
-        'app_update': 'App update',
-        'app_start': 'App start',
-        'tunnel_create': 'Custom tunnel creation',
-        'quick_tunnel': 'Quick Tunnel setup'
+        app_create: 'App creation',
+        app_update: 'App update',
+        app_start: 'App start',
+        tunnel_create: 'Custom tunnel creation',
+        quick_tunnel: 'Quick Tunnel setup',
     }
 
     const action = typeMap[job.type] || job.type
@@ -70,13 +89,29 @@ const getJobDescription = (job: Job) => {
 const getStatusBadge = (status?: string) => {
     switch (status) {
         case 'completed':
-            return <StatusPill kind="ok" size="sm">Completed</StatusPill>
+            return (
+                <StatusPill kind="ok" size="sm">
+                    Completed
+                </StatusPill>
+            )
         case 'failed':
-            return <StatusPill kind="err" size="sm">Failed</StatusPill>
+            return (
+                <StatusPill kind="err" size="sm">
+                    Failed
+                </StatusPill>
+            )
         case 'running':
-            return <StatusPill kind="info" size="sm">Running</StatusPill>
+            return (
+                <StatusPill kind="info" size="sm">
+                    Running
+                </StatusPill>
+            )
         case 'pending':
-            return <StatusPill kind="warn" size="sm">Pending</StatusPill>
+            return (
+                <StatusPill kind="warn" size="sm">
+                    Pending
+                </StatusPill>
+            )
         default:
             return null
     }
@@ -85,7 +120,7 @@ const getStatusBadge = (status?: string) => {
 function ActivityTimeline({ app }: ActivityTimelineProps) {
     // Fetch job history for this app
     const { data: jobs } = useAppJobs(app.id, app.node_id)
-    
+
     // Track expanded activity items
     const [expandedItems, setExpandedItems] = React.useState<Set<string>>(new Set())
 
@@ -94,7 +129,7 @@ function ActivityTimeline({ app }: ActivityTimelineProps) {
 
         // Add job history
         if (jobs && jobs.length > 0) {
-            jobs.forEach(job => {
+            jobs.forEach((job) => {
                 // For failed jobs, add a hint to check deployment logs if the error is very generic
                 let details = job.status === 'failed' ? job.error_message : job.progress_message
                 if (details && job.status === 'failed') {
@@ -103,7 +138,7 @@ function ActivityTimeline({ app }: ActivityTimelineProps) {
                         details = 'Build or deployment failed - click to view logs'
                     }
                 }
-                
+
                 items.push({
                     id: job.id,
                     type: 'job',
@@ -113,13 +148,13 @@ function ActivityTimeline({ app }: ActivityTimelineProps) {
                     icon: getJobIcon(job),
                     color: getJobColor(job),
                     dotColor: getJobDotColor(job),
-                    status: job.status
+                    status: job.status,
                 })
             })
         }
 
         // Add create event if no create job exists
-        const hasCreateJob = jobs?.some(j => j.type === 'app_create')
+        const hasCreateJob = jobs?.some((j) => j.type === 'app_create')
         if (!hasCreateJob) {
             items.push({
                 id: 'create',
@@ -128,7 +163,7 @@ function ActivityTimeline({ app }: ActivityTimelineProps) {
                 description: 'App was created',
                 icon: <CheckCircle className="h-3.5 w-3.5" />,
                 color: 'text-status-ok-fg',
-                dotColor: 'bg-status-ok'
+                dotColor: 'bg-status-ok',
             })
         }
 
@@ -141,7 +176,7 @@ function ActivityTimeline({ app }: ActivityTimelineProps) {
                 description: 'App is currently running',
                 icon: <Play className="h-3.5 w-3.5" />,
                 color: 'text-status-ok-fg',
-                dotColor: 'bg-status-ok'
+                dotColor: 'bg-status-ok',
             })
         } else if (app.status === 'stopped') {
             items.push({
@@ -151,7 +186,7 @@ function ActivityTimeline({ app }: ActivityTimelineProps) {
                 description: 'App is currently stopped',
                 icon: <Pause className="h-3.5 w-3.5" />,
                 color: 'text-status-idle-fg',
-                dotColor: 'bg-status-idle'
+                dotColor: 'bg-status-idle',
             })
         }
 
@@ -159,7 +194,7 @@ function ActivityTimeline({ app }: ActivityTimelineProps) {
     }, [app, jobs])
 
     const toggleExpanded = (activityId: string) => {
-        setExpandedItems(prev => {
+        setExpandedItems((prev) => {
             const next = new Set(prev)
             if (next.has(activityId)) {
                 next.delete(activityId)
@@ -169,7 +204,7 @@ function ActivityTimeline({ app }: ActivityTimelineProps) {
             return next
         })
     }
-    
+
     const isLongText = (text: string | undefined) => {
         return text && text.length > 80
     }
@@ -190,15 +225,22 @@ function ActivityTimeline({ app }: ActivityTimelineProps) {
                 const isExpanded = expandedItems.has(activity.id)
                 return (
                     <li key={activity.id} className="relative flex gap-3 py-2.5 pl-6">
-                        <span aria-hidden="true" className={`absolute left-0 top-[15px] h-[15px] w-[15px] rounded-full ring-4 ring-card ${activity.dotColor}`} />
+                        <span
+                            aria-hidden="true"
+                            className={`absolute left-0 top-[15px] h-[15px] w-[15px] rounded-full ring-4 ring-card ${activity.dotColor}`}
+                        />
                         <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                                <span aria-hidden="true" className={`shrink-0 ${activity.color}`}>{activity.icon}</span>
+                                <span aria-hidden="true" className={`shrink-0 ${activity.color}`}>
+                                    {activity.icon}
+                                </span>
                                 <p className="text-sm font-medium">{activity.description}</p>
                                 {activity.status && getStatusBadge(activity.status)}
                             </div>
                             {activity.details && (
-                                <p className={`mt-1 text-[13px] ${isExpanded ? 'break-words' : 'line-clamp-1'} ${activity.status === 'failed' ? 'text-status-err-fg' : 'text-muted-foreground'}`}>
+                                <p
+                                    className={`mt-1 text-[13px] ${isExpanded ? 'break-words' : 'line-clamp-1'} ${activity.status === 'failed' ? 'text-status-err-fg' : 'text-muted-foreground'}`}
+                                >
                                     {activity.details}
                                 </p>
                             )}
@@ -209,11 +251,17 @@ function ActivityTimeline({ app }: ActivityTimelineProps) {
                                     onClick={() => toggleExpanded(activity.id)}
                                     className="mt-1 inline-flex min-h-[44px] items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground md:min-h-0"
                                 >
-                                    {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                                    {isExpanded ? (
+                                        <ChevronDown className="h-3.5 w-3.5" />
+                                    ) : (
+                                        <ChevronRight className="h-3.5 w-3.5" />
+                                    )}
                                     {isExpanded ? 'Show less' : 'Show more'}
                                 </button>
                             )}
-                            <p className="mt-0.5 text-[13px] text-muted-foreground">{formatAgo(activity.timestamp.toISOString())}</p>
+                            <p className="mt-0.5 text-[13px] text-muted-foreground">
+                                {formatAgo(activity.timestamp.toISOString())}
+                            </p>
                         </div>
                     </li>
                 )

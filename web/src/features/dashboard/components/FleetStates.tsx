@@ -77,24 +77,36 @@ export function FleetEmpty() {
             />
             <div className="grid gap-4 md:grid-cols-2">
                 <Card className="flex items-center gap-4 p-4">
-                    <div aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                    <div
+                        aria-hidden="true"
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"
+                    >
                         <Globe className="h-[18px] w-[18px]" />
                     </div>
                     <div className="flex-1">
                         <p className="font-semibold">Reach apps from anywhere</p>
-                        <p className="text-[13px] text-muted-foreground">Connect Cloudflare to give apps a public address.</p>
+                        <p className="text-[13px] text-muted-foreground">
+                            Connect Cloudflare to give apps a public address.
+                        </p>
                     </div>
-                    <Link to={ROUTES.settings} className={buttonClasses({ variant: 'outline' })}>Connect</Link>
+                    <Link to={ROUTES.settings} className={buttonClasses({ variant: 'outline' })}>
+                        Connect
+                    </Link>
                 </Card>
                 <Card className="flex items-center gap-4 p-4">
-                    <div aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                    <div
+                        aria-hidden="true"
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"
+                    >
                         <Server className="h-[18px] w-[18px]" />
                     </div>
                     <div className="flex-1">
                         <p className="font-semibold">Add another machine</p>
                         <p className="text-[13px] text-muted-foreground">Spread apps across a Pi, a NAS or a VPS.</p>
                     </div>
-                    <Link to={ROUTES.registerNode} className={buttonClasses({ variant: 'outline' })}>Add node</Link>
+                    <Link to={ROUTES.registerNode} className={buttonClasses({ variant: 'outline' })}>
+                        Add node
+                    </Link>
                 </Card>
             </div>
         </div>

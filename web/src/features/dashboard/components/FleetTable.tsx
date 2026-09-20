@@ -1,6 +1,16 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowDown, ArrowUp, ExternalLink, Loader2, MoreHorizontal, Play, RefreshCw, Square, Trash2 } from 'lucide-react'
+import {
+    ArrowDown,
+    ArrowUp,
+    ExternalLink,
+    Loader2,
+    MoreHorizontal,
+    Play,
+    RefreshCw,
+    Square,
+    Trash2,
+} from 'lucide-react'
 import { AppTile } from '@/shared/components/ui/AppTile'
 import { Button } from '@/shared/components/ui/Button'
 import { Card } from '@/shared/components/ui/Card'
@@ -77,7 +87,9 @@ function FleetTable({ apps, metricsFor, actions }: FleetTableProps) {
     }, [apps, metricsFor, sort])
 
     const toggleSort = (key: SortKey) =>
-        setSort((current) => (current.key === key ? { key, dir: current.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }))
+        setSort((current) =>
+            current.key === key ? { key, dir: current.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' },
+        )
 
     return (
         <Card className="overflow-hidden p-0">
@@ -98,7 +110,12 @@ function FleetTable({ apps, metricsFor, actions }: FleetTableProps) {
                                         className="inline-flex min-h-[44px] items-center gap-1 uppercase tracking-wider hover:text-foreground md:min-h-0"
                                     >
                                         {column.label}
-                                        {active && (sort.dir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+                                        {active &&
+                                            (sort.dir === 'asc' ? (
+                                                <ArrowUp className="h-3 w-3" />
+                                            ) : (
+                                                <ArrowDown className="h-3 w-3" />
+                                            ))}
                                     </button>
                                 </TableHead>
                             )
@@ -119,7 +136,15 @@ function FleetTable({ apps, metricsFor, actions }: FleetTableProps) {
     )
 }
 
-function FleetTableRow({ item, metrics, actions }: { item: FleetApp; metrics?: AppMetrics; actions: FleetTableProps['actions'] }) {
+function FleetTableRow({
+    item,
+    metrics,
+    actions,
+}: {
+    item: FleetApp
+    metrics?: AppMetrics
+    actions: FleetTableProps['actions']
+}) {
     const { app, unreachable, node } = item
     const meta = unreachable ? ({ kind: 'warn', label: 'Unreachable' } as const) : appStatusMeta(app.status)
     const busy = actions.isBusy(app.id)
@@ -133,7 +158,10 @@ function FleetTableRow({ item, metrics, actions }: { item: FleetApp; metrics?: A
                 <div className="flex items-center gap-3">
                     <AppTile name={app.name} size="sm" />
                     <div className="flex flex-col">
-                        <Link to={appHref(app)} className="min-h-[44px] content-center font-semibold hover:underline md:min-h-0">
+                        <Link
+                            to={appHref(app)}
+                            className="min-h-[44px] content-center font-semibold hover:underline md:min-h-0"
+                        >
                             {app.name}
                         </Link>
                         <span className="text-xs text-muted-foreground md:hidden">{node?.name}</span>
@@ -161,13 +189,25 @@ function FleetTableRow({ item, metrics, actions }: { item: FleetApp; metrics?: A
             <TableCell>
                 <div className="flex items-center justify-end gap-1">
                     {canStart && (
-                        <Button variant="outline" size="sm" onClick={() => actions.start(app)} disabled={busy} aria-label={`Start ${app.name}`}>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => actions.start(app)}
+                            disabled={busy}
+                            aria-label={`Start ${app.name}`}
+                        >
                             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
                             <span className="max-md:hidden">Start</span>
                         </Button>
                     )}
                     {isRunning && (
-                        <Button variant="outline" size="sm" onClick={() => actions.requestStop(app)} disabled={busy} aria-label={`Stop ${app.name}`}>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => actions.requestStop(app)}
+                            disabled={busy}
+                            aria-label={`Stop ${app.name}`}
+                        >
                             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-4 w-4" />}
                             <span className="max-md:hidden">Stop</span>
                         </Button>
@@ -191,7 +231,10 @@ function FleetTableRow({ item, metrics, actions }: { item: FleetApp; metrics?: A
                                 </DropdownMenuItem>
                             )}
                             {!unreachable && (
-                                <DropdownMenuItem onSelect={() => actions.requestUpdate(app)} disabled={busy || inProgress}>
+                                <DropdownMenuItem
+                                    onSelect={() => actions.requestUpdate(app)}
+                                    disabled={busy || inProgress}
+                                >
                                     <RefreshCw className="mr-2 h-4 w-4" />
                                     Update
                                 </DropdownMenuItem>

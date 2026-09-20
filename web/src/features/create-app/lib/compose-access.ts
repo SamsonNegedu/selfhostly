@@ -12,7 +12,10 @@ export function firstExposedService(content: string): { service: string; port: n
         if (!services) return null
         for (const [service, config] of Object.entries(services)) {
             for (const entry of config?.ports ?? []) {
-                const text = typeof entry === 'object' && entry !== null ? String((entry as { target?: unknown }).target ?? '') : String(entry)
+                const text =
+                    typeof entry === 'object' && entry !== null
+                        ? String((entry as { target?: unknown }).target ?? '')
+                        : String(entry)
                 const match = text.match(/(\d+)(?:\/\w+)?$/)
                 if (match) return { service, port: Number(match[1]) }
             }

@@ -22,7 +22,14 @@ function ActivitySection() {
     }
 
     if (entries.length === 0) {
-        return <EmptyState icon={<History className="h-5 w-5" />} title="Nothing has changed yet" description="Starting, stopping, editing or deleting anything shows up here." className="py-14" />
+        return (
+            <EmptyState
+                icon={<History className="h-5 w-5" />}
+                title="Nothing has changed yet"
+                description="Starting, stopping, editing or deleting anything shows up here."
+                className="py-14"
+            />
+        )
     }
 
     return (
@@ -39,19 +46,33 @@ function ActivitySection() {
                 <TableBody>
                     {entries.map((entry) => (
                         <TableRow key={entry.id}>
-                            <TableCell className="whitespace-nowrap text-muted-foreground">{formatAgo(entry.time)}</TableCell>
-                            <TableCell className="max-w-[280px]">
+                            <TableCell className="whitespace-nowrap text-muted-foreground">
+                                {formatAgo(entry.time)}
+                            </TableCell>
+                            <TableCell className="w-full">
                                 {describeAudit(entry) && <p className="font-medium">{describeAudit(entry)}</p>}
                                 <p className="font-mono text-[12px] text-muted-foreground">
-                                    <span className="font-semibold">{entry.method}</span> <span className="break-all">{entry.path}</span>
+                                    <span className="font-semibold">{entry.method}</span>{' '}
+                                    <span className="break-all">{entry.path}</span>
                                 </p>
                             </TableCell>
                             <TableCell>
-                                <StatusPill kind={entry.status >= HTTP_SERVER_ERROR ? 'err' : entry.status >= HTTP_ERROR ? 'warn' : 'ok'} size="sm">
+                                <StatusPill
+                                    kind={
+                                        entry.status >= HTTP_SERVER_ERROR
+                                            ? 'err'
+                                            : entry.status >= HTTP_ERROR
+                                              ? 'warn'
+                                              : 'ok'
+                                    }
+                                    size="sm"
+                                >
                                     {entry.status}
                                 </StatusPill>
                             </TableCell>
-                            <TableCell className="text-muted-foreground max-md:hidden">{entry.actor || 'system'}</TableCell>
+                            <TableCell className="max-w-[200px] truncate text-muted-foreground max-md:hidden" title={entry.actor || undefined}>
+                                {entry.actor || 'system'}
+                            </TableCell>
                         </TableRow>
                     ))}
                 </TableBody>

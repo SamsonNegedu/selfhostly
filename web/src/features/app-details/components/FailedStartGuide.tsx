@@ -24,7 +24,8 @@ function FailedStartGuide({ app }: { app: App }) {
 
     const conflictPort = detectPortConflict(app.error_message)
     // The failure names a port that the compose file no longer publishes, so it was edited after the failure.
-    const editedSinceFailure = conflictPort !== null && replaceHostPort(app.compose_content, conflictPort, conflictPort) === null
+    const editedSinceFailure =
+        conflictPort !== null && replaceHostPort(app.compose_content, conflictPort, conflictPort) === null
 
     const fix = useMemo(() => {
         if (conflictPort === null) return null
@@ -57,7 +58,7 @@ function FailedStartGuide({ app }: { app: App }) {
             {
                 onSuccess: () => toast.success('App starting', `${app.name} is starting`),
                 onError: (error) => toast.error('Could not start app', describeError(error)),
-            }
+            },
         )
 
     const working = step !== 'idle' || startApp.isPending
@@ -67,7 +68,11 @@ function FailedStartGuide({ app }: { app: App }) {
             <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
                     <AlertTriangle className="h-4 w-4 text-status-err-fg" />
-                    {fix ? `Port ${fix.from} is already in use` : editedSinceFailure ? 'Config changed since it failed' : `${app.name} did not start`}
+                    {fix
+                        ? `Port ${fix.from} is already in use`
+                        : editedSinceFailure
+                          ? 'Config changed since it failed'
+                          : `${app.name} did not start`}
                 </CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
@@ -76,7 +81,8 @@ function FailedStartGuide({ app }: { app: App }) {
                         ? `Another program on this machine already listens on ${fix.from}. Publish ${app.name} on ${fix.to} instead. That port is not used by any of your other apps on this node.`
                         : editedSinceFailure
                           ? `The last start failed on port ${conflictPort}, which the compose file no longer uses. Retry to start it with the current config.`
-                          : app.error_message || 'The app reported an error. The deployment log shows each step that ran.'}
+                          : app.error_message ||
+                            'The app reported an error. The deployment log shows each step that ran.'}
                 </p>
 
                 {fix && (
@@ -90,7 +96,11 @@ function FailedStartGuide({ app }: { app: App }) {
                     {fix ? (
                         <Button onClick={applyAndRetry} disabled={working}>
                             {working ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                            {step === 'saving' ? 'Saving' : step === 'starting' ? 'Starting' : `Apply and retry on ${fix.to}`}
+                            {step === 'saving'
+                                ? 'Saving'
+                                : step === 'starting'
+                                  ? 'Starting'
+                                  : `Apply and retry on ${fix.to}`}
                         </Button>
                     ) : (
                         <Button onClick={retry} disabled={working}>

@@ -23,16 +23,33 @@ import { EditorState, Compartment } from '@codemirror/state'
 import { yamlEditorTheme } from '@/shared/components/ui/YamlEditor'
 import { yaml } from '@codemirror/lang-yaml'
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search'
-import { keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, highlightSpecialChars, drawSelection, dropCursor, rectangularSelection, crosshairCursor } from '@codemirror/view'
+import {
+    keymap,
+    lineNumbers,
+    highlightActiveLine,
+    highlightActiveLineGutter,
+    highlightSpecialChars,
+    drawSelection,
+    dropCursor,
+    rectangularSelection,
+    crosshairCursor,
+} from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
-import { foldGutter, foldKeymap, syntaxHighlighting, defaultHighlightStyle, bracketMatching, indentOnInput } from '@codemirror/language'
+import {
+    foldGutter,
+    foldKeymap,
+    syntaxHighlighting,
+    defaultHighlightStyle,
+    bracketMatching,
+    indentOnInput,
+} from '@codemirror/language'
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
 import type { ComposeVersion } from '@/shared/types/api'
 
 interface ComposeEditorProps {
-    appId: string;
-    nodeId: string;
-    initialComposeContent: string;
+    appId: string
+    nodeId: string
+    initialComposeContent: string
 }
 
 function ComposeEditor({ appId, nodeId, initialComposeContent }: ComposeEditorProps) {
@@ -52,8 +69,12 @@ function ComposeEditor({ appId, nodeId, initialComposeContent }: ComposeEditorPr
     const { data: nodeApps = [] } = useApps([nodeId])
     const themeCompartment = useRef(new Compartment())
     const checkResult = useMemo(
-        () => checkCompose(composeContent, nodeApps.filter((other) => other.id !== appId)),
-        [composeContent, nodeApps, appId]
+        () =>
+            checkCompose(
+                composeContent,
+                nodeApps.filter((other) => other.id !== appId),
+            ),
+        [composeContent, nodeApps, appId],
     )
     const { data: app } = useApp(appId, nodeId)
     const envCount = useMemo(() => readEnv(composeContent).entries.length, [composeContent])
@@ -144,7 +165,9 @@ function ComposeEditor({ appId, nodeId, initialComposeContent }: ComposeEditorPr
     useEffect(() => {
         const observer = new MutationObserver(() => {
             editorRef.current?.dispatch({
-                effects: themeCompartment.current.reconfigure(yamlEditorTheme(document.documentElement.classList.contains('dark'))),
+                effects: themeCompartment.current.reconfigure(
+                    yamlEditorTheme(document.documentElement.classList.contains('dark')),
+                ),
             })
         })
         observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
@@ -213,8 +236,6 @@ function ComposeEditor({ appId, nodeId, initialComposeContent }: ComposeEditorPr
         toast.info('Changes discarded', 'The editor shows the saved config again')
     }
 
-
-
     const handleVersionSelect = (version: ComposeVersion) => {
         setViewingVersion(version)
     }
@@ -253,14 +274,17 @@ function ComposeEditor({ appId, nodeId, initialComposeContent }: ComposeEditorPr
                     return null
                 }
                 if (Array.isArray(obj)) {
-                    return obj.map(item => fixNullValues(item, parentKey))
+                    return obj.map((item) => fixNullValues(item, parentKey))
                 }
                 if (typeof obj === 'object') {
                     const result: any = {}
                     for (const [key, value] of Object.entries(obj)) {
                         if (value === null && (key === 'networks' || key === 'volumes' || key === 'services')) {
                             result[key] = {}
-                        } else if (value === null && (parentKey === 'networks' || parentKey === 'volumes' || parentKey === 'services')) {
+                        } else if (
+                            value === null &&
+                            (parentKey === 'networks' || parentKey === 'volumes' || parentKey === 'services')
+                        ) {
                             // Null value inside networks/volumes/services - convert to empty object
                             result[key] = {}
                         } else {
@@ -312,7 +336,10 @@ function ComposeEditor({ appId, nodeId, initialComposeContent }: ComposeEditorPr
                 }
 
                 // Fix null or empty object values in these sections
-                if ((inNetworksSection || inVolumesSection || inServicesSection) && line.match(/^(\s+)(\w+):\s+(null|{})\s*$/)) {
+                if (
+                    (inNetworksSection || inVolumesSection || inServicesSection) &&
+                    line.match(/^(\s+)(\w+):\s+(null|{})\s*$/)
+                ) {
                     line = line.replace(/:\s+(null|{})\s*$/, ':')
                 }
 
@@ -402,7 +429,10 @@ function ComposeEditor({ appId, nodeId, initialComposeContent }: ComposeEditorPr
                                     : `${envCount} ${envCount === 1 ? 'variable' : 'variables'} set. Secrets are hidden in the Environment tab.`}
                             </p>
                             {app && (
-                                <Link to={appHref(app, 'environment')} className={buttonClasses({ variant: 'outline' })}>
+                                <Link
+                                    to={appHref(app, 'environment')}
+                                    className={buttonClasses({ variant: 'outline' })}
+                                >
                                     Open Environment
                                 </Link>
                             )}
@@ -413,7 +443,11 @@ function ComposeEditor({ appId, nodeId, initialComposeContent }: ComposeEditorPr
                             <CardTitle className="text-base">Versions</CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <ComposeVersionHistory appId={appId} nodeId={nodeId} onVersionSelect={handleVersionSelect} />
+                            <ComposeVersionHistory
+                                appId={appId}
+                                nodeId={nodeId}
+                                onVersionSelect={handleVersionSelect}
+                            />
                         </CardContent>
                     </Card>
                 </div>
@@ -441,13 +475,21 @@ function ComposeEditor({ appId, nodeId, initialComposeContent }: ComposeEditorPr
                 <DialogContent className="flex max-h-[90vh] max-w-3xl flex-col overflow-hidden">
                     <DialogHeader>
                         <DialogTitle>Format preview</DialogTitle>
-                        <DialogDescription>Red lines are removed and green lines are added. Nothing changes until you apply it.</DialogDescription>
+                        <DialogDescription>
+                            Red lines are removed and green lines are added. Nothing changes until you apply it.
+                        </DialogDescription>
                     </DialogHeader>
                     {formatError ? (
-                        <p role="alert" className="text-sm text-status-err-fg">Could not format the file: {formatError}</p>
+                        <p role="alert" className="text-sm text-status-err-fg">
+                            Could not format the file: {formatError}
+                        </p>
                     ) : (
                         <div className="min-h-0 flex-1 overflow-auto">
-                            <DiffBlock before={composeContent} after={formattedContent} aria-label="Formatting changes" />
+                            <DiffBlock
+                                before={composeContent}
+                                after={formattedContent}
+                                aria-label="Formatting changes"
+                            />
                         </div>
                     )}
                     <div className="flex justify-end gap-2">

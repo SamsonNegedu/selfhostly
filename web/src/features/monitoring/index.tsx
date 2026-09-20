@@ -34,8 +34,14 @@ function Insights() {
     const { data: apps = [] } = useApps(selectedNodeIds)
 
     // Only nodes that answer are asked for readings, because one that does not would hold up all of them.
-    const selected = useMemo(() => (nodes ?? []).filter((node) => selectedNodeIds.length === 0 || selectedNodeIds.includes(node.id)), [nodes, selectedNodeIds])
-    const onlineIds = useMemo(() => selected.filter((node) => node.status === 'online').map((node) => node.id), [selected])
+    const selected = useMemo(
+        () => (nodes ?? []).filter((node) => selectedNodeIds.length === 0 || selectedNodeIds.includes(node.id)),
+        [nodes, selectedNodeIds],
+    )
+    const onlineIds = useMemo(
+        () => selected.filter((node) => node.status === 'online').map((node) => node.id),
+        [selected],
+    )
     const silent = selected.filter((node) => node.status !== 'online')
 
     const { data: stats, error, dataUpdatedAt, refetch } = useSystemStats(REFRESH_MS, onlineIds)
@@ -51,9 +57,13 @@ function Insights() {
             containers.filter((container) => {
                 if (state !== 'all' && container.state !== state) return false
                 const text = query.trim().toLowerCase()
-                return text === '' || container.name.toLowerCase().includes(text) || container.app_name.toLowerCase().includes(text)
+                return (
+                    text === '' ||
+                    container.name.toLowerCase().includes(text) ||
+                    container.app_name.toLowerCase().includes(text)
+                )
             }),
-        [containers, state, query]
+        [containers, state, query],
     )
     const nodeName = (id: string) => nodes?.find((node) => node.id === id)?.name ?? id
 
@@ -79,19 +89,27 @@ function Insights() {
             <div>
                 <h1 className="text-2xl font-semibold tracking-tight">Insights</h1>
                 <p className="text-muted-foreground">
-                    {online.length === 0 ? 'No node is answering' : `${online.length} ${online.length === 1 ? 'node' : 'nodes'} answering`} · Updated {updated}
+                    {online.length === 0
+                        ? 'No node is answering'
+                        : `${online.length} ${online.length === 1 ? 'node' : 'nodes'} answering`}{' '}
+                    · Updated {updated}
                 </p>
             </div>
 
             {silent.length > 0 && (
-                <Card className="divide-y divide-border border-status-warn/50" aria-label="Nodes that are not answering" role="region">
+                <Card
+                    className="divide-y divide-border border-status-warn/50"
+                    aria-label="Nodes that are not answering"
+                    role="region"
+                >
                     {silent.map((node) => (
                         <div key={node.id} className="flex flex-wrap items-center gap-3 p-4">
                             <ServerCrash aria-hidden="true" className="h-5 w-5 shrink-0 text-status-warn-fg" />
                             <div className="min-w-0 flex-1">
                                 <p className="font-semibold">{node.name} is not answering</p>
                                 <p className="text-[13px] text-muted-foreground">
-                                    Its readings are left out until it reconnects.{node.last_seen ? ` Last seen ${formatAgo(node.last_seen)}.` : ''}
+                                    Its readings are left out until it reconnects.
+                                    {node.last_seen ? ` Last seen ${formatAgo(node.last_seen)}.` : ''}
                                 </p>
                             </div>
                             <StatusPill kind="warn" size="sm">
@@ -122,7 +140,9 @@ function Insights() {
                         {online.map((node) => (
                             <NodeResources key={node.node_id} stats={node} history={history[node.node_id]} />
                         ))}
-                        <p className="text-[13px] text-muted-foreground">Charts show the readings taken while this page has been open. Older history is not kept.</p>
+                        <p className="text-[13px] text-muted-foreground">
+                            Charts show the readings taken while this page has been open. Older history is not kept.
+                        </p>
                     </section>
 
                     <section aria-label="Containers" className="flex flex-col gap-4">
@@ -130,17 +150,35 @@ function Insights() {
                             <h2 className="text-lg font-semibold">Containers</h2>
                             <div className="flex flex-wrap items-center gap-2">
                                 <div className="relative">
-                                    <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                                    <Input aria-label="Search containers" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search" className="pl-9 sm:w-56" />
+                                    <Search
+                                        aria-hidden="true"
+                                        className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                                    />
+                                    <Input
+                                        aria-label="Search containers"
+                                        value={query}
+                                        onChange={(event) => setQuery(event.target.value)}
+                                        placeholder="Search"
+                                        className="pl-9 sm:w-56"
+                                    />
                                 </div>
-                                <SegmentedControl aria-label="Container state" options={STATE_OPTIONS} value={state} onValueChange={(value) => setState(value as StateFilter)} />
+                                <SegmentedControl
+                                    aria-label="Container state"
+                                    options={STATE_OPTIONS}
+                                    value={state}
+                                    onValueChange={(value) => setState(value as StateFilter)}
+                                />
                             </div>
                         </div>
                         {visible.length === 0 ? (
                             <EmptyState
                                 icon={<Container className="h-5 w-5" />}
                                 title={containers.length === 0 ? 'No containers' : 'No containers match'}
-                                description={containers.length === 0 ? 'Nothing is running on these nodes yet.' : 'Try another search or state.'}
+                                description={
+                                    containers.length === 0
+                                        ? 'Nothing is running on these nodes yet.'
+                                        : 'Try another search or state.'
+                                }
                                 className="py-10"
                             />
                         ) : (

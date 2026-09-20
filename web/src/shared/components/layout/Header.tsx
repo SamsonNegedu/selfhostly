@@ -1,29 +1,32 @@
-import { Link } from 'react-router-dom';
-import { ChevronLeft, Search, Server } from 'lucide-react';
-import { Kbd } from '../ui/Kbd';
-import { useCommandPalette } from './CommandPaletteContext';
-import { useAuth } from '../auth/AuthProvider';
-import NotificationsMenu from './NotificationsMenu';
-import ScopeSwitcher from './ScopeSwitcher';
-import TopbarBreadcrumbs from './TopbarBreadcrumbs';
-import { useCrumbs } from './useCrumbs';
-import UserMenu from './UserMenu';
+import { Link } from 'react-router-dom'
+import { ChevronLeft, Search, Server } from 'lucide-react'
+import { Kbd } from '../ui/Kbd'
+import { useCommandPalette } from './CommandPaletteContext'
+import { useAuth } from '../auth/AuthProvider'
+import NotificationsMenu from './NotificationsMenu'
+import ScopeSwitcher from './ScopeSwitcher'
+import TopbarBreadcrumbs from './TopbarBreadcrumbs'
+import { useCrumbs } from './useCrumbs'
+import UserMenu from './UserMenu'
 
-const isApplePlatform = () => /Mac|iPhone|iPad/.test(navigator.platform);
+const isApplePlatform = () => /Mac|iPhone|iPad/.test(navigator.platform)
 
 function Header() {
-    const { isAuthenticated } = useAuth();
-    const { setOpen: openPalette } = useCommandPalette();
-    const crumbs = useCrumbs();
+    const { isAuthenticated } = useAuth()
+    const { setOpen: openPalette } = useCommandPalette()
+    const crumbs = useCrumbs()
 
     if (!isAuthenticated) {
-        return null;
+        return null
     }
 
     // On a phone a deep page shows a back arrow to its parent, and a top level page shows the logo.
-    const title = crumbs[crumbs.length - 1]?.label ?? 'Selfhostly';
+    const title = crumbs[crumbs.length - 1]?.label ?? 'Selfhostly'
     // The back arrow goes to the nearest earlier crumb that links somewhere (a node name has no page).
-    const parent = crumbs.slice(0, -1).reverse().find((crumb) => crumb.to);
+    const parent = crumbs
+        .slice(0, -1)
+        .reverse()
+        .find((crumb) => crumb.to)
 
     return (
         <header className="flex h-[60px] shrink-0 items-center gap-2 border-b border-border bg-background px-2 sm:gap-3 sm:px-8 md:px-8 z-30">
@@ -36,7 +39,11 @@ function Header() {
                     <ChevronLeft className="h-5 w-5" />
                 </Link>
             ) : (
-                <Link to="/apps" className="flex h-[44px] w-[44px] items-center justify-center md:hidden" aria-label="Selfhostly home">
+                <Link
+                    to="/apps"
+                    className="flex h-[44px] w-[44px] items-center justify-center md:hidden"
+                    aria-label="Selfhostly home"
+                >
                     <span className="flex h-[30px] w-[30px] items-center justify-center rounded-lg bg-primary text-primary-foreground">
                         <Server className="h-[17px] w-[17px]" />
                     </span>
@@ -73,7 +80,7 @@ function Header() {
                 </div>
             </div>
         </header>
-    );
+    )
 }
 
-export default Header;
+export default Header

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import type { SystemStats } from '@/shared/types/api'
 
 const MAX_SAMPLES = 60
@@ -12,21 +12,29 @@ export interface NodeHistory {
 // The API reports the present only, so the trend is what this page has seen since it was opened. Each new
 // reading adds a point, and the oldest points fall off.
 export function useStatsHistory(stats: SystemStats[] | undefined, updatedAt: number): Record<string, NodeHistory> {
-    const history = useRef<Record<string, NodeHistory>>({})
-    const [, setVersion] = useState(0)
+    const [history, setHistory] = useState<Record<string, NodeHistory>>({})
+    const [seen, setSeen] = useState<{ stats: SystemStats[] | undefined; updatedAt: number }>({
+        stats: undefined,
+        updatedAt: 0,
+    })
 
-    useEffect(() => {
-        if (!stats || updatedAt === 0) return
-        for (const node of stats) {
-            if (node.status !== 'online') continue
-            const entry = history.current[node.node_id] ?? { cpu: [], memory: [], disk: [] }
-            entry.cpu = [...entry.cpu, node.cpu.usage_percent].slice(-MAX_SAMPLES)
-            entry.memory = [...entry.memory, node.memory.usage_percent].slice(-MAX_SAMPLES)
-            entry.disk = [...entry.disk, node.disk.usage_percent].slice(-MAX_SAMPLES)
-            history.current[node.node_id] = entry
+    // A new reading is added while rendering, so the trend is never a render behind.
+    if (seen.stats !== stats || seen.updatedAt !== updatedAt) {
+        setSeen({ stats, updatedAt })
+        if (stats && updatedAt !== 0) {
+            const next = { ...history }
+            for (const node of stats) {
+                if (node.status !== 'online') continue
+                const entry = next[node.node_id] ?? { cpu: [], memory: [], disk: [] }
+                next[node.node_id] = {
+                    cpu: [...entry.cpu, node.cpu.usage_percent].slice(-MAX_SAMPLES),
+                    memory: [...entry.memory, node.memory.usage_percent].slice(-MAX_SAMPLES),
+                    disk: [...entry.disk, node.disk.usage_percent].slice(-MAX_SAMPLES),
+                }
+            }
+            setHistory(next)
         }
-        setVersion((value) => value + 1)
-    }, [stats, updatedAt])
+    }
 
-    return history.current
+    return history
 }

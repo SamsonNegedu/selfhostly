@@ -12,11 +12,11 @@ import ConfirmationDialog from '@/shared/components/ui/ConfirmationDialog'
 import { ComposeVersion } from '@/shared/types/api'
 
 interface ComposeVersionHistoryProps {
-    appId: string;
-    nodeId: string;
-    onVersionSelect?: (version: ComposeVersion) => void;
+    appId: string
+    nodeId: string
+    onVersionSelect?: (version: ComposeVersion) => void
     // Text buttons instead of icons, for the History tab where there is room.
-    showLabels?: boolean;
+    showLabels?: boolean
 }
 
 function ComposeVersionHistory({ appId, nodeId, onVersionSelect, showLabels = false }: ComposeVersionHistoryProps) {
@@ -44,8 +44,8 @@ function ComposeVersionHistory({ appId, nodeId, onVersionSelect, showLabels = fa
                 },
                 onError: (error) => {
                     toast.error('Could not restore', describeError(error))
-                }
-            }
+                },
+            },
         )
     }
 
@@ -68,22 +68,46 @@ function ComposeVersionHistory({ appId, nodeId, onVersionSelect, showLabels = fa
         <>
             <ul className="flex max-h-[min(70vh,720px)] flex-col overflow-y-auto">
                 {versions.map((version) => (
-                    <li key={version.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border py-3 first:pt-0 last:border-b-0 last:pb-0">
+                    <li
+                        key={version.id}
+                        className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border py-3 first:pt-0 last:border-b-0 last:pb-0"
+                    >
                         <span className="w-9 shrink-0 font-mono text-sm font-semibold">v{version.version}</span>
                         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                            {version.is_current && <StatusPill kind="ok" size="sm">Current</StatusPill>}
-                            {version.rolled_back_from && <StatusPill kind="warn" size="sm">Restored</StatusPill>}
+                            {version.is_current && (
+                                <StatusPill kind="ok" size="sm">
+                                    Current
+                                </StatusPill>
+                            )}
+                            {version.rolled_back_from && (
+                                <StatusPill kind="warn" size="sm">
+                                    Restored
+                                </StatusPill>
+                            )}
                             <span className="text-[13px] text-muted-foreground">{formatAgo(version.created_at)}</span>
                         </div>
                         <div className="flex shrink-0 gap-1">
                             {onVersionSelect && (
-                                <Button variant="ghost" size="sm" onClick={() => onVersionSelect(version)} aria-label={`View version ${version.version}`} title="Compare with the current file">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => onVersionSelect(version)}
+                                    aria-label={`View version ${version.version}`}
+                                    title="Compare with the current file"
+                                >
                                     <Eye className="h-4 w-4" />
                                     {showLabels && 'Compare'}
                                 </Button>
                             )}
                             {!version.is_current && (
-                                <Button variant="ghost" size="sm" onClick={() => handleRollback(version)} disabled={rollback.isPending} aria-label={`Roll back to version ${version.version}`} title="Restore this version">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleRollback(version)}
+                                    disabled={rollback.isPending}
+                                    aria-label={`Roll back to version ${version.version}`}
+                                    title="Restore this version"
+                                >
                                     <RotateCcw className="h-4 w-4" />
                                     {showLabels && 'Restore'}
                                 </Button>

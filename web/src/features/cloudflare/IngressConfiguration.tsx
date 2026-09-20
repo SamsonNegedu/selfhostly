@@ -28,7 +28,13 @@ function normalize(rules: IngressRule[] | undefined): IngressRule[] {
 
 // Which hostname goes to which service for one app's tunnel. Saving updates the tunnel and then creates a DNS
 // record for every hostname, so each address starts working without a visit to Cloudflare.
-export function IngressConfiguration({ appId, nodeId, existingIngress, onSave, flat = false }: IngressConfigurationProps) {
+export function IngressConfiguration({
+    appId,
+    nodeId,
+    existingIngress,
+    onSave,
+    flat = false,
+}: IngressConfigurationProps) {
     const [rules, setRules] = useState<IngressRule[]>(() => normalize(existingIngress))
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState<string | null>(null)
@@ -43,10 +49,15 @@ export function IngressConfiguration({ appId, nodeId, existingIngress, onSave, f
         setSaved(false)
     }
 
-    const hostnameError = (rule: IngressRule) => (rule.hostname && !HOSTNAME_PATTERN.test(rule.hostname) ? 'Enter a full hostname, such as app.example.com.' : undefined)
+    const hostnameError = (rule: IngressRule) =>
+        rule.hostname && !HOSTNAME_PATTERN.test(rule.hostname)
+            ? 'Enter a full hostname, such as app.example.com.'
+            : undefined
     const serviceError = (rule: IngressRule) => {
         if (rule.service.trim() === '') return touched ? 'Say where the app answers.' : undefined
-        return SERVICE_PATTERN.test(rule.service.trim()) ? undefined : 'Start with http:// or https://, for example http://web:80.'
+        return SERVICE_PATTERN.test(rule.service.trim())
+            ? undefined
+            : 'Start with http:// or https://, for example http://web:80.'
     }
     const invalid = rules.some((rule) => hostnameError(rule) || serviceError(rule))
     const filled = rules.filter((rule) => rule.service.trim() !== '')
@@ -56,7 +67,12 @@ export function IngressConfiguration({ appId, nodeId, existingIngress, onSave, f
         setError(null)
         if (filled.length === 0) return setError('Add at least one route with a service address.')
         if (invalid) return
-        const cleaned = filled.map((rule) => ({ ...rule, service: rule.service.trim(), hostname: rule.hostname?.trim() || null, path: rule.path?.trim() || null }))
+        const cleaned = filled.map((rule) => ({
+            ...rule,
+            service: rule.service.trim(),
+            hostname: rule.hostname?.trim() || null,
+            path: rule.path?.trim() || null,
+        }))
         const hostnames = [...new Set(cleaned.map((rule) => rule.hostname).filter((host): host is string => !!host))]
 
         setSaving(true)
@@ -82,23 +98,59 @@ export function IngressConfiguration({ appId, nodeId, existingIngress, onSave, f
     const form = (
         <div className="flex flex-col gap-5">
             <p className="text-sm text-muted-foreground">
-                Which hostname goes to which service. A DNS record is created for each hostname, and anything that matches no route gets a 404.
+                Which hostname goes to which service. A DNS record is created for each hostname, and anything that
+                matches no route gets a 404.
             </p>
 
             {rules.map((rule, index) => (
-                <fieldset key={index} className="flex flex-col gap-3 border-t border-border pt-4 first:border-t-0 first:pt-0">
+                <fieldset
+                    key={index}
+                    className="flex flex-col gap-3 border-t border-border pt-4 first:border-t-0 first:pt-0"
+                >
                     <legend className="sr-only">Route {index + 1}</legend>
-                    <Field label={rules.length > 1 ? `Hostname (route ${index + 1})` : 'Hostname'} hint="Optional. Leave it empty to use the tunnel's own address." error={hostnameError(rule)}>
-                        <Input value={rule.hostname ?? ''} onChange={(event) => change(index, { hostname: event.target.value.trim() || null })} placeholder="app.example.com" inputMode="url" autoComplete="off" />
+                    <Field
+                        label={rules.length > 1 ? `Hostname (route ${index + 1})` : 'Hostname'}
+                        hint="Optional. Leave it empty to use the tunnel's own address."
+                        error={hostnameError(rule)}
+                    >
+                        <Input
+                            value={rule.hostname ?? ''}
+                            onChange={(event) => change(index, { hostname: event.target.value.trim() || null })}
+                            placeholder="app.example.com"
+                            inputMode="url"
+                            autoComplete="off"
+                        />
                     </Field>
-                    <Field label="Service address" hint="Where the app answers, for example http://web:80." error={serviceError(rule)}>
-                        <Input value={rule.service} onChange={(event) => change(index, { service: event.target.value.trim() })} placeholder="http://web:80" inputMode="url" className="font-mono" autoComplete="off" />
+                    <Field
+                        label="Service address"
+                        hint="Where the app answers, for example http://web:80."
+                        error={serviceError(rule)}
+                    >
+                        <Input
+                            value={rule.service}
+                            onChange={(event) => change(index, { service: event.target.value.trim() })}
+                            placeholder="http://web:80"
+                            inputMode="url"
+                            className="font-mono"
+                            autoComplete="off"
+                        />
                     </Field>
                     <Field label="Path (optional)" hint="Send only this path to the service, for example /api/*.">
-                        <Input value={rule.path ?? ''} onChange={(event) => change(index, { path: event.target.value.trim() || null })} placeholder="/api/*" autoComplete="off" />
+                        <Input
+                            value={rule.path ?? ''}
+                            onChange={(event) => change(index, { path: event.target.value.trim() || null })}
+                            placeholder="/api/*"
+                            autoComplete="off"
+                        />
                     </Field>
                     {rules.length > 1 && (
-                        <Button type="button" variant="ghost" size="sm" className="self-start text-destructive" onClick={() => setRules(rules.filter((_, i) => i !== index))}>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="self-start text-destructive"
+                            onClick={() => setRules(rules.filter((_, i) => i !== index))}
+                        >
                             <Trash2 className="h-4 w-4" />
                             Remove route
                         </Button>
@@ -106,7 +158,12 @@ export function IngressConfiguration({ appId, nodeId, existingIngress, onSave, f
                 </fieldset>
             ))}
 
-            <Button type="button" variant="outline" className="self-start" onClick={() => setRules([...rules, EMPTY_RULE])}>
+            <Button
+                type="button"
+                variant="outline"
+                className="self-start"
+                onClick={() => setRules([...rules, EMPTY_RULE])}
+            >
                 <Plus className="h-4 w-4" />
                 Add a route
             </Button>
@@ -128,7 +185,9 @@ export function IngressConfiguration({ appId, nodeId, existingIngress, onSave, f
                     {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                     Save routes
                 </Button>
-                <span className="text-[13px] text-muted-foreground">Point your domain's nameservers at Cloudflare before adding a hostname.</span>
+                <span className="text-[13px] text-muted-foreground">
+                    Point your domain's nameservers at Cloudflare before adding a hostname.
+                </span>
             </div>
         </div>
     )

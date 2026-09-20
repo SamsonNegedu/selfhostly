@@ -34,10 +34,13 @@ export function suggestFreePort(port: number, used: Set<number>): number | null 
 // Rewrites the first mapping that publishes `from` so that it publishes `to`. Returns null if none does.
 export function replaceHostPort(compose: string, from: number, to: number): string | null {
     let replaced = false
-    const next = compose.replace(PORT_MAPPING_PATTERN, (whole, quote: string, ip: string, host: string, container: string, proto?: string) => {
-        if (replaced || Number(host) !== from) return whole
-        replaced = true
-        return `${quote}${ip}${to}:${container}${proto ?? ''}${quote}`
-    })
+    const next = compose.replace(
+        PORT_MAPPING_PATTERN,
+        (whole, quote: string, ip: string, host: string, container: string, proto?: string) => {
+            if (replaced || Number(host) !== from) return whole
+            replaced = true
+            return `${quote}${ip}${to}:${container}${proto ?? ''}${quote}`
+        },
+    )
     return replaced ? next : null
 }

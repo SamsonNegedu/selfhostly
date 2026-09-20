@@ -42,11 +42,21 @@ function AttentionStrip({ actions }: { actions: ReturnType<typeof useFleetAction
                         <div className="flex flex-wrap items-center gap-2">
                             {item.app ? (
                                 <>
-                                    <Button onClick={() => actions.start(item.app as App)} disabled={actions.isBusy(item.app.id)}>
-                                        {actions.isBusy(item.app.id) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                                    <Button
+                                        onClick={() => actions.start(item.app as App)}
+                                        disabled={actions.isBusy(item.app.id)}
+                                    >
+                                        {actions.isBusy(item.app.id) ? (
+                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                        ) : (
+                                            <Play className="h-4 w-4" />
+                                        )}
                                         Retry start
                                     </Button>
-                                    <Link to={appHref(item.app, 'logs')} className={buttonClasses({ variant: 'outline' })}>
+                                    <Link
+                                        to={appHref(item.app, 'logs')}
+                                        className={buttonClasses({ variant: 'outline' })}
+                                    >
                                         View logs
                                     </Link>
                                 </>
@@ -60,7 +70,9 @@ function AttentionStrip({ actions }: { actions: ReturnType<typeof useFleetAction
                 )
             })}
             {hidden > 0 && (
-                <p className="px-4 py-2.5 text-[13px] text-muted-foreground">And {hidden} more. Open the bell in the top bar to see them all.</p>
+                <p className="px-4 py-2.5 text-[13px] text-muted-foreground">
+                    And {hidden} more. Open the bell in the top bar to see them all.
+                </p>
             )}
         </Card>
     )

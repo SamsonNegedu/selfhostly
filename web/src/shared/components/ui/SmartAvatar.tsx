@@ -24,21 +24,13 @@ function SmartAvatar({ user, size = 'md', className }: SmartAvatarProps) {
 
     // Create a simpler fallback component with background color
     const customFallback = (
-        <div
-            className="h-full w-full rounded-full flex items-center justify-center text-xs font-medium bg-primary text-primary-foreground"
-        >
+        <div className="h-full w-full rounded-full flex items-center justify-center text-xs font-medium bg-primary text-primary-foreground">
             {initials}
         </div>
     )
 
     return (
-        <Avatar
-            src={user.picture}
-            name={user.name}
-            size={size}
-            className={`${className}`}
-            fallback={customFallback}
-        />
+        <Avatar src={user.picture} name={user.name} size={size} className={`${className}`} fallback={customFallback} />
     )
 }
 

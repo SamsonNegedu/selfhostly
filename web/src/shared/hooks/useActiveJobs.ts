@@ -43,7 +43,8 @@ export function useActiveJobs(): ActiveJob[] {
             if (!app || WORKING.includes(app.status)) continue
             // The app's own page already reports how it ended.
             if (pathname.startsWith(`/apps/${app.id}`)) continue
-            if (app.status === 'error') toast.error(`${app.name} failed`, describeError(new Error(app.error_message || 'It did not start.')))
+            if (app.status === 'error')
+                toast.error(`${app.name} failed`, describeError(new Error(app.error_message || 'It did not start.')))
             else toast.success(`${app.name} is ready`, app.status === 'running' ? 'It is running.' : 'It finished.')
         }
         previous.current = now

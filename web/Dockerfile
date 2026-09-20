@@ -12,7 +12,7 @@
 # =============================================================================
 
 # Stage 1: Build Frontend
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
@@ -30,7 +30,7 @@ COPY . ./
 RUN npm run build
 
 # Stage 2: Production - Serve static files
-FROM node:20-alpine
+FROM node:24-alpine
 
 WORKDIR /app
 

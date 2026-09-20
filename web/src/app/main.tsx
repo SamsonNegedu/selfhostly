@@ -16,29 +16,29 @@ applyDensity(readDensity())
 // fetches the current page. The flag stops a reload loop when the file is really missing.
 const RELOADED_KEY = 'selfhostly:reloaded-for-new-version'
 window.addEventListener('vite:preloadError', (event) => {
-  try {
-    if (sessionStorage.getItem(RELOADED_KEY)) return
-    sessionStorage.setItem(RELOADED_KEY, '1')
-  } catch {
-    return
-  }
-  event.preventDefault()
-  window.location.reload()
+    try {
+        if (sessionStorage.getItem(RELOADED_KEY)) return
+        sessionStorage.setItem(RELOADED_KEY, '1')
+    } catch {
+        return
+    }
+    event.preventDefault()
+    window.location.reload()
 })
 
 const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      refetchOnWindowFocus: false,
-      retry: 1,
+    defaultOptions: {
+        queries: {
+            refetchOnWindowFocus: false,
+            retry: 1,
+        },
     },
-  },
 })
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
-  </React.StrictMode>,
+    <React.StrictMode>
+        <QueryClientProvider client={queryClient}>
+            <App />
+        </QueryClientProvider>
+    </React.StrictMode>,
 )

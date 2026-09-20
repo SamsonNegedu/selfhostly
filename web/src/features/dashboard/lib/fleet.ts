@@ -46,10 +46,9 @@ export function matchesFilter({ app, unreachable }: FleetApp, filter: FleetFilte
 
 export function countByFilter(list: FleetApp[]): Record<FleetFilter, number> {
     const filters: FleetFilter[] = ['all', 'running', 'stopped', 'updating', 'failed', 'unreachable']
-    return Object.fromEntries(filters.map((filter) => [filter, list.filter((item) => matchesFilter(item, filter)).length])) as Record<
-        FleetFilter,
-        number
-    >
+    return Object.fromEntries(
+        filters.map((filter) => [filter, list.filter((item) => matchesFilter(item, filter)).length]),
+    ) as Record<FleetFilter, number>
 }
 
 export function matchesQuery({ app }: FleetApp, query: string): boolean {
@@ -60,7 +59,8 @@ export function matchesQuery({ app }: FleetApp, query: string): boolean {
 
 // Problems first, then what is running, then what is stopped, and by name within each.
 export function sortFleetApps(list: FleetApp[]): FleetApp[] {
-    const rank = (item: FleetApp) => (item.unreachable ? UNKNOWN_STATUS_RANK : (STATUS_ORDER[item.app.status] ?? UNKNOWN_STATUS_RANK))
+    const rank = (item: FleetApp) =>
+        item.unreachable ? UNKNOWN_STATUS_RANK : (STATUS_ORDER[item.app.status] ?? UNKNOWN_STATUS_RANK)
     return [...list].sort((a, b) => rank(a) - rank(b) || a.app.name.localeCompare(b.app.name))
 }
 
@@ -68,14 +68,24 @@ export function sortFleetApps(list: FleetApp[]): FleetApp[] {
 export function groupByNode(list: FleetApp[], nodes: Node[]): NodeGroup[] {
     const order = new Map(
         [...nodes]
-            .sort((a, b) => Number(a.status !== 'online') - Number(b.status !== 'online') || Number(b.is_primary) - Number(a.is_primary) || a.name.localeCompare(b.name))
-            .map((node, index) => [node.id, index])
+            .sort(
+                (a, b) =>
+                    Number(a.status !== 'online') - Number(b.status !== 'online') ||
+                    Number(b.is_primary) - Number(a.is_primary) ||
+                    a.name.localeCompare(b.name),
+            )
+            .map((node, index) => [node.id, index]),
     )
 
     const groups = new Map<string, NodeGroup>()
     for (const item of list) {
         const key = item.node?.id ?? NO_NODE_KEY
-        const group = groups.get(key) ?? { key, node: item.node, name: item.node?.name ?? item.app.node_name ?? 'Unknown node', apps: [] }
+        const group = groups.get(key) ?? {
+            key,
+            node: item.node,
+            name: item.node?.name ?? item.app.node_name ?? 'Unknown node',
+            apps: [],
+        }
         group.apps.push(item)
         groups.set(key, group)
     }

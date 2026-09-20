@@ -16,14 +16,23 @@ interface VersionCompareDialogProps {
 }
 
 // One version next to the file it is compared with. Red lines are in the file now, green lines are in the version.
-function VersionCompareDialog({ version, against, againstLabel, onClose, primaryLabel, onPrimary }: VersionCompareDialogProps) {
+function VersionCompareDialog({
+    version,
+    against,
+    againstLabel,
+    onClose,
+    primaryLabel,
+    onPrimary,
+}: VersionCompareDialogProps) {
     return (
         <Dialog open={!!version} onOpenChange={(open) => !open && onClose()}>
             <DialogContent className="flex max-h-[90vh] max-w-3xl flex-col overflow-hidden">
                 <DialogHeader>
                     <DialogTitle>Version {version?.version}</DialogTitle>
                     <DialogDescription>
-                        {version?.is_current ? 'This is the version that is running now.' : `Red lines are in ${againstLabel} now. Green lines are in this version.`}
+                        {version?.is_current
+                            ? 'This is the version that is running now.'
+                            : `Red lines are in ${againstLabel} now. Green lines are in this version.`}
                     </DialogDescription>
                 </DialogHeader>
                 {version && (
@@ -35,7 +44,11 @@ function VersionCompareDialog({ version, against, againstLabel, onClose, primary
                             {version.change_reason && <span>{version.change_reason}</span>}
                         </div>
                         <div className="min-h-0 flex-1 overflow-auto">
-                            <DiffBlock before={against} after={version.compose_content} aria-label={`Version ${version.version} compared with ${againstLabel}`} />
+                            <DiffBlock
+                                before={against}
+                                after={version.compose_content}
+                                aria-label={`Version ${version.version} compared with ${againstLabel}`}
+                            />
                         </div>
                         <div className="flex justify-end gap-2">
                             <Button variant="outline" onClick={onClose}>
