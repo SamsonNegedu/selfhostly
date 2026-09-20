@@ -41,7 +41,9 @@ function ScopeSwitcher() {
             <DropdownMenuTrigger asChild>
                 <Button variant="outline" aria-label={`Showing ${label}. Change nodes`}>
                     <Server className="h-4 w-4" />
-                    <span className="max-w-[140px] truncate max-sm:sr-only">{label}</span>
+                    <span className="max-w-[140px] truncate max-sm:sr-only" title={label}>
+                        {label}
+                    </span>
                     <ChevronDown className="h-4 w-4 text-muted-foreground" />
                 </Button>
             </DropdownMenuTrigger>
@@ -65,7 +67,9 @@ function ScopeSwitcher() {
                             onCheckedChange={(checked) => toggleNode(node.id, checked)}
                         >
                             <span className="flex w-full items-center justify-between gap-2">
-                                <span className="truncate">{node.name}</span>
+                                <span className="truncate" title={node.name}>
+                                    {node.name}
+                                </span>
                                 {node.status !== 'online' && (
                                     <StatusPill kind={meta.kind} size="sm">
                                         {meta.label}

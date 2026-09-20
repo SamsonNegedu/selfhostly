@@ -21,6 +21,10 @@ https://claude.ai/artifact/5yDejXYjqJ18JuW87UR9xx (private, so it has to be shar
 - One page per job, one card level. Dialogs and sheets are flat.
 - Phones get their own layouts: a bottom tab bar, compact Fleet rows, a sticky action bar on the app page.
   Tablets (768 to 1023px) get the icon rail so the page has room.
+- The app tells you where you are and what is at risk. Each page sets the browser tab title and takes focus after
+  a page change. Editors warn before unsaved edits are thrown away. A banner says when the browser is offline, so
+  a screen that stopped updating does not look like it is working.
+- It installs like an app on a phone: a web manifest, an indigo icon and a theme color that follows the theme.
 - Where the API has nothing behind a design, the UI says so and does not fake it. Examples: no metrics history
   (charts show readings taken while the page is open), no environment store (variables live in the compose
   file), no alerts or backup.
@@ -29,3 +33,6 @@ https://claude.ai/artifact/5yDejXYjqJ18JuW87UR9xx (private, so it has to be shar
 
 Live container metrics, streaming deploy logs, Save and redeploy, Restore version, Retry start and real
 tunnels need real containers, which the fixtures do not start. Check them on a real node after changing them.
+
+The fixtures also cannot show the available-update card and the update plan (they need updates turned on and a real
+signed release), the join token steps of Add a node (they need a real token), or a successful container action.

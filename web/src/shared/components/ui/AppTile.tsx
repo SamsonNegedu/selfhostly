@@ -14,7 +14,7 @@ const TINT_CLASSES: Record<Tint, string> = {
 }
 
 const SIZE_CLASSES = {
-    sm: 'h-[30px] w-[30px] text-[13px]',
+    sm: 'h-[30px] w-[30px] text-compact',
     md: 'h-[38px] w-[38px] text-base',
     lg: 'h-[52px] w-[52px] text-xl',
 } as const

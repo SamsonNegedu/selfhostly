@@ -13,7 +13,7 @@ prefer the changed packages, and say if you did not run everything. Add a test f
 next to the code (`newTestServer` in `internal/http` is the usual harness). Run `gofmt` on files you
 edit.
 
-**Frontend.** Run `cd web && npx tsc --noEmit -p . && npm run lint && npm run build`. Lint is clean and
+**Frontend.** Run `cd web && npx tsc --noEmit -p . && npm run lint && npm test && npm run build`. Lint is clean and
 is a gate (`oxlint --deny-warnings`), so do not add warnings. A disabled rule needs a comment saying why.
 
 **UI changes are checked in a browser.** Look at the screen in dark and light, at 1440, 768 and 390

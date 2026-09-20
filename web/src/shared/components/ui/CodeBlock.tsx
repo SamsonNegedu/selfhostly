@@ -93,7 +93,7 @@ function CodeBlock({ code, lines, language = 'yaml', className, ...props }: Code
             role="region"
             aria-label={props['aria-label'] ?? 'Code'}
             className={cn(
-                'overflow-x-auto rounded-[10px] border border-border bg-card font-mono text-[12px] leading-[22px] ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:text-[13px]',
+                'overflow-x-auto rounded-[10px] border border-border bg-card font-mono text-detail leading-[22px] ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:text-compact',
                 className,
             )}
         >

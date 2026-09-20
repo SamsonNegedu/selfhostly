@@ -1,36 +1,23 @@
 import { Link } from 'react-router-dom'
-import { AlertTriangle, Loader2, MoreHorizontal, Play, RefreshCw, Trash2 } from 'lucide-react'
+import { AlertTriangle, Loader2, Play } from 'lucide-react'
 import { AppTile } from '@/shared/components/ui/AppTile'
 import { Button } from '@/shared/components/ui/Button'
 import { Card } from '@/shared/components/ui/Card'
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from '@/shared/components/ui/DropdownMenu'
+import { DropdownMenuItem } from '@/shared/components/ui/DropdownMenu'
 import { StatusPill } from '@/shared/components/ui/StatusPill'
-import { formatBytes, formatPercent } from '@/shared/lib/format'
+import { formatBytes, formatPercent, hostOf } from '@/shared/lib/format'
 import { appHref } from '@/shared/lib/routes'
 import { appStatusMeta } from '@/shared/lib/status'
 import { cn } from '@/shared/lib/utils'
 import type { AppMetrics } from '../hooks/useFleetMetrics'
 import type { useFleetActions } from '../hooks/useFleetActions'
+import FleetAppMenu from './FleetAppMenu'
 import type { FleetApp } from '../lib/fleet'
 
 interface FleetAppRowProps {
     fleetApp: FleetApp
     metrics?: AppMetrics
     actions: ReturnType<typeof useFleetActions>
-}
-
-const hostOf = (url: string) => {
-    try {
-        return new URL(url).host
-    } catch {
-        return url
-    }
 }
 
 // The phone version of an app on Fleet: one compact row, so more apps fit on the screen. Tapping the row opens
@@ -61,11 +48,14 @@ function FleetAppRow({ fleetApp, metrics, actions }: FleetAppRowProps) {
                 <div className="min-w-0 flex-1">
                     <Link
                         to={appHref(app)}
-                        className="block truncate text-[15px] font-semibold after:absolute after:inset-0 after:content-['']"
+                        title={app.name}
+                        className="block truncate text-title font-semibold after:absolute after:inset-0 after:content-['']"
                     >
                         {app.name}
                     </Link>
-                    <p className="truncate text-[13px] text-muted-foreground">{detail}</p>
+                    <p className="truncate text-compact text-muted-foreground" title={detail}>
+                        {detail}
+                    </p>
                 </div>
                 <StatusPill kind={meta.kind} size="sm">
                     {meta.label}
@@ -79,53 +69,41 @@ function FleetAppRow({ fleetApp, metrics, actions }: FleetAppRowProps) {
                             onClick={() => actions.start(app)}
                             disabled={busy}
                         >
-                            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                            {busy ? (
+                                <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <Play className="h-4 w-4" />
+                            )}
                         </Button>
                     )}
                     {inProgress && (
-                        <Loader2 aria-label="Working" className="mx-3 h-4 w-4 animate-spin text-muted-foreground" />
+                        <Loader2
+                            aria-hidden="true"
+                            aria-label="Working"
+                            className="mx-3 h-4 w-4 animate-spin text-muted-foreground"
+                        />
                     )}
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" aria-label={`More actions for ${app.name}`}>
-                                <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-44">
-                            <DropdownMenuItem asChild>
-                                <Link to={appHref(app)}>Details</Link>
+                    <FleetAppMenu
+                        app={app}
+                        actions={actions}
+                        unreachable={unreachable}
+                        busy={busy}
+                        inProgress={inProgress}
+                    >
+                        {app.status === 'running' && !unreachable && (
+                            <DropdownMenuItem onSelect={() => actions.requestStop(app)} disabled={busy}>
+                                Stop
                             </DropdownMenuItem>
-                            {app.status === 'running' && !unreachable && (
-                                <DropdownMenuItem onSelect={() => actions.requestStop(app)} disabled={busy}>
-                                    Stop
-                                </DropdownMenuItem>
-                            )}
-                            {!unreachable && (
-                                <DropdownMenuItem
-                                    onSelect={() => actions.requestUpdate(app)}
-                                    disabled={busy || inProgress}
-                                >
-                                    <RefreshCw className="mr-2 h-4 w-4" />
-                                    Update
-                                </DropdownMenuItem>
-                            )}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                                onSelect={() => actions.requestDelete(app)}
-                                disabled={busy}
-                                className="text-destructive focus:text-destructive"
-                            >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Delete
-                            </DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
+                        )}
+                    </FleetAppMenu>
                 </div>
             </div>
             {isFailed && (
-                <div className="flex items-start gap-2 rounded-lg bg-status-err-bg px-3 py-2 text-[12.5px] text-status-err-fg">
+                <div className="flex items-start gap-2 rounded-lg bg-status-err-bg px-3 py-2 text-compact text-status-err-fg">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                    <span className="line-clamp-2">{app.error_message || 'The app reported an error'}</span>
+                    <span className="line-clamp-2" title={app.error_message || undefined}>
+                        {app.error_message || 'The app reported an error'}
+                    </span>
                 </div>
             )}
         </Card>

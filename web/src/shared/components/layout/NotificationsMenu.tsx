@@ -61,7 +61,7 @@ function NotificationsMenu() {
                                         <Icon className="h-4 w-4" />
                                     </span>
                                     <span className="flex min-w-0 flex-col">
-                                        <span className="text-[13.5px] font-medium">{item.title}</span>
+                                        <span className="text-compact font-medium">{item.title}</span>
                                         <span className="text-xs text-muted-foreground">{item.detail}</span>
                                     </span>
                                 </Link>

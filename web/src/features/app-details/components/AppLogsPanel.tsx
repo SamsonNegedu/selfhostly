@@ -190,7 +190,7 @@ export function AppLogsPanel({ appId, nodeId }: { appId: string; nodeId: string 
                 ) : (
                     <>
                         {container.error !== null && (
-                            <p role="status" className="text-[13px] text-status-warn-fg">
+                            <p role="status" className="text-compact text-status-warn-fg">
                                 Could not refresh. {describeError(container.error)} Showing the last output.
                             </p>
                         )}
@@ -215,7 +215,7 @@ function DeploymentLogBody({ job, nodeId, appId }: { job: Job; nodeId: string; a
 
     return (
         <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-2 text-compact text-muted-foreground">
                 <StatusPill kind={meta.kind} size="sm">
                     {active ? 'Live' : meta.label}
                 </StatusPill>

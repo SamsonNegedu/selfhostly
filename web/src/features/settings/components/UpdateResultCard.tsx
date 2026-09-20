@@ -77,11 +77,11 @@ function UpdateResultCard({ run, locked, rollingBack, onRollback, onRetry }: Upd
                 <h2 className="text-base font-semibold">{outcome.title(run)}</h2>
                 <StatusPill kind={outcome.kind}>{outcome.label}</StatusPill>
             </div>
-            {finished && <p className="text-[13px] text-muted-foreground">Finished {finished}.</p>}
-            {outcome.detail && <p className="text-[13px] text-muted-foreground">{outcome.detail}</p>}
-            {run.message && <p className="text-[13px]">{run.message}</p>}
+            {finished && <p className="text-compact text-muted-foreground">Finished {finished}.</p>}
+            {outcome.detail && <p className="text-compact text-muted-foreground">{outcome.detail}</p>}
+            {run.message && <p className="text-compact">{run.message}</p>}
             {run.warnings.length > 0 && (
-                <ul aria-label="Warnings" className="flex flex-col gap-1 text-[13px] text-status-warn-fg">
+                <ul aria-label="Warnings" className="flex flex-col gap-1 text-compact text-status-warn-fg">
                     {run.warnings.map((warning) => (
                         <li key={warning}>{warning}</li>
                     ))}

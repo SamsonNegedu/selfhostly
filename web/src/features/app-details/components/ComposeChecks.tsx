@@ -34,7 +34,7 @@ function ComposeChecks({ checks }: { checks: ComposeCheck[] }) {
                                         {check.title}
                                     </p>
                                     {check.detail && (
-                                        <p className="break-words text-[13px] text-muted-foreground">{check.detail}</p>
+                                        <p className="break-words text-compact text-muted-foreground">{check.detail}</p>
                                     )}
                                 </div>
                             </li>

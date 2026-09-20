@@ -79,7 +79,7 @@ function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps) {
                             {showBadge && !isCollapsed && (
                                 <span
                                     aria-hidden="true"
-                                    className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-destructive px-1 text-[11px] font-semibold text-destructive-foreground"
+                                    className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-destructive px-1 text-caption font-semibold text-destructive-foreground"
                                 >
                                     {failedApps}
                                 </span>

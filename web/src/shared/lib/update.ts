@@ -1,5 +1,12 @@
 import type { CodeLine } from '@/shared/components/ui/CodeBlock'
-import type { UpdateRun, UpdateRunState, UpdateStatus, UpdateStep } from '@/shared/types/api'
+import type {
+    ApplyUpdateRequest,
+    UpdatePlan,
+    UpdateRun,
+    UpdateRunState,
+    UpdateStatus,
+    UpdateStep,
+} from '@/shared/types/api'
 
 // The updater reports steps by name. Known names get a sentence a person can read, others are shown as sent.
 const STEP_LABELS: Record<string, string> = {
@@ -77,4 +84,34 @@ export function diffToLines(diff: string): CodeLine[] {
             if (line.startsWith('-')) return { text: line.slice(1), mark: 'del' }
             return { text: line.startsWith(' ') ? line.slice(1) : line }
         })
+}
+
+// A blocker the update form can clear. Every other blocker needs something done outside the page.
+const RESOLVED_BY_INPUTS = 'missing_required'
+
+// Whether a reviewed update can be started, given what has been typed and approved so far.
+export function evaluatePlan(plan: UpdatePlan, values: Record<string, string>, approved: boolean, locked: boolean) {
+    const { compose, settings } = plan
+    const needsApproval = compose.state === 'behind'
+    const hardBlockers = plan.blockers.filter((blocker) => blocker.code !== RESOLVED_BY_INPUTS)
+    const inputsComplete = settings.required_missing.every((setting) => (values[setting.key] ?? '').trim() !== '')
+    const startable =
+        plan.state === 'ready' ||
+        (plan.state === 'blocked' && settings.required_missing.length > 0 && hardBlockers.length === 0)
+    const canApply = startable && hardBlockers.length === 0 && inputsComplete && (!needsApproval || approved) && !locked
+    return { needsApproval, hardBlockers, inputsComplete, startable, canApply }
+}
+
+// The request that starts the update: the typed settings, and the token that approves the compose changes when
+// the release changes the compose file.
+export function buildApplyRequest(plan: UpdatePlan, values: Record<string, string>): ApplyUpdateRequest {
+    const { compose, settings } = plan
+    const inputs = Object.fromEntries(
+        settings.required_missing.map((setting) => [setting.key, (values[setting.key] ?? '').trim()]),
+    )
+    return {
+        version: plan.version,
+        inputs,
+        ...(compose.state === 'behind' && compose.approval_token ? { approve_compose: compose.approval_token } : {}),
+    }
 }

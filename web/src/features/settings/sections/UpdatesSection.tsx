@@ -1,5 +1,3 @@
-import { RefreshCw, ShieldAlert } from 'lucide-react'
-import { Button } from '@/shared/components/ui/Button'
 import { Card, CardContent } from '@/shared/components/ui/Card'
 import { EmptyState } from '@/shared/components/ui/EmptyState'
 import { ErrorState } from '@/shared/components/ui/ErrorState'
@@ -13,22 +11,13 @@ import {
     useUpdateStatus,
 } from '@/shared/hooks/useUpdate'
 import { describeError } from '@/shared/lib/errors'
-import { formatUpdateTime, isRunActive, isRunEnded } from '@/shared/lib/update'
+import { isRunActive, isRunEnded } from '@/shared/lib/update'
 import type { UpdateRun } from '@/shared/types/api'
-import UpdatePlanPanel from '../components/UpdatePlanPanel'
+import AvailableUpdateCard from '../components/AvailableUpdateCard'
 import UpdateResultCard from '../components/UpdateResultCard'
 import UpdateRunPanel from '../components/UpdateRunPanel'
-
-// What the server says when it will not do updates from the browser, and what to do about it.
-const DISABLED_MESSAGES: Record<string, string> = {
-    'not enabled':
-        'Updates from this page are turned off. Set UI_UPDATES_ENABLED=true and restart Selfhostly to turn them on. You can always update with selfhostlyctl upgrade.',
-    'no signing key':
-        'This build has no release signing key, so it cannot check that an update is genuine. Set UPDATE_PUBLIC_KEY to the key your releases are signed with.',
-    'no docker socket': 'The updater needs the Docker socket, and Selfhostly cannot reach it here.',
-    'secondary node': 'This is a secondary node. Update it from the primary, or with selfhostlyctl upgrade.',
-    'auth disabled': 'Sign-in is turned off. Updating Selfhostly needs a signed-in user, so turn sign-in on first.',
-}
+import UpdatesDisabledCard from '../components/UpdatesDisabledCard'
+import UpdateVersionCard from '../components/UpdateVersionCard'
 
 const NOT_FOUND_MESSAGE = 'NOT_FOUND'
 
@@ -61,59 +50,29 @@ function UpdatesSection() {
         const currentPlan = available && data.plan?.version === available.version ? data.plan : null
         const reviewing = currentPlan?.state === 'preparing' || plan.isPending
         const canReview = !currentPlan || currentPlan.state !== 'ready'
-        const checked = formatUpdateTime(data.checked_at)
 
         const review = (version: string) => plan.mutate({ version })
 
         content = (
             <div className="flex flex-col gap-5">
-                <Card>
-                    <CardContent className="flex flex-wrap items-center gap-4 p-4">
-                        <div className="min-w-0 flex-1">
-                            <h2 className="font-semibold">Selfhostly version</h2>
-                            <p className="text-[13px] text-muted-foreground">
-                                Running{' '}
-                                <span data-testid="update-current-version" className="font-mono">
-                                    {data.current_version}
-                                </span>
-                                {checked && `. Last checked ${checked}.`}
-                            </p>
-                        </div>
-                        <Button
-                            variant="outline"
-                            data-testid="update-check-button"
-                            disabled={!data.enabled || running || check.isPending}
-                            onClick={() =>
-                                check.mutate(undefined, {
-                                    onError: (failure) => toast.error('Could not check', describeError(failure)),
-                                })
-                            }
-                        >
-                            <RefreshCw className={check.isPending ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
-                            {check.isPending ? 'Checking...' : 'Check for updates'}
-                        </Button>
-                    </CardContent>
-                </Card>
+                <UpdateVersionCard
+                    status={data}
+                    running={running}
+                    checking={check.isPending}
+                    onCheck={() =>
+                        check.mutate(undefined, {
+                            onError: (failure) => toast.error('Could not check', describeError(failure)),
+                        })
+                    }
+                />
 
                 {data.check_error && (
-                    <p role="alert" className="text-[13px] text-status-err-fg">
+                    <p role="alert" className="text-compact text-status-err-fg">
                         Could not check for updates: {data.check_error}
                     </p>
                 )}
 
-                {!data.enabled && (
-                    <Card>
-                        <CardContent className="flex items-start gap-3 p-4">
-                            <ShieldAlert aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
-                            <div>
-                                <h2 className="font-semibold">Updates from this page are not available</h2>
-                                <p className="text-[13px] text-muted-foreground">
-                                    {DISABLED_MESSAGES[data.disabled_reason] ?? data.disabled_reason}
-                                </p>
-                            </div>
-                        </CardContent>
-                    </Card>
-                )}
+                {!data.enabled && <UpdatesDisabledCard reason={data.disabled_reason} />}
 
                 {data.enabled && running && run && (
                     <Card>
@@ -143,67 +102,18 @@ function UpdatesSection() {
                 )}
 
                 {data.enabled && !running && available && (
-                    <Card>
-                        <CardContent className="flex flex-col gap-4 p-4">
-                            <div className="flex flex-col gap-1">
-                                <h2 className="font-semibold">
-                                    Version{' '}
-                                    <span data-testid="update-available-version" className="font-mono">
-                                        {available.version}
-                                    </span>{' '}
-                                    is available
-                                </h2>
-                                {available.published_at && (
-                                    <p className="text-[13px] text-muted-foreground">
-                                        Published {formatUpdateTime(available.published_at)}.
-                                    </p>
-                                )}
-                            </div>
-                            {available.notes && (
-                                <p className="whitespace-pre-wrap text-[13px] text-muted-foreground">
-                                    {available.notes}
-                                </p>
-                            )}
-                            {available.settings.length > 0 && (
-                                <p className="text-[13px] text-muted-foreground">
-                                    This release adds settings:{' '}
-                                    <code className="font-mono">
-                                        {available.settings
-                                            .map((setting) => `${setting.key} (${setting.kind})`)
-                                            .join(', ')}
-                                    </code>
-                                </p>
-                            )}
-                            {canReview && (
-                                <div>
-                                    <Button
-                                        data-testid="update-review-button"
-                                        onClick={() => review(available.version)}
-                                        disabled={reviewing}
-                                    >
-                                        {reviewing ? 'Reviewing...' : currentPlan ? 'Review again' : 'Review update'}
-                                    </Button>
-                                </div>
-                            )}
-                            {plan.isError && (
-                                <p role="alert" className="text-[13px] text-status-err-fg">
-                                    {describeError(plan.error)}
-                                </p>
-                            )}
-                            {currentPlan && (
-                                <div className="border-t border-border pt-4">
-                                    <UpdatePlanPanel
-                                        key={currentPlan.version}
-                                        plan={currentPlan}
-                                        locked={running}
-                                        starting={apply.isPending}
-                                        startError={apply.error}
-                                        onApply={(request) => apply.mutate(request)}
-                                    />
-                                </div>
-                            )}
-                        </CardContent>
-                    </Card>
+                    <AvailableUpdateCard
+                        available={available}
+                        currentPlan={currentPlan}
+                        canReview={canReview}
+                        reviewing={reviewing}
+                        onReview={() => review(available.version)}
+                        reviewError={plan.isError ? plan.error : null}
+                        running={running}
+                        starting={apply.isPending}
+                        startError={apply.error}
+                        onApply={(request) => apply.mutate(request)}
+                    />
                 )}
 
                 {data.enabled && !available && !running && !data.check_error && (

@@ -51,7 +51,7 @@ function ActivitySection() {
                             </TableCell>
                             <TableCell className="w-full">
                                 {describeAudit(entry) && <p className="font-medium">{describeAudit(entry)}</p>}
-                                <p className="font-mono text-[12px] text-muted-foreground">
+                                <p className="font-mono text-detail text-muted-foreground">
                                     <span className="font-semibold">{entry.method}</span>{' '}
                                     <span className="break-all">{entry.path}</span>
                                 </p>
@@ -70,7 +70,10 @@ function ActivitySection() {
                                     {entry.status}
                                 </StatusPill>
                             </TableCell>
-                            <TableCell className="max-w-[200px] truncate text-muted-foreground max-md:hidden" title={entry.actor || undefined}>
+                            <TableCell
+                                className="max-w-[200px] truncate text-muted-foreground max-md:hidden"
+                                title={entry.actor || undefined}
+                            >
                                 {entry.actor || 'system'}
                             </TableCell>
                         </TableRow>

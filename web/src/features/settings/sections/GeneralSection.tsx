@@ -35,7 +35,7 @@ function GeneralSection() {
                     <label htmlFor="auto-start" className="text-sm font-medium">
                         Start apps when the server boots
                     </label>
-                    <p className="mt-1 text-[13px] text-muted-foreground">
+                    <p className="mt-1 text-compact text-muted-foreground">
                         After a reboot or power cut, every app that was running starts again by itself.
                     </p>
                 </div>

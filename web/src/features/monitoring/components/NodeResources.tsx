@@ -24,7 +24,7 @@ function Resource({
     return (
         <div className="flex flex-col gap-2">
             <div className="flex items-baseline justify-between gap-2">
-                <span className="text-[13px] text-muted-foreground">{label}</span>
+                <span className="text-compact text-muted-foreground">{label}</span>
                 <span className="flex items-center gap-2">
                     <StatusPill kind={tone} size="sm">
                         {TONE_WORD[tone]}
@@ -33,9 +33,9 @@ function Resource({
                 </span>
             </div>
             <ProgressBar value={percent} tone={tone} aria-label={`${label} use`} />
-            <p className="text-[12.5px] text-muted-foreground">{detail}</p>
+            <p className="text-compact text-muted-foreground">{detail}</p>
             {history.length < 2 && (
-                <p className="h-14 text-[12.5px] text-muted-foreground">
+                <p className="h-14 text-compact text-muted-foreground">
                     Collecting readings. The trend appears in a few seconds.
                 </p>
             )}
@@ -51,8 +51,8 @@ function NodeResources({ stats, history }: { stats: SystemStats; history?: NodeH
     return (
         <Card className="flex flex-col gap-4 p-4" data-node-stats={stats.node_name}>
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <h2 className="text-[16px] font-semibold">{stats.node_name}</h2>
-                <p className="text-[13px] text-muted-foreground">
+                <h2 className="text-heading font-semibold">{stats.node_name}</h2>
+                <p className="text-compact text-muted-foreground">
                     {stats.docker.running} running of {stats.docker.total_containers} containers
                     {stats.docker.version ? ` · Docker ${stats.docker.version}` : ''}
                 </p>

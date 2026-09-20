@@ -133,8 +133,10 @@ function CommandPalette() {
                                         keywords={[status.label, app.description]}
                                         onSelect={runAndClose(() => navigate(appHref(app)))}
                                     >
-                                        <AppTile name={app.name} size="sm" className="h-6 w-6 text-[11px]" />
-                                        <span className="flex-1 truncate font-medium">{app.name}</span>
+                                        <AppTile name={app.name} size="sm" className="h-6 w-6 text-caption" />
+                                        <span className="flex-1 truncate font-medium" title={app.name}>
+                                            {app.name}
+                                        </span>
                                         <span className="text-xs text-muted-foreground">{status.label}</span>
                                     </CommandItem>
                                 )

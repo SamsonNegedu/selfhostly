@@ -44,7 +44,7 @@ function StatusPill({ kind, size = 'md', className, children, ...props }: Status
         <span
             className={cn(
                 'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full font-medium',
-                size === 'sm' ? 'px-2.5 py-0.5 text-[11px]' : 'px-2.5 py-[3px] text-xs',
+                size === 'sm' ? 'px-2.5 py-0.5 text-caption' : 'px-2.5 py-[3px] text-xs',
                 PILL_CLASSES[kind],
                 className,
             )}

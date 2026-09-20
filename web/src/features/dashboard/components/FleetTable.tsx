@@ -1,34 +1,19 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import {
-    ArrowDown,
-    ArrowUp,
-    ExternalLink,
-    Loader2,
-    MoreHorizontal,
-    Play,
-    RefreshCw,
-    Square,
-    Trash2,
-} from 'lucide-react'
+import { ArrowDown, ArrowUp, ExternalLink, Loader2, Play, Square } from 'lucide-react'
 import { AppTile } from '@/shared/components/ui/AppTile'
 import { Button } from '@/shared/components/ui/Button'
 import { Card } from '@/shared/components/ui/Card'
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from '@/shared/components/ui/DropdownMenu'
+import { DropdownMenuItem } from '@/shared/components/ui/DropdownMenu'
 import { StatusPill } from '@/shared/components/ui/StatusPill'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/components/ui/Table'
-import { formatBytes, formatPercent } from '@/shared/lib/format'
+import { formatBytes, formatPercent, hostOf } from '@/shared/lib/format'
 import { appHref } from '@/shared/lib/routes'
 import { appStatusMeta } from '@/shared/lib/status'
 import { cn } from '@/shared/lib/utils'
 import type { AppMetrics } from '../hooks/useFleetMetrics'
 import type { useFleetActions } from '../hooks/useFleetActions'
+import FleetAppMenu from './FleetAppMenu'
 import type { FleetApp } from '../lib/fleet'
 
 type SortKey = 'name' | 'status' | 'node' | 'cpu' | 'memory'
@@ -47,14 +32,6 @@ const COLUMNS: { key: SortKey; label: string; className?: string }[] = [
     { key: 'cpu', label: 'CPU', className: 'max-lg:hidden' },
     { key: 'memory', label: 'Memory', className: 'max-lg:hidden' },
 ]
-
-const hostOf = (url: string) => {
-    try {
-        return new URL(url).host
-    } catch {
-        return url
-    }
-}
 
 function sortValue(item: FleetApp, key: SortKey, metrics?: AppMetrics): string | number {
     switch (key) {
@@ -183,7 +160,7 @@ function FleetTableRow({
             <TableCell className={cn('tabular-nums max-lg:hidden', !isRunning && 'text-muted-foreground')}>
                 {isRunning && metrics ? formatBytes(metrics.memoryBytes) : '-'}
             </TableCell>
-            <TableCell className="font-mono text-[12.5px] text-muted-foreground max-xl:hidden">
+            <TableCell className="font-mono text-compact text-muted-foreground max-xl:hidden">
                 {app.public_url ? hostOf(app.public_url) : 'LAN only'}
             </TableCell>
             <TableCell>
@@ -196,7 +173,11 @@ function FleetTableRow({
                             disabled={busy}
                             aria-label={`Start ${app.name}`}
                         >
-                            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                            {busy ? (
+                                <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <Play className="h-4 w-4" />
+                            )}
                             <span className="max-md:hidden">Start</span>
                         </Button>
                     )}
@@ -208,48 +189,30 @@ function FleetTableRow({
                             disabled={busy}
                             aria-label={`Stop ${app.name}`}
                         >
-                            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-4 w-4" />}
+                            {busy ? (
+                                <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <Square className="h-4 w-4" />
+                            )}
                             <span className="max-md:hidden">Stop</span>
                         </Button>
                     )}
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" aria-label={`More actions for ${app.name}`}>
-                                <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-44">
+                    <FleetAppMenu
+                        app={app}
+                        actions={actions}
+                        unreachable={unreachable}
+                        busy={busy}
+                        inProgress={inProgress}
+                    >
+                        {isRunning && app.public_url && (
                             <DropdownMenuItem asChild>
-                                <Link to={appHref(app)}>Details</Link>
+                                <a href={app.public_url} target="_blank" rel="noopener noreferrer">
+                                    <ExternalLink className="mr-2 h-4 w-4" />
+                                    Open
+                                </a>
                             </DropdownMenuItem>
-                            {isRunning && app.public_url && (
-                                <DropdownMenuItem asChild>
-                                    <a href={app.public_url} target="_blank" rel="noopener noreferrer">
-                                        <ExternalLink className="mr-2 h-4 w-4" />
-                                        Open
-                                    </a>
-                                </DropdownMenuItem>
-                            )}
-                            {!unreachable && (
-                                <DropdownMenuItem
-                                    onSelect={() => actions.requestUpdate(app)}
-                                    disabled={busy || inProgress}
-                                >
-                                    <RefreshCw className="mr-2 h-4 w-4" />
-                                    Update
-                                </DropdownMenuItem>
-                            )}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                                onSelect={() => actions.requestDelete(app)}
-                                disabled={busy}
-                                className="text-destructive focus:text-destructive"
-                            >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Delete
-                            </DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
+                        )}
+                    </FleetAppMenu>
                 </div>
             </TableCell>
         </TableRow>

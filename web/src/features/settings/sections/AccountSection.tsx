@@ -31,7 +31,7 @@ function AccountSection() {
             <Card>
                 <CardContent className="flex flex-col gap-1 p-4">
                     <p className="font-semibold">Sign-in is turned off</p>
-                    <p className="text-[13px] text-muted-foreground">
+                    <p className="text-compact text-muted-foreground">
                         This server does not ask anyone to sign in, so there are no sessions to end. To require GitHub
                         sign-in, set <code className="font-mono">AUTH_ENABLED=true</code> and restart it.
                     </p>
@@ -56,7 +56,7 @@ function AccountSection() {
                     )}
                     <div className="min-w-0 flex-1">
                         <p className="font-semibold">{user?.name ?? 'Not signed in'}</p>
-                        <p className="text-[13px] text-muted-foreground">Signed in with GitHub</p>
+                        <p className="text-compact text-muted-foreground">Signed in with GitHub</p>
                     </div>
                     <Button variant="outline" onClick={() => logout()}>
                         <LogOut className="h-4 w-4" />
@@ -69,7 +69,7 @@ function AccountSection() {
                 <CardContent className="flex flex-wrap items-center gap-4 p-4">
                     <div className="min-w-0 flex-1">
                         <p className="font-semibold">Sign out everywhere</p>
-                        <p className="text-[13px] text-muted-foreground">
+                        <p className="text-compact text-muted-foreground">
                             Ends every session on every device, including this one. Use it if a device is lost or you
                             think someone else has access.
                         </p>

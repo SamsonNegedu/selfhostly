@@ -128,3 +128,14 @@ export function nowInZone(timezone: string, date: Date = new Date()): { day: num
         return { day: date.getDay(), minutes: date.getHours() * MINUTES_PER_HOUR + date.getMinutes() }
     }
 }
+
+export const browserZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
+
+// Every time zone the browser knows, with UTC and the schedule's current zone always included.
+export function timeZones(current: string): string[] {
+    const intl = Intl as typeof Intl & { supportedValuesOf?: (key: 'timeZone') => string[] }
+    const list = intl.supportedValuesOf?.('timeZone') ?? []
+    const zones = new Set(['UTC', ...list])
+    zones.add(current)
+    return [...zones].sort()
+}

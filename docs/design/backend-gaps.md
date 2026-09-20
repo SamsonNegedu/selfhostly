@@ -11,7 +11,7 @@ is faked in shipped UI.
 | S5 | No endpoint reports host ports in use, or checks a compose file before deploy. Port conflicts are detected from the failure text, and free ports are checked only against other apps' compose files. | The guide says the suggested port is not used by other apps, never that it is free. |
 | S7 | No environment storage, `.env` import endpoint or secret store. Variables live as plain text in each service's `environment` in the compose file, and versions keep old values. | The tab edits the compose file, masks values that look secret, and does not claim they are encrypted. There is no "unused" flag. |
 | S12/S13 | No template catalog, no server-side Git import and no pre-deploy check endpoint. | Templates are static data in the UI, links are fetched by the browser (public files only), and checks run in the browser. |
-| S17 | No metrics history endpoint (only the current reading), and no endpoint to adopt an unmanaged container as an app. | Charts are built from the readings taken while the page is open and say so. There is no range picker and no Adopt action. |
+| S17 | No endpoint to adopt an unmanaged container as an app. | There is no Adopt action. |
 | S18/S19 | No endpoint to test tunnel provider credentials, no alert or notification settings, and no backup or export. The provider token is stored as saved text unless `ENCRYPT_SECRETS_AT_REST=true` (the API response always masks it). | Settings has no Test connection, Alerts or Backup section. The status card reflects whether credentials exist, not that they work. |
 
 ## Resolved
@@ -27,3 +27,6 @@ is faked in shipped UI.
 
 Still open: events come from this node's own database, so changes on a secondary node reach the primary's screen through polling.
 
+## Not planned
+
+Metrics history. The system is small, so charts show the readings taken while the page is open and there is no range picker. This is a decision, not a gap.

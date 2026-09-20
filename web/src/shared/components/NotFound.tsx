@@ -17,6 +17,7 @@ export function NotFound() {
                 </Link>
             }
             className="py-16"
+            headingLevel={1}
         />
     )
 }

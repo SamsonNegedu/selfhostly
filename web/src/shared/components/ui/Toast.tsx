@@ -96,9 +96,9 @@ export function ToastContainer({ toasts, removeToast }: { toasts: Toast[]; remov
                             <Icon className="h-4 w-4" />
                         </div>
                         <div className="flex min-w-0 flex-1 flex-col">
-                            <p className="text-[13.5px] font-semibold">{toast.title}</p>
+                            <p className="text-compact font-semibold">{toast.title}</p>
                             {toast.description && (
-                                <p className="text-[12.5px] text-muted-foreground">{toast.description}</p>
+                                <p className="text-compact text-muted-foreground">{toast.description}</p>
                             )}
                         </div>
                         {toast.action && (

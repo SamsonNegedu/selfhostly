@@ -182,10 +182,14 @@ export function IngressConfiguration({
 
             <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
                 <Button onClick={() => void save()} disabled={saving}>
-                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    {saving ? (
+                        <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+                    ) : (
+                        <Save className="h-4 w-4" />
+                    )}
                     Save routes
                 </Button>
-                <span className="text-[13px] text-muted-foreground">
+                <span className="text-compact text-muted-foreground">
                     Point your domain's nameservers at Cloudflare before adding a hostname.
                 </span>
             </div>

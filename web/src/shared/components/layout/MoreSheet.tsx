@@ -20,7 +20,7 @@ const THEME_OPTIONS = [
     { value: 'system', label: 'System', icon: <Monitor className="h-4 w-4" /> },
 ]
 
-const rowClasses = 'flex min-h-[52px] items-center gap-3 rounded-lg px-2 text-[15px]'
+const rowClasses = 'flex min-h-[52px] items-center gap-3 rounded-lg px-2 text-title'
 
 // Everything that is not one of the four main destinations, in a sheet that rises from the bottom.
 function MoreSheet({ open, onOpenChange }: MoreSheetProps) {

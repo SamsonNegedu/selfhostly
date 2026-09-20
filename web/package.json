@@ -5,7 +5,9 @@
     "type": "module",
     "scripts": {
         "dev": "vite",
-        "build": "tsc && vite build && node scripts/check-asset-names.mjs",
+        "check:tokens": "node scripts/check-ui-tokens.mjs",
+        "test": "node --import ./tests/register.mjs --test \"tests/*.test.ts\"",
+        "build": "tsc && node scripts/check-ui-tokens.mjs && vite build && node scripts/check-asset-names.mjs",
         "preview": "vite preview",
         "lint": "oxlint --deny-warnings --report-unused-disable-directives .",
         "format": "oxfmt",

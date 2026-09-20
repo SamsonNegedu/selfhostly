@@ -105,7 +105,7 @@ export function QuickTunnelDialog({
                             Cancel
                         </Button>
                         <Button type="submit" disabled={create.isPending}>
-                            {create.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                            {create.isPending && <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />}
                             {recreate ? 'Get a new address' : 'Create Quick Tunnel'}
                         </Button>
                     </div>
@@ -253,7 +253,7 @@ export function CustomDomainDialog({
                             Cancel
                         </Button>
                         <Button type="submit" disabled={mutation.isPending}>
-                            {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                            {mutation.isPending && <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />}
                             {switching ? 'Switch to my domain' : 'Create tunnel'}
                         </Button>
                     </div>

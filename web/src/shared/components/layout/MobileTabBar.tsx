@@ -52,7 +52,7 @@ function MobileTabBar() {
                             to={item.path}
                             aria-current={active ? 'page' : undefined}
                             aria-label={showBadge ? `${item.label}, ${failedApps} failed` : item.label}
-                            className={`relative flex min-h-[44px] min-w-[44px] flex-1 flex-col items-center justify-center gap-[3px] text-[11px] ${active ? 'font-semibold text-foreground' : 'font-medium text-muted-foreground'}`}
+                            className={`relative flex min-h-[44px] min-w-[44px] flex-1 flex-col items-center justify-center gap-[3px] text-caption ${active ? 'font-semibold text-foreground' : 'font-medium text-muted-foreground'}`}
                         >
                             <span className="relative">
                                 <Icon className="h-[22px] w-[22px]" strokeWidth={active ? 2.4 : 2} />
@@ -71,7 +71,7 @@ function MobileTabBar() {
                     type="button"
                     onClick={() => setMoreOpen(true)}
                     aria-haspopup="dialog"
-                    className={`flex min-h-[44px] min-w-[44px] flex-1 flex-col items-center justify-center gap-[3px] text-[11px] ${moreActive ? 'font-semibold text-foreground' : 'font-medium text-muted-foreground'}`}
+                    className={`flex min-h-[44px] min-w-[44px] flex-1 flex-col items-center justify-center gap-[3px] text-caption ${moreActive ? 'font-semibold text-foreground' : 'font-medium text-muted-foreground'}`}
                 >
                     <SlidersHorizontal className="h-[22px] w-[22px]" strokeWidth={moreActive ? 2.4 : 2} />
                     More
