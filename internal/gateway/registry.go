@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,7 +20,7 @@ type NodeEntry struct {
 	Status      string `json:"status"`
 }
 
-// 	NodeRegistry caches node list from primary and refreshes periodically
+// NodeRegistry caches node list from primary and refreshes periodically
 type NodeRegistry struct {
 	primaryBackendURL string
 	gatewayAPIKey     string
@@ -31,13 +32,22 @@ type NodeRegistry struct {
 	nodes       map[string]NodeEntry // nodeID -> NodeEntry (includes endpoint and status)
 	primary     string               // primary node ID for "global" routes
 	initialized bool                 // true after first successful refresh
+
+	// The cached list can be a whole TTL old, so a node that just joined or reconnected would be
+	// unroutable for up to a minute. When a lookup fails, the list is re-read at once, at most every
+	// minOnDemandRefresh so a stream of bad requests cannot hammer the primary. Enabled by Start.
+	refreshOnMiss bool
+	refreshMu     sync.Mutex
+	lastOnDemand  time.Time
 }
+
+const minOnDemandRefresh = 3 * time.Second
 
 // NewNodeRegistry creates a registry that fetches from primary
 func NewNodeRegistry(primaryBackendURL, gatewayAPIKey string, ttl time.Duration, logger *slog.Logger) *NodeRegistry {
 	return &NodeRegistry{
 		primaryBackendURL: primaryBackendURL,
-		gatewayAPIKey: gatewayAPIKey,
+		gatewayAPIKey:     gatewayAPIKey,
 		httpClient: &http.Client{
 			Timeout: 15 * time.Second,
 		},
@@ -49,6 +59,9 @@ func NewNodeRegistry(primaryBackendURL, gatewayAPIKey string, ttl time.Duration,
 
 // Start begins periodic refresh; call once after creation
 func (r *NodeRegistry) Start() {
+	r.mu.Lock()
+	r.refreshOnMiss = true
+	r.mu.Unlock()
 	// Do initial refresh in background to not block gateway startup
 	// Gateway can serve health checks immediately while registry initializes
 	go func() {
@@ -56,7 +69,7 @@ func (r *NodeRegistry) Start() {
 			r.logger.Warn("initial node registry refresh failed", "error", err)
 		}
 	}()
-	
+
 	go func() {
 		ticker := time.NewTicker(r.ttl)
 		defer ticker.Stop()
@@ -120,11 +133,44 @@ func (r *NodeRegistry) refresh() error {
 
 // Get returns the API endpoint for the node, or empty if not found or offline/unreachable
 func (r *NodeRegistry) Get(nodeID string) string {
+	if url, ok := r.lookup(nodeID); ok {
+		return url
+	}
+	// Unknown or not usable per the cached list: it may simply be stale (a node that just joined or
+	// came back), so look again once with fresh data
+	if r.refreshNow() {
+		if url, ok := r.lookup(nodeID); ok {
+			return url
+		}
+	}
+	return ""
+}
+
+// refreshNow re-reads the node list if on-demand refresh is enabled and not done too recently
+func (r *NodeRegistry) refreshNow() bool {
+	r.mu.RLock()
+	enabled := r.refreshOnMiss
+	r.mu.RUnlock()
+	if !enabled {
+		return false
+	}
+	r.refreshMu.Lock()
+	if time.Since(r.lastOnDemand) < minOnDemandRefresh {
+		r.refreshMu.Unlock()
+		return false
+	}
+	r.lastOnDemand = time.Now()
+	r.refreshMu.Unlock()
+	return r.refresh() == nil
+}
+
+// lookup reports the endpoint to route to and whether the node is usable right now
+func (r *NodeRegistry) lookup(nodeID string) (string, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	entry, ok := r.nodes[nodeID]
 	if !ok {
-		return ""
+		return "", false
 	}
 	// Don't route to offline or unreachable nodes
 	if entry.Status == constants.NodeStatusOffline || entry.Status == constants.NodeStatusUnreachable {
@@ -132,9 +178,14 @@ func (r *NodeRegistry) Get(nodeID string) string {
 			"node_id", nodeID,
 			"status", entry.Status,
 		)
-		return ""
+		return "", false
 	}
-	return entry.APIEndpoint
+	// A node that dialled out to the primary has no address the gateway can reach: its requests go to
+	// the primary, which forwards them down the node's link.
+	if strings.HasPrefix(entry.APIEndpoint, constants.LinkEndpointScheme+"://") {
+		return r.primaryBackendURL, true
+	}
+	return entry.APIEndpoint, true
 }
 
 // GetEntry returns the full node entry, or nil if not found

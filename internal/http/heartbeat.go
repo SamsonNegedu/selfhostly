@@ -22,10 +22,7 @@ func (s *Server) sendNodeHeartbeat(c *gin.Context) {
 	}
 
 	if err := s.nodeService.NodeHeartbeat(c.Request.Context(), nodeID); err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:   "Failed to process heartbeat",
-			Details: domain.PublicMessage(err),
-		})
+		s.handleServiceError(c, "process heartbeat", err)
 		return
 	}
 

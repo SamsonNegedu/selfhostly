@@ -23,9 +23,7 @@ type Client struct {
 // NewClient creates a new inter-node API client
 func NewClient() *Client {
 	return &Client{
-		httpClient: &http.Client{
-			Timeout: 90 * time.Second,
-		},
+		httpClient:     nodeHTTPClient(90 * time.Second),
 		circuitBreaker: NewCircuitBreaker(),
 	}
 }
@@ -443,6 +441,18 @@ func (c *Client) GetSystemStats(node *db.Node) (map[string]interface{}, error) {
 
 // HealthCheck performs a health check on a remote node
 func (c *Client) HealthCheck(node *db.Node) error {
+	_, err := c.HealthCheckTimed(node)
+	return err
+}
+
+// HealthCheckTimed checks a node and reports how long the round trip took.
+func (c *Client) HealthCheckTimed(node *db.Node) (time.Duration, error) {
+	started := time.Now()
+	err := c.healthCheck(node)
+	return time.Since(started), err
+}
+
+func (c *Client) healthCheck(node *db.Node) error {
 	// Check circuit breaker
 	if c.circuitBreaker.IsOpen(node.ID) {
 		stats := c.circuitBreaker.GetStats(node.ID)

@@ -1,0 +1,80 @@
+# =============================================================================
+# Optional overlay: Docker socket proxy
+# =============================================================================
+# The backend needs the Docker API to run `docker compose`. Mounting the raw socket gives it (and
+# anything that compromises it) unrestricted root on the host. This overlay puts a filtering proxy
+# in between so only the API groups the platform uses are reachable: no exec, no swarm, no secrets.
+#
+# It does not make a compromised backend harmless (it can still create containers), so keep the
+# compose policy on SECURITY_MODE=enforce as well.
+#
+# Requires Docker Compose >= 2.24 (uses !override). Apply it on top of the main file:
+#   docker compose -f docker-compose.prod.yml -f docker-compose.socket-proxy.yml up -d
+#
+# Roll this out last and test in staging: verify create, start, stop, update (pull and --build),
+# logs and the monitoring page. If something is denied, the proxy logs the refused path.
+# To back out, drop the second -f file and run `up -d` again.
+# =============================================================================
+
+services:
+  socket-proxy:
+    image: ${SOCKET_PROXY_IMAGE:-tecnativa/docker-socket-proxy:0.3.0}
+    container_name: selfhostly-socket-proxy
+    environment:
+      # Read
+      CONTAINERS: 1
+      IMAGES: 1
+      NETWORKS: 1
+      VOLUMES: 1
+      INFO: 1
+      VERSION: 1
+      PING: 1
+      EVENTS: 1
+      DISTRIBUTION: 1
+      # Needed by docker compose up --build
+      BUILD: 1
+      SESSION: 1
+      GRPC: 1
+      # Write
+      POST: 1
+      DELETE: 1
+      # Everything else stays off
+      EXEC: 0
+      AUTH: 0
+      SECRETS: 0
+      CONFIGS: 0
+      SERVICES: 0
+      SWARM: 0
+      NODES: 0
+      TASKS: 0
+      PLUGINS: 0
+      SYSTEM: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - docker-api
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /run
+
+  primary:
+    environment:
+      DOCKER_HOST: tcp://socket-proxy:2375
+    # Replace (not extend) the volume list so the raw socket is no longer mounted
+    volumes: !override
+      - ${DATA_DIR:-./data}:/app/data
+      - ${APPS_DIR:-./apps}:/app/apps
+    networks:
+      - selfhostly-network
+      - docker-api
+    depends_on:
+      - socket-proxy
+
+networks:
+  # Not reachable from other containers or the internet: only the proxy and the backend join it
+  docker-api:
+    internal: true

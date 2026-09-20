@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"github.com/selfhostly/internal/events"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -12,6 +13,7 @@ import (
 	"github.com/go-pkgz/auth"
 	"github.com/go-pkgz/auth/avatar"
 	"github.com/go-pkgz/auth/token"
+	selfauth "github.com/selfhostly/internal/auth"
 	"github.com/selfhostly/internal/config"
 	"github.com/selfhostly/internal/constants"
 	"github.com/selfhostly/internal/db"
@@ -19,10 +21,13 @@ import (
 	"github.com/selfhostly/internal/domain"
 	"github.com/selfhostly/internal/jobs"
 	"github.com/selfhostly/internal/logger"
+	"github.com/selfhostly/internal/netguard"
 	"github.com/selfhostly/internal/node"
+	"github.com/selfhostly/internal/nodelink"
 	"github.com/selfhostly/internal/routing"
 	"github.com/selfhostly/internal/scheduler"
 	"github.com/selfhostly/internal/service"
+	"github.com/selfhostly/internal/validation"
 )
 
 // Server wraps the HTTP server
@@ -40,9 +45,15 @@ type Server struct {
 	scheduler       *scheduler.Scheduler
 	engine          *gin.Engine
 	authService     *auth.Service
+	allowList       *selfauth.AllowList
+	nodeLinks       *nodelink.Registry
+	nodeLinkService domain.NodeLinkService
+	securityService domain.SecurityService
+	cfAccess        *selfauth.CFAccessVerifier
 	httpServer      *http.Server
 	shutdownCtx     context.Context
 	shutdownCancel  context.CancelFunc
+	events          *events.Bus
 }
 
 // NewServer creates a new HTTP server
@@ -56,24 +67,67 @@ func NewServer(cfg *config.Config, database *db.DB) *Server {
 
 	engine := gin.Default()
 
+	// Only the platform's own private network may set X-Forwarded-For; anything else is spoofable.
+	if err := engine.SetTrustedProxies(trustedProxyCIDRs); err != nil {
+		slog.Warn("could not set trusted proxies", "error", err)
+	}
+
+	// Inter-node HTTP clients refuse link-local and other forbidden destinations
+	policy, err := netguard.NewPolicy(
+		cfg.Environment == constants.EnvDevelopment || !cfg.Enforcing() || cfg.Security.NodeEndpointAllowLoopback,
+		cfg.Security.NodeEndpointAllowedCIDRs,
+	)
+	if err != nil {
+		slog.Error("invalid NODE_ENDPOINT_ALLOWED_CIDRS, ignoring it", "error", err)
+		policy, _ = netguard.NewPolicy(true, nil)
+	}
+	node.SetNetworkPolicy(policy)
+
+	// Initialize docker manager
+	dockerManager := docker.NewManager(cfg.AppsDir)
+	if cfg.Security.HostAppsDir == "" {
+		cfg.Security.HostAppsDir = docker.DetectHostAppsDir(cfg.AppsDir, dockerManager.GetCommandExecutor())
+	}
+	slog.Info("apps directory", "container_path", cfg.AppsDir, "host_path", cfg.Security.HostAppsDir)
+	dockerManager.SetComposeGuard(func(app string, content []byte) error {
+		if err := validation.RejectFileReads(content); err != nil {
+			return err
+		}
+		sc := validation.NewSecurityConfig(cfg, app)
+		return validation.CheckComposePolicy(content, sc).Apply(sc.Enforce, app)
+	})
+
+	server := &Server{database: database, events: events.NewBus()}
+
+	// Nodes that dial out to this primary are reached through their link (tunnel://<node-id>)
+	links := nodelink.NewRegistry(func(nodeID string, connected bool) { server.nodeLinkChanged(nodeID, connected) })
+	node.SetLinkTransport(links.RoundTripper())
+	database.SetNotifier(server.events.Publish)
+
 	// Middleware - order matters
 	engine.Use(securityHeadersMiddleware())
 	engine.Use(corsMiddleware(cfg))
 	engine.Use(cacheControlMiddleware())
 	engine.Use(loggerMiddleware())
-	engine.Use(jsonBodyLimitMiddleware(maxBodySize))
+	engine.Use(bodyLimitMiddleware(maxBodySize))
 
 	// Initialize auth service
 	var authService *auth.Service
+	var allowList *selfauth.AllowList
 	if cfg.Auth.Enabled {
-		authService = initAuthService(cfg)
+		allowList = selfauth.NewAllowList(cfg.Auth.GitHub.AllowedUsers)
+		// Canonical-case lookups can take a moment; login works with the typed casing meanwhile
+		go allowList.Resolve(context.Background(), nil, "", cfg.Auth.GitHub.AllowedUsers)
+		authService = initAuthService(cfg, allowList, database)
+	}
+	var cfAccess *selfauth.CFAccessVerifier
+	if !cfg.Auth.Enabled && cfg.Security.CloudflareAccess.Enabled() {
+		cfAccess = selfauth.NewCFAccessVerifier(cfg.Security.CloudflareAccess.TeamDomain, cfg.Security.CloudflareAccess.Audience, "")
+		slog.Info("Cloudflare Access verification enabled", "team_domain", cfg.Security.CloudflareAccess.TeamDomain)
 	}
 
 	// Request body size limit
 	engine.MaxMultipartMemory = maxBodySize
-
-	// Initialize docker manager
-	dockerManager := docker.NewManager(cfg.AppsDir)
 
 	// Initialize logger with configuration
 	appLogger := logger.InitLogger(cfg.Environment, cfg.LogJSON)
@@ -89,6 +143,8 @@ func NewServer(cfg *config.Config, database *db.DB) *Server {
 	composeService := service.NewComposeService(database, dockerManager, composeRouter, composeNodeClient, appLogger)
 
 	nodeService := service.NewNodeService(database, cfg, appLogger)
+	nodeLinkService := service.NewNodeLinkService(database, cfg, appLogger)
+	securityService := service.NewSecurityService(database)
 
 	// Initialize job processing system
 	jobProcessor := jobs.NewProcessor(database, dockerManager, appService, tunnelService, appLogger)
@@ -104,7 +160,7 @@ func NewServer(cfg *config.Config, database *db.DB) *Server {
 	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
 
 	// Initialize server
-	server := &Server{
+	*server = Server{
 		config:          cfg,
 		database:        database,
 		dockerManager:   dockerManager,
@@ -118,9 +174,19 @@ func NewServer(cfg *config.Config, database *db.DB) *Server {
 		scheduler:       appScheduler,
 		engine:          engine,
 		authService:     authService,
+		allowList:       allowList,
+		nodeLinks:       links,
+		nodeLinkService: nodeLinkService,
+		securityService: securityService,
+		cfAccess:        cfAccess,
 		shutdownCtx:     shutdownCtx,
 		shutdownCancel:  shutdownCancel,
+		events:          server.events,
 	}
+
+	// Origin/content-type and audit middleware need the fully built server
+	engine.Use(server.originGuardMiddleware())
+	engine.Use(server.auditMiddleware())
 
 	// Setup routes
 	server.setupRoutes()
@@ -128,8 +194,11 @@ func NewServer(cfg *config.Config, database *db.DB) *Server {
 	return server
 }
 
+// trustedProxyCIDRs are the private ranges the gateway and backends talk over
+var trustedProxyCIDRs = []string{"127.0.0.1/32", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"}
+
 // initAuthService initializes go-pkgz/auth with GitHub OAuth
-func initAuthService(cfg *config.Config) *auth.Service {
+func initAuthService(cfg *config.Config, allowList *selfauth.AllowList, database *db.DB) *auth.Service {
 	// Determine base URL - must include /auth since we mount at /auth/*
 	baseURL := cfg.Auth.BaseURL
 	if baseURL == "" {
@@ -142,39 +211,37 @@ func initAuthService(cfg *config.Config) *auth.Service {
 		SecretReader: token.SecretFunc(func(id string) (string, error) {
 			return cfg.Auth.JWTSecret, nil
 		}),
-		TokenDuration:  time.Hour * 24,     // Token valid for 24 hours
-		CookieDuration: time.Hour * 24 * 7, // Cookie valid for 7 days
-		Issuer:         "selfhostly",
+		TokenDuration:  constants.AuthTokenDuration, // refreshed transparently while the session cookie lives
+		CookieDuration: time.Hour * time.Duration(cfg.Security.SessionHours),
+		Issuer:         constants.AuthIssuer,
+		SameSiteCookie: http.SameSiteLaxMode,
 		URL:            baseURL + "/auth", // Include /auth prefix for callback URLs
 		AvatarStore:    avatar.NewNoOp(),  // No avatar storage
 		SecureCookies:  cfg.Auth.SecureCookie,
-		DisableXSRF:    true, // Disable for API usage
+		// go-pkgz's XSRF token needs client cooperation; cross-site requests are instead stopped by
+		// SameSite=Lax cookies plus originGuardMiddleware (Origin and JSON content-type checks).
+		DisableXSRF: true,
 		Validator: token.ValidatorFunc(func(_ string, claims token.Claims) bool {
-			// Verify user exists
 			if claims.User == nil {
 				slog.Warn("JWT validation failed: no user in claims")
 				return false
 			}
 
-			// If no whitelist is configured, reject all access (fail-secure)
-			if len(cfg.Auth.GitHub.AllowedUsers) == 0 {
-				slog.Warn("GitHub auth enabled but no allowed users configured - rejecting access", "username", claims.User.Name)
+			// Authorize on the stable user ID, never on Name: go-pkgz sets Name to the free-text
+			// GitHub display name, which anyone can set to an allowed username.
+			if !allowList.Allows(claims.User.ID) {
+				slog.Warn("Unauthorized user attempted access", "user_id", claims.User.ID)
 				return false
 			}
 
-			// Check if GitHub username is in the whitelist
-			// GitHub usernames are case-insensitive, so normalize for comparison
-			username := strings.ToLower(claims.User.Name)
-			for _, allowedUser := range cfg.Auth.GitHub.AllowedUsers {
-				if username == strings.ToLower(allowedUser) {
-					slog.Info("User authorized", "username", claims.User.Name)
-					return true
-				}
+			// Sessions issued at or before an explicit revocation are no longer valid. Token times are
+			// whole seconds, so the boundary second is treated as revoked: safe for "log everyone out",
+			// at the cost of one re-login if someone signs in during that very second.
+			if validAfter := database.SessionsValidAfter(); !validAfter.IsZero() && claims.IssuedAt <= validAfter.Unix() {
+				slog.Info("Rejected token issued before session revocation", "user_id", claims.User.ID)
+				return false
 			}
-
-			// User not in whitelist
-			slog.Warn("Unauthorized GitHub user attempted access", "username", username, "allowedUsers", len(cfg.Auth.GitHub.AllowedUsers))
-			return false
+			return true
 		}),
 	}
 
@@ -334,7 +401,11 @@ func (s *Server) startBackgroundTasks() {
 	go s.runPeriodicHealthChecks()
 
 	// If this is a secondary node with a configured primary, attempt auto-registration
-	if !s.config.Node.IsPrimary && s.config.Node.PrimaryNodeURL != "" {
+	if s.config.Node.UsesLink() {
+		// The link replaces registration and heartbeats: the connection is the registration, and its
+		// liveness is the heartbeat
+		go s.runNodeLink()
+	} else if !s.config.Node.IsPrimary && s.config.Node.PrimaryNodeURL != "" {
 		go s.attemptAutoRegistration()
 		// After registration, start continuous heartbeats
 		go s.sendPeriodicHeartbeats()
@@ -393,8 +464,13 @@ func securityHeadersMiddleware() gin.HandlerFunc {
 		c.Writer.Header().Set("X-Content-Type-Options", "nosniff")
 		// Prevent clickjacking
 		c.Writer.Header().Set("X-Frame-Options", "DENY")
-		// Enable XSS protection
-		c.Writer.Header().Set("X-XSS-Protection", "1; mode=block")
+		// Browser features this API never needs
+		c.Writer.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=(), payment=()")
+		c.Writer.Header().Set("Cross-Origin-Resource-Policy", "same-site")
+		// API and auth responses are data, never documents to render
+		if p := c.Request.URL.Path; strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/auth/") {
+			c.Writer.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+		}
 		// Referrer policy
 		c.Writer.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		// HSTS (only if using HTTPS)
@@ -420,6 +496,7 @@ func corsMiddleware(cfg *config.Config) gin.HandlerFunc {
 			}
 		}
 
+		c.Writer.Header().Add("Vary", "Origin")
 		if allowed {
 			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
 			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
@@ -465,27 +542,6 @@ func cacheControlMiddleware() gin.HandlerFunc {
 	}
 }
 
-// jsonBodyLimitMiddleware limits the size of JSON request bodies to prevent DoS
-func jsonBodyLimitMiddleware(maxBytes int64) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// Only apply to JSON requests
-		if c.Request.Method != "GET" && c.Request.Method != "DELETE" && c.Request.Method != "OPTIONS" {
-			contentType := c.GetHeader("Content-Type")
-			if strings.Contains(contentType, "application/json") {
-				if c.Request.ContentLength > maxBytes {
-					c.AbortWithStatusJSON(http.StatusRequestEntityTooLarge, gin.H{
-						"error": "Request body too large",
-					})
-					return
-				}
-				// Wrap the request body with MaxBytesReader
-				c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes)
-			}
-		}
-		c.Next()
-	}
-}
-
 // loggerMiddleware logs HTTP requests
 func loggerMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -501,6 +557,9 @@ func loggerMiddleware() gin.HandlerFunc {
 // getAuthMiddleware returns a Gin middleware that requires authentication
 func (s *Server) getAuthMiddleware() gin.HandlerFunc {
 	if s.authService == nil {
+		if s.cfAccess != nil {
+			return s.cfAccessMiddleware()
+		}
 		// Auth disabled - allow all requests
 		return func(c *gin.Context) {
 			c.Next()
@@ -514,7 +573,7 @@ func (s *Server) getAuthMiddleware() gin.HandlerFunc {
 		// Debug: log incoming auth attempt
 		hasCookie := c.Request.Header.Get("Cookie") != ""
 		hasAuth := c.Request.Header.Get("Authorization") != ""
-		slog.InfoContext(c.Request.Context(), "user auth attempt",
+		slog.DebugContext(c.Request.Context(), "user auth attempt",
 			"path", c.Request.URL.Path,
 			"has_cookie", hasCookie,
 			"has_auth_header", hasAuth,
@@ -531,12 +590,9 @@ func (s *Server) getAuthMiddleware() gin.HandlerFunc {
 			if u, err := token.GetUserInfo(r); err == nil {
 				userInfo = u
 				authenticated = true
-				slog.InfoContext(r.Context(), "user authenticated",
-					"user_id", u.ID,
-					"user_name", u.Name,
-				)
+				slog.DebugContext(r.Context(), "user authenticated", "user_id", u.ID)
 			} else {
-				slog.InfoContext(r.Context(), "user auth failed", "error", err)
+				slog.DebugContext(r.Context(), "user auth failed", "error", err)
 			}
 			// Update request in gin context
 			c.Request = r
@@ -574,11 +630,11 @@ func getUserFromContext(c *gin.Context) (token.User, bool) {
 // When user auth is valid, does not set target/scope; resolveNodeMiddleware or handlers will use node_id from query/body.
 func (s *Server) userOrNodeAuthMiddleware() gin.HandlerFunc {
 	tryGatewayAuth := func(c *gin.Context) bool {
-		key := c.GetHeader("X-Gateway-API-Key")
+		key := c.GetHeader(constants.HeaderGatewayAPIKey)
 		if key == "" || s.config.Node.GatewayAPIKey == "" {
 			return false
 		}
-		if key != s.config.Node.GatewayAPIKey {
+		if !secretsEqual(key, s.config.Node.GatewayAPIKey) {
 			c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "invalid gateway API key", Details: "X-Gateway-API-Key invalid"})
 			c.Abort()
 			return true
@@ -589,13 +645,13 @@ func (s *Server) userOrNodeAuthMiddleware() gin.HandlerFunc {
 		return true
 	}
 	tryNodeAuth := func(c *gin.Context) bool {
-		nodeID := c.GetHeader("X-Node-ID")
-		apiKey := c.GetHeader("X-Node-API-Key")
+		nodeID := c.GetHeader(constants.HeaderNodeID)
+		apiKey := c.GetHeader(constants.HeaderNodeAPIKey)
 		if nodeID == "" || apiKey == "" {
 			return false
 		}
 		if !s.config.Node.IsPrimary {
-			if apiKey != s.config.Node.APIKey {
+			if !secretsEqual(apiKey, s.config.Node.APIKey) {
 				c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "invalid API key", Details: "provided API key does not match this node"})
 				c.Abort()
 				return true // handled
@@ -603,7 +659,7 @@ func (s *Server) userOrNodeAuthMiddleware() gin.HandlerFunc {
 			c.Set("node_id", nodeID)
 		} else {
 			node, err := s.database.GetNode(nodeID)
-			if err != nil || node.APIKey != apiKey {
+			if err != nil || !secretsEqual(node.APIKey, apiKey) {
 				c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "unknown or invalid node", Details: "node ID or API key invalid"})
 				c.Abort()
 				return true

@@ -13,7 +13,9 @@ services:
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
       CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
       AUTH_ENABLED: ${AUTH_ENABLED:-false}
-      # Development settings
+      # Development settings: security policy only logs, so local work needs no extra setup
+      APP_ENV: development
+      SECURITY_MODE: ${SECURITY_MODE:-warn}
       GIN_MODE: debug
     volumes:
       # Mount source code for live reload (Air will watch these files)

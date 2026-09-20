@@ -58,6 +58,15 @@ type ScheduleNextRuns struct {
 	AppID     string     `json:"app_id"`
 	NextStart *time.Time `json:"next_start"`
 	NextStop  *time.Time `json:"next_stop"`
+	// Upcoming is the next few starts and stops in time order, so a schedule can be read as a list of what
+	// will actually happen.
+	Upcoming []ScheduledRun `json:"upcoming"`
+}
+
+// ScheduledRun is one future start or stop.
+type ScheduledRun struct {
+	Action string    `json:"action"` // "start" or "stop"
+	At     time.Time `json:"at"`
 }
 
 // ScheduleService defines the primary port for schedule management use cases
@@ -101,9 +110,9 @@ type ProviderInfo struct {
 
 // ProviderFeatures describes what features a tunnel provider supports
 type ProviderFeatures struct {
-	Provider     string `json:"provider"`
-	DisplayName  string `json:"display_name"`
-	IsConfigured bool   `json:"is_configured"`
+	Provider     string          `json:"provider"`
+	DisplayName  string          `json:"display_name"`
+	IsConfigured bool            `json:"is_configured"`
 	Features     map[string]bool `json:"features"`
 }
 
@@ -131,12 +140,19 @@ type NodeService interface {
 	GetNode(ctx context.Context, nodeID string) (*db.Node, error)
 	ListNodes(ctx context.Context) ([]*db.Node, error)
 	UpdateNode(ctx context.Context, nodeID string, req UpdateNodeRequest) (*db.Node, error)
-	DeleteNode(ctx context.Context, nodeID string) error
+	// DeleteNode removes a node. With force, the records of apps on a node that is not answering are dropped too,
+	// because they can no longer be cleaned up on that node.
+	DeleteNode(ctx context.Context, nodeID string, force bool) error
 	HealthCheckNode(ctx context.Context, nodeID string) error
 	HealthCheckAllNodes(ctx context.Context) error
 	NodeHeartbeat(ctx context.Context, nodeID string) error
 	SyncSettingsFromPrimary(ctx context.Context) error
 	GetCurrentNodeInfo(ctx context.Context) (*db.Node, error)
+	// AutoRegisterNode registers a secondary that presents a registration or join token. A node already on record
+	// may refresh its endpoint, but only with the key on record.
+	AutoRegisterNode(ctx context.Context, req AutoRegisterRequest) (*AutoRegistration, error)
+	// GetSettings returns the cluster settings a secondary syncs from the primary
+	GetSettings(ctx context.Context) (*db.Settings, error)
 }
 
 // ============================================================================
@@ -147,12 +163,12 @@ type NodeService interface {
 type CreateAppRequest struct {
 	Name               string           `json:"name" binding:"required"`
 	Description        string           `json:"description"`
-	ComposeContent    string           `json:"compose_content" binding:"required"`
-	IngressRules      []db.IngressRule `json:"ingress_rules,omitempty"`
-	NodeID            string           `json:"node_id,omitempty"`             // Target node for app deployment
-	TunnelMode        string           `json:"tunnel_mode,omitempty"`        // "custom" | "quick" | "" (empty = no tunnel)
-	QuickTunnelService string          `json:"quick_tunnel_service,omitempty"` // Required when tunnel_mode="quick"
-	QuickTunnelPort   int              `json:"quick_tunnel_port,omitempty"`   // Required when tunnel_mode="quick"
+	ComposeContent     string           `json:"compose_content" binding:"required"`
+	IngressRules       []db.IngressRule `json:"ingress_rules,omitempty"`
+	NodeID             string           `json:"node_id,omitempty"`              // Target node for app deployment
+	TunnelMode         string           `json:"tunnel_mode,omitempty"`          // "custom" | "quick" | "" (empty = no tunnel)
+	QuickTunnelService string           `json:"quick_tunnel_service,omitempty"` // Required when tunnel_mode="quick"
+	QuickTunnelPort    int              `json:"quick_tunnel_port,omitempty"`    // Required when tunnel_mode="quick"
 }
 
 // UpdateAppRequest represents the request to update an app
@@ -177,14 +193,14 @@ type CreateDNSRequest struct {
 
 // AppStats represents application resource statistics
 type AppStats struct {
-	AppName           string              `json:"app_name"`
-	TotalCPUPercent   float64             `json:"total_cpu_percent"`
-	TotalMemoryBytes  int64               `json:"total_memory_bytes"`
-	MemoryLimitBytes  int64               `json:"memory_limit_bytes"`
-	Containers        []ContainerStats    `json:"containers"`
-	Timestamp         time.Time           `json:"timestamp"`
-	Status            string              `json:"status"`
-	Message           string              `json:"message,omitempty"`
+	AppName          string           `json:"app_name"`
+	TotalCPUPercent  float64          `json:"total_cpu_percent"`
+	TotalMemoryBytes int64            `json:"total_memory_bytes"`
+	MemoryLimitBytes int64            `json:"memory_limit_bytes"`
+	Containers       []ContainerStats `json:"containers"`
+	Timestamp        time.Time        `json:"timestamp"`
+	Status           string           `json:"status"`
+	Message          string           `json:"message,omitempty"`
 }
 
 // ContainerStats represents individual container statistics
@@ -236,7 +252,7 @@ type ComposeVolume struct {
 
 // RegisterNodeRequest represents the request to register a new node
 type RegisterNodeRequest struct {
-	ID          string `json:"id" binding:"required"`            // Required: Secondary's existing node ID for heartbeat auth
+	ID          string `json:"id" binding:"required"` // Required: Secondary's existing node ID for heartbeat auth
 	Name        string `json:"name" binding:"required"`
 	APIEndpoint string `json:"api_endpoint" binding:"required"`
 	APIKey      string `json:"api_key" binding:"required"`

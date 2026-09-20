@@ -1,269 +1,156 @@
-import { useState, useMemo } from 'react';
-import { useSystemStats } from '@/shared/services/api';
-import { useNodeContext } from '@/shared/contexts/NodeContext';
-import { AlertCircle, Search, X, WifiOff, ServerCrash } from 'lucide-react';
-import { DashboardSkeleton } from '@/shared/components/ui/Skeleton';
-import { Button } from '@/shared/components/ui/Button';
-import { Card, CardContent } from '@/shared/components/ui/Card';
-import SystemOverview from './components/SystemOverview';
-import ContainersListView from './components/ContainersListView';
-import ResourceAlerts from './components/ResourceAlerts';
-import type { ContainerInfo, SystemStats } from '@/shared/types/api';
+import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { Container, Search, ServerCrash } from 'lucide-react'
+import { EmptyState } from '@/shared/components/ui/EmptyState'
+import { ErrorState } from '@/shared/components/ui/ErrorState'
+import { Input } from '@/shared/components/ui/Input'
+import { SegmentedControl } from '@/shared/components/ui/SegmentedControl'
+import { Skeleton } from '@/shared/components/ui/Skeleton'
+import { StatusPill } from '@/shared/components/ui/StatusPill'
+import { buttonClasses } from '@/shared/components/ui/Button'
+import { Card } from '@/shared/components/ui/Card'
+import { useNodeContext } from '@/shared/contexts/NodeContext'
+import { formatAgo } from '@/shared/lib/attention'
+import { ROUTES } from '@/shared/lib/routes'
+import { useApps, useNodes, useSystemStats } from '@/shared/services/api'
+import ContainersByApp from './components/ContainersByApp'
+import InsightAlerts from './components/InsightAlerts'
+import NodeResources from './components/NodeResources'
+import { useStatsHistory } from './hooks/useStatsHistory'
+import { getInsightAlerts } from './lib/alerts'
 
-function Monitoring() {
-  // Get global node context for filtering stats by selected nodes
-  const { selectedNodeIds } = useNodeContext();
+type StateFilter = 'all' | 'running' | 'stopped'
 
-  const { data: statsArray, isLoading, error, dataUpdatedAt } = useSystemStats(10000, selectedNodeIds);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'running' | 'stopped'>('all');
+const REFRESH_MS = 10_000
+const STATE_OPTIONS = [
+    { value: 'all', label: 'All' },
+    { value: 'running', label: 'Running' },
+    { value: 'stopped', label: 'Stopped' },
+]
 
-  // Separate online and offline/error nodes
-  const { onlineNodes, offlineNodes } = useMemo(() => {
-    if (!statsArray || !Array.isArray(statsArray)) {
-      return { onlineNodes: [], offlineNodes: [] };
-    }
-    const online: SystemStats[] = [];
-    const offline: SystemStats[] = [];
+function Insights() {
+    const { selectedNodeIds } = useNodeContext()
+    const { data: nodes } = useNodes()
+    const { data: apps = [] } = useApps(selectedNodeIds)
 
-    statsArray.forEach(stat => {
-      if (stat.status === 'online') {
-        online.push(stat);
-      } else {
-        offline.push(stat);
-      }
-    });
+    // Only nodes that answer are asked for readings, because one that does not would hold up all of them.
+    const selected = useMemo(() => (nodes ?? []).filter((node) => selectedNodeIds.length === 0 || selectedNodeIds.includes(node.id)), [nodes, selectedNodeIds])
+    const onlineIds = useMemo(() => selected.filter((node) => node.status === 'online').map((node) => node.id), [selected])
+    const silent = selected.filter((node) => node.status !== 'online')
 
-    return { onlineNodes: online, offlineNodes: offline };
-  }, [statsArray]);
+    const { data: stats, error, dataUpdatedAt, refetch } = useSystemStats(REFRESH_MS, onlineIds)
+    const history = useStatsHistory(stats, dataUpdatedAt)
+    const [query, setQuery] = useState('')
+    const [state, setState] = useState<StateFilter>('all')
 
-  // For now, show first online node's stats (or null if none)
-  const stats = useMemo(() => {
-    return onlineNodes.length > 0 ? onlineNodes[0] : null;
-  }, [onlineNodes]);
+    const online = useMemo(() => (stats ?? []).filter((node) => node.status === 'online' && !node.error), [stats])
+    const alerts = useMemo(() => getInsightAlerts(online), [online])
+    const containers = useMemo(() => online.flatMap((node) => node.containers ?? []), [online])
+    const visible = useMemo(
+        () =>
+            containers.filter((container) => {
+                if (state !== 'all' && container.state !== state) return false
+                const text = query.trim().toLowerCase()
+                return text === '' || container.name.toLowerCase().includes(text) || container.app_name.toLowerCase().includes(text)
+            }),
+        [containers, state, query]
+    )
+    const nodeName = (id: string) => nodes?.find((node) => node.id === id)?.name ?? id
 
-  // Aggregate containers from all ONLINE nodes only
-  const allContainers: ContainerInfo[] = useMemo(() => {
-    if (!statsArray || !Array.isArray(statsArray)) {
-      return (stats?.containers || []) as ContainerInfo[];
-    }
-    // Combine containers from all online nodes only
-    return onlineNodes.flatMap(nodeStats => (nodeStats.containers || []) as ContainerInfo[]);
-  }, [onlineNodes, stats]);
-
-  // Filter containers based on search and status
-  const filteredContainers: ContainerInfo[] = useMemo(() => {
-    if (!allContainers || allContainers.length === 0) return [];
-
-    let filtered = allContainers;
-
-    // Filter by search query
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(
-        (container) =>
-          container.name.toLowerCase().includes(query) ||
-          container.app_name.toLowerCase().includes(query) ||
-          container.id.toLowerCase().includes(query)
-      );
-    }
-
-    // Filter by status
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter((container) => container.state === statusFilter);
+    if (nodes === undefined || (onlineIds.length > 0 && stats === undefined && !error)) {
+        return (
+            <div role="status" aria-label="Loading insights" className="flex flex-col gap-5">
+                <Skeleton className="h-12 w-56" />
+                <Skeleton className="h-16 rounded-xl" />
+                <Skeleton className="h-48 rounded-xl" />
+                <Skeleton className="h-64 rounded-xl" />
+            </div>
+        )
     }
 
-    return filtered;
-  }, [allContainers, searchQuery, statusFilter]);
-
-  // Get node names for display (must be before early returns) - include both online and offline
-  const nodeNames = useMemo(() => {
-    if (!statsArray || !Array.isArray(statsArray)) {
-      return stats?.node_name ? [stats.node_name] : [];
+    if (error && stats === undefined) {
+        return <ErrorState title="Could not load insights" error={error} onRetry={() => refetch()} />
     }
-    return statsArray.map(s => s.node_name).filter(Boolean);
-  }, [statsArray]);
 
-  // Calculate seconds ago (must be before early returns)
-  const secondsAgo = useMemo(() => {
-    if (!dataUpdatedAt) return 0;
-    const lastUpdated = new Date(dataUpdatedAt);
-    return Math.floor((Date.now() - lastUpdated.getTime()) / 1000);
-  }, [dataUpdatedAt]);
+    const updated = dataUpdatedAt ? formatAgo(new Date(dataUpdatedAt).toISOString()) : 'just now'
 
-  // Early returns after all hooks
-  if (isLoading && !statsArray) {
-    return <DashboardSkeleton />;
-  }
-
-  if (error) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center max-w-md fade-in">
-          <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
-          <h2 className="text-xl font-semibold mb-2">Failed to load system statistics</h2>
-          <p className="text-muted-foreground mb-4">
-            There was an error loading the monitoring data. Please try again.
-          </p>
-          <button
-            onClick={() => window.location.reload()}
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:opacity-90 transition-opacity button-press"
-          >
-            Retry
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // If there are no stats at all (not even offline nodes), return null
-  if (!stats && offlineNodes.length === 0) {
-    return null;
-  }
-
-  // Ensure stats has required properties with defaults (if we have online nodes)
-  const safeStats = stats ? {
-    ...stats,
-    containers: stats.containers || [],
-    cpu: stats.cpu || { usage_percent: 0, cores: 0 },
-    memory: stats.memory || { usage_percent: 0, total_bytes: 0, used_bytes: 0, free_bytes: 0, available_bytes: 0 },
-    disk: stats.disk || { usage_percent: 0, total_bytes: 0, used_bytes: 0, free_bytes: 0, path: '/' },
-    docker: stats.docker || { total_containers: 0, running: 0, stopped: 0, paused: 0, images: 0, version: '' },
-  } : null;
-
-  return (
-    <div className="fade-in space-y-4 sm:space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-bold">System Monitoring</h1>
-        <p className="text-muted-foreground mt-1 sm:mt-2 text-sm sm:text-base">
-          {nodeNames.length > 0
-            ? `Real-time monitoring of ${nodeNames.length > 1 ? `${nodeNames.length} nodes` : nodeNames[0]}`
-            : 'Real-time monitoring'
-          } • Updated {secondsAgo > 0 ? `${secondsAgo}s ago` : 'just now'}
-        </p>
-      </div>
-
-      {/* Offline/Error Nodes Alert */}
-      {offlineNodes.length > 0 && (
-        <div className="space-y-2">
-          {offlineNodes.map(node => (
-            <Card key={node.node_id} className="border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/30">
-              <CardContent className="pt-6">
-                <div className="flex items-start gap-3">
-                  {node.status === 'offline' ? (
-                    <WifiOff className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
-                  ) : (
-                    <ServerCrash className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-red-900 dark:text-red-100">
-                      {node.status === 'offline' ? 'Node Unreachable' : 'Error Fetching Stats'}: {node.node_name}
-                    </h3>
-                    <p className="text-sm text-red-800 dark:text-red-200 mt-1">
-                      {node.error || 'Unable to connect to this node. Please check if the node is running and accessible.'}
-                    </p>
-                    {node.status === 'offline' && (
-                      <p className="text-xs text-red-700 dark:text-red-300 mt-2">
-                        💡 Tip: Verify the node's API endpoint is correct and the node service is running.
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      {/* Resource Alerts - Only show if we have online nodes */}
-      {stats && safeStats && <ResourceAlerts stats={safeStats} />}
-
-      {/* System Overview Cards - Only show if we have online nodes */}
-      {stats && safeStats ? (
-        <SystemOverview stats={safeStats} />
-      ) : onlineNodes.length === 0 && offlineNodes.length > 0 ? (
-        <Card className="border-gray-200 dark:border-gray-700">
-          <CardContent className="pt-6">
-            <div className="text-center py-8">
-              <ServerCrash className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No Online Nodes</h3>
-              <p className="text-muted-foreground">
-                All selected nodes are currently offline or unreachable. Please check the alerts above for details.
-              </p>
+        <div className="flex flex-col gap-5">
+            <div>
+                <h1 className="text-2xl font-semibold tracking-tight">Insights</h1>
+                <p className="text-muted-foreground">
+                    {online.length === 0 ? 'No node is answering' : `${online.length} ${online.length === 1 ? 'node' : 'nodes'} answering`} · Updated {updated}
+                </p>
             </div>
-          </CardContent>
-        </Card>
-      ) : null}
 
-      {/* Containers Section - Only show if we have online nodes */}
-      {stats && (
-        <div className="space-y-3 sm:space-y-4">
-          {/* Header with count */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <h2 className="text-xl sm:text-2xl font-bold">
-              All Containers ({filteredContainers.length})
-            </h2>
-
-            {/* Status Filter Buttons - Compact on mobile */}
-            {allContainers.length > 0 && (
-              <div className="flex items-center gap-1.5 sm:gap-2 bg-muted/50 rounded-lg p-1 w-fit">
-                <Button
-                  variant={statusFilter === 'all' ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => setStatusFilter('all')}
-                  className="h-8 px-3 text-xs"
-                >
-                  All
-                </Button>
-                <Button
-                  variant={statusFilter === 'running' ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => setStatusFilter('running')}
-                  className="h-8 px-3 text-xs"
-                >
-                  Running
-                </Button>
-                <Button
-                  variant={statusFilter === 'stopped' ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => setStatusFilter('stopped')}
-                  className="h-8 px-3 text-xs"
-                >
-                  Stopped
-                </Button>
-              </div>
+            {silent.length > 0 && (
+                <Card className="divide-y divide-border border-status-warn/50" aria-label="Nodes that are not answering" role="region">
+                    {silent.map((node) => (
+                        <div key={node.id} className="flex flex-wrap items-center gap-3 p-4">
+                            <ServerCrash aria-hidden="true" className="h-5 w-5 shrink-0 text-status-warn-fg" />
+                            <div className="min-w-0 flex-1">
+                                <p className="font-semibold">{node.name} is not answering</p>
+                                <p className="text-[13px] text-muted-foreground">
+                                    Its readings are left out until it reconnects.{node.last_seen ? ` Last seen ${formatAgo(node.last_seen)}.` : ''}
+                                </p>
+                            </div>
+                            <StatusPill kind="warn" size="sm">
+                                {node.status === 'unreachable' ? 'Unreachable' : 'Offline'}
+                            </StatusPill>
+                        </div>
+                    ))}
+                </Card>
             )}
-          </div>
 
-          {/* Search Bar - Full width */}
-          {allContainers.length > 0 && (
-            <div className="relative w-full">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="Search containers, apps, or IDs..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pl-10 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
-            </div>
-          )}
+            {online.length === 0 ? (
+                <EmptyState
+                    icon={<ServerCrash className="h-5 w-5" />}
+                    title="Nothing to show yet"
+                    description="No selected node is answering, so there are no readings. Check the nodes, or choose another scope."
+                    action={
+                        <Link to={ROUTES.nodes} className={buttonClasses()}>
+                            Open Nodes
+                        </Link>
+                    }
+                    className="py-14"
+                />
+            ) : (
+                <>
+                    <InsightAlerts alerts={alerts} />
 
-          {/* Containers List */}
-          <ContainersListView containers={filteredContainers} />
+                    <section aria-label="Resources" className="flex flex-col gap-4">
+                        {online.map((node) => (
+                            <NodeResources key={node.node_id} stats={node} history={history[node.node_id]} />
+                        ))}
+                        <p className="text-[13px] text-muted-foreground">Charts show the readings taken while this page has been open. Older history is not kept.</p>
+                    </section>
+
+                    <section aria-label="Containers" className="flex flex-col gap-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                            <h2 className="text-lg font-semibold">Containers</h2>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <div className="relative">
+                                    <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                    <Input aria-label="Search containers" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search" className="pl-9 sm:w-56" />
+                                </div>
+                                <SegmentedControl aria-label="Container state" options={STATE_OPTIONS} value={state} onValueChange={(value) => setState(value as StateFilter)} />
+                            </div>
+                        </div>
+                        {visible.length === 0 ? (
+                            <EmptyState
+                                icon={<Container className="h-5 w-5" />}
+                                title={containers.length === 0 ? 'No containers' : 'No containers match'}
+                                description={containers.length === 0 ? 'Nothing is running on these nodes yet.' : 'Try another search or state.'}
+                                className="py-10"
+                            />
+                        ) : (
+                            <ContainersByApp containers={visible} apps={apps} nodeName={nodeName} />
+                        )}
+                    </section>
+                </>
+            )}
         </div>
-      )}
-    </div>
-  );
+    )
 }
 
-export default Monitoring;
+export default Insights

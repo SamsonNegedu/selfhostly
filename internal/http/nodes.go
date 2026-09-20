@@ -2,6 +2,7 @@ package http
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,21 +18,28 @@ type NodeResponse struct {
 	IsPrimary   bool       `json:"is_primary"`
 	Status      string     `json:"status"`
 	LastSeen    *time.Time `json:"last_seen"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	// Health of the last checks. LastLatencyMs is 0 until a check has succeeded.
+	LastHealthCheck     *time.Time `json:"last_health_check"`
+	LastLatencyMs       int        `json:"last_latency_ms"`
+	ConsecutiveFailures int        `json:"consecutive_failures"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
 }
 
 // toNodeResponse converts a db.Node to NodeResponse (excluding API key)
 func toNodeResponse(node *db.Node) *NodeResponse {
 	return &NodeResponse{
-		ID:          node.ID,
-		Name:        node.Name,
-		APIEndpoint: node.APIEndpoint,
-		IsPrimary:   node.IsPrimary,
-		Status:      node.Status,
-		LastSeen:    node.LastSeen,
-		CreatedAt:   node.CreatedAt,
-		UpdatedAt:   node.UpdatedAt,
+		ID:                  node.ID,
+		Name:                node.Name,
+		APIEndpoint:         node.APIEndpoint,
+		IsPrimary:           node.IsPrimary,
+		Status:              node.Status,
+		LastSeen:            node.LastSeen,
+		LastHealthCheck:     node.LastHealthCheck,
+		LastLatencyMs:       node.LastLatencyMs,
+		ConsecutiveFailures: node.ConsecutiveFailures,
+		CreatedAt:           node.CreatedAt,
+		UpdatedAt:           node.UpdatedAt,
 	}
 }
 
@@ -48,10 +56,7 @@ func toNodeResponseList(nodes []*db.Node) []*NodeResponse {
 func (s *Server) listNodes(c *gin.Context) {
 	nodes, err := s.nodeService.ListNodes(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:   "Failed to list nodes",
-			Details: domain.PublicMessage(err),
-		})
+		s.handleServiceError(c, "list nodes", err)
 		return
 	}
 
@@ -72,14 +77,12 @@ func (s *Server) registerNode(c *gin.Context) {
 
 	node, err := s.nodeService.RegisterNode(c.Request.Context(), req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:   "Failed to register node",
-			Details: domain.PublicMessage(err),
-		})
+		s.handleServiceError(c, "register node", err)
 		return
 	}
 
 	// Return response without API key
+	setAuditTarget(c, targetNode, node.ID, node.Name)
 	c.JSON(http.StatusCreated, toNodeResponse(node))
 }
 
@@ -89,10 +92,7 @@ func (s *Server) getNode(c *gin.Context) {
 
 	node, err := s.nodeService.GetNode(c.Request.Context(), nodeID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, ErrorResponse{
-			Error:   "Node not found",
-			Details: domain.PublicMessage(err),
-		})
+		s.handleServiceError(c, "get node", err)
 		return
 	}
 
@@ -115,10 +115,7 @@ func (s *Server) updateNode(c *gin.Context) {
 
 	node, err := s.nodeService.UpdateNode(c.Request.Context(), nodeID, req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:   "Failed to update node",
-			Details: domain.PublicMessage(err),
-		})
+		s.handleServiceError(c, "update node", err)
 		return
 	}
 
@@ -130,12 +127,9 @@ func (s *Server) updateNode(c *gin.Context) {
 func (s *Server) deleteNode(c *gin.Context) {
 	nodeID := c.Param("id")
 
-	err := s.nodeService.DeleteNode(c.Request.Context(), nodeID)
+	err := s.nodeService.DeleteNode(c.Request.Context(), nodeID, c.Query("force") == "true")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:   "Failed to delete node",
-			Details: domain.PublicMessage(err),
-		})
+		s.handleServiceError(c, "delete node", err)
 		return
 	}
 
@@ -168,10 +162,7 @@ func (s *Server) checkNodeHealth(c *gin.Context) {
 func (s *Server) getCurrentNodeInfo(c *gin.Context) {
 	node, err := s.nodeService.GetCurrentNodeInfo(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:   "Failed to get current node info",
-			Details: domain.PublicMessage(err),
-		})
+		s.handleServiceError(c, "get current node info", err)
 		return
 	}
 
@@ -185,14 +176,51 @@ func (s *Server) getSettingsForNode(c *gin.Context) {
 	// This is an internal endpoint for secondary nodes to fetch settings
 	// Only the primary node should respond to this
 
-	settings, err := s.database.GetSettings()
+	settings, err := s.nodeService.GetSettings(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:   "Failed to get settings",
-			Details: domain.PublicMessage(err),
-		})
+		s.handleServiceError(c, "get settings", err)
 		return
 	}
 
 	c.JSON(http.StatusOK, settings)
+}
+
+// createJoinToken issues a single-use token a new secondary node can present instead of the
+// shared registration token. It is shown once and only its hash is kept.
+func (s *Server) createJoinToken(c *gin.Context) {
+	if !s.config.Node.IsPrimary {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Join tokens are issued by the primary node"})
+		return
+	}
+	tok, expires, err := s.securityService.CreateJoinToken(c.Request.Context())
+	if err != nil {
+		s.handleServiceError(c, "create join token", err)
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{
+		"token":      tok,
+		"expires_at": expires,
+		"usage":      "On the secondary set REGISTRATION_TOKEN to this value and PRIMARY_NODE_URL to the primary's URL. The token works once.",
+	})
+}
+
+// revokeSessions invalidates every browser session issued so far; everyone must log in again.
+func (s *Server) revokeSessions(c *gin.Context) {
+	at, err := s.securityService.RevokeSessions(c.Request.Context())
+	if err != nil {
+		s.handleServiceError(c, "revoke sessions", err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "All sessions issued before now are revoked", "revoked_before": at})
+}
+
+// listAudit returns the most recent state-changing requests
+func (s *Server) listAudit(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
+	entries, err := s.securityService.ListAudit(c.Request.Context(), limit)
+	if err != nil {
+		s.handleServiceError(c, "read audit log", err)
+		return
+	}
+	c.JSON(http.StatusOK, entries)
 }

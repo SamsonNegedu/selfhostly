@@ -13,7 +13,9 @@ import (
 type DomainError struct {
 	Code    string
 	Message string
-	Cause   error
+	// Field names the request field the error is about, so a form can show it next to the input.
+	Field string
+	Cause error
 }
 
 func (e *DomainError) Error() string {
@@ -74,7 +76,30 @@ const (
 	codeRequiredFieldMissing     = "REQUIRED_FIELD_MISSING"
 	codeAppNameInvalid           = "APP_NAME_INVALID"
 	codeDatabaseOperation        = "DATABASE_OPERATION_FAILED"
+	codeNodeNotFound             = "NODE_NOT_FOUND"
+	codeConflict                 = "CONFLICT"
 )
+
+// Codes for conflicts the client can act on.
+const (
+	CodeNodeIDTaken      = "NODE_ID_TAKEN"
+	CodeNodeNameTaken    = "NODE_NAME_TAKEN"
+	CodePrimaryProtected = "PRIMARY_NODE_PROTECTED"
+	CodeNodeHasApps      = "NODE_HAS_APPS"
+	CodeCurrentNode      = "CURRENT_NODE"
+	CodeNodeOnline       = "NODE_ONLINE"
+)
+
+// WrapNodeNotFound wraps an error as a node not found error
+func WrapNodeNotFound(nodeID string, cause error) error {
+	return &DomainError{Code: codeNodeNotFound, Message: fmt.Sprintf("node not found: %s", nodeID), Cause: cause}
+}
+
+// WrapConflict reports that the request cannot be done because of the current state, for example a name that is
+// already used. The message is written for the person using the app, so it is safe to show.
+func WrapConflict(code, field, message string) error {
+	return &DomainError{Code: code, Field: field, Message: message}
+}
 
 // WrapAppNotFound wraps an error as an app not found error
 func WrapAppNotFound(appID string, cause error) error {
@@ -130,6 +155,7 @@ func WrapValidationError(field string, cause error) error {
 	}
 	return &DomainError{
 		Code:    codeValidationFailed,
+		Field:   field,
 		Message: message,
 		Cause:   cause,
 	}
@@ -147,9 +173,41 @@ func IsNotFoundError(err error) bool {
 			domainErr.Code == ErrTunnelNotFound.Code ||
 			domainErr.Code == codeContainerNotFound ||
 			domainErr.Code == ErrComposeVersionNotFound.Code ||
-			domainErr.Code == codeSettingsNotFound
+			domainErr.Code == codeSettingsNotFound ||
+			domainErr.Code == codeNodeNotFound
 	}
 	return false
+}
+
+// IsConflictError checks if an error is a conflict with the current state
+func IsConflictError(err error) bool {
+	var domainErr *DomainError
+	if !errors.As(err, &domainErr) {
+		return false
+	}
+	switch domainErr.Code {
+	case CodeNodeIDTaken, CodeNodeNameTaken, CodePrimaryProtected, CodeNodeHasApps, CodeCurrentNode, CodeNodeOnline, codeConflict:
+		return true
+	}
+	return false
+}
+
+// ErrorCode returns the machine-readable code of a domain error, or an empty string for any other error.
+func ErrorCode(err error) string {
+	var domainErr *DomainError
+	if errors.As(err, &domainErr) {
+		return domainErr.Code
+	}
+	return ""
+}
+
+// ErrorField returns the request field a domain error is about, if it names one.
+func ErrorField(err error) string {
+	var domainErr *DomainError
+	if errors.As(err, &domainErr) {
+		return domainErr.Field
+	}
+	return ""
 }
 
 // IsValidationError checks if an error is a validation error

@@ -1,7 +1,8 @@
+import { formatAgo } from '@/shared/lib/attention'
 import React from 'react'
 import { Clock, Play, Pause, RefreshCw, AlertTriangle, CheckCircle, Upload, Globe, Zap, Loader2, ChevronDown, ChevronRight } from 'lucide-react'
 import { useAppJobs } from '@/shared/services/api'
-import { Badge } from '@/shared/components/ui/Badge'
+import { StatusPill } from '@/shared/components/ui/StatusPill'
 import type { App, Job } from '@/shared/types/api'
 
 interface ActivityTimelineProps {
@@ -36,17 +37,17 @@ const getJobIcon = (job: Job) => {
 }
 
 const getJobColor = (job: Job) => {
-    if (job.status === 'failed') return 'text-red-500'
-    if (job.status === 'running') return 'text-blue-500'
-    if (job.status === 'pending') return 'text-yellow-500'
-    return 'text-green-500' // completed
+    if (job.status === 'failed') return 'text-status-err-fg'
+    if (job.status === 'running') return 'text-status-info-fg'
+    if (job.status === 'pending') return 'text-status-warn-fg'
+    return 'text-status-ok-fg' // completed
 }
 
 const getJobDotColor = (job: Job) => {
-    if (job.status === 'failed') return 'bg-red-500'
-    if (job.status === 'running') return 'bg-blue-500'
-    if (job.status === 'pending') return 'bg-yellow-500'
-    return 'bg-green-500'
+    if (job.status === 'failed') return 'bg-status-err'
+    if (job.status === 'running') return 'bg-status-info'
+    if (job.status === 'pending') return 'bg-status-warn'
+    return 'bg-status-ok'
 }
 
 const getJobDescription = (job: Job) => {
@@ -69,13 +70,13 @@ const getJobDescription = (job: Job) => {
 const getStatusBadge = (status?: string) => {
     switch (status) {
         case 'completed':
-            return <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-green-500/10 text-green-600 border-green-500/20 dark:text-green-400">Completed</Badge>
+            return <StatusPill kind="ok" size="sm">Completed</StatusPill>
         case 'failed':
-            return <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-red-500/10 text-red-600 border-red-500/20 dark:text-red-400">Failed</Badge>
+            return <StatusPill kind="err" size="sm">Failed</StatusPill>
         case 'running':
-            return <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-blue-500/10 text-blue-600 border-blue-500/20 dark:text-blue-400">Running</Badge>
+            return <StatusPill kind="info" size="sm">Running</StatusPill>
         case 'pending':
-            return <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-yellow-500/10 text-yellow-600 border-yellow-500/20 dark:text-yellow-400">Pending</Badge>
+            return <StatusPill kind="warn" size="sm">Pending</StatusPill>
         default:
             return null
     }
@@ -126,8 +127,8 @@ function ActivityTimeline({ app }: ActivityTimelineProps) {
                 timestamp: new Date(app.created_at),
                 description: 'App was created',
                 icon: <CheckCircle className="h-3.5 w-3.5" />,
-                color: 'text-green-500',
-                dotColor: 'bg-green-500'
+                color: 'text-status-ok-fg',
+                dotColor: 'bg-status-ok'
             })
         }
 
@@ -139,8 +140,8 @@ function ActivityTimeline({ app }: ActivityTimelineProps) {
                 timestamp: new Date(app.updated_at),
                 description: 'App is currently running',
                 icon: <Play className="h-3.5 w-3.5" />,
-                color: 'text-green-500',
-                dotColor: 'bg-green-500'
+                color: 'text-status-ok-fg',
+                dotColor: 'bg-status-ok'
             })
         } else if (app.status === 'stopped') {
             items.push({
@@ -149,28 +150,14 @@ function ActivityTimeline({ app }: ActivityTimelineProps) {
                 timestamp: new Date(app.updated_at),
                 description: 'App is currently stopped',
                 icon: <Pause className="h-3.5 w-3.5" />,
-                color: 'text-gray-500',
-                dotColor: 'bg-gray-500'
+                color: 'text-status-idle-fg',
+                dotColor: 'bg-status-idle'
             })
         }
 
         return items.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
     }, [app, jobs])
 
-    const formatRelativeTime = (date: Date) => {
-        const now = new Date()
-        const diffMs = now.getTime() - date.getTime()
-        const diffMins = Math.floor(diffMs / 60000)
-        const diffHours = Math.floor(diffMs / 3600000)
-        const diffDays = Math.floor(diffMs / 86400000)
-
-        if (diffMins < 1) return 'Just now'
-        if (diffMins < 60) return `${diffMins}m ago`
-        if (diffHours < 24) return `${diffHours}h ago`
-        if (diffDays < 7) return `${diffDays}d ago`
-        return date.toLocaleDateString()
-    }
-    
     const toggleExpanded = (activityId: string) => {
         setExpandedItems(prev => {
             const next = new Set(prev)
@@ -189,77 +176,49 @@ function ActivityTimeline({ app }: ActivityTimelineProps) {
 
     if (activities.length === 0) {
         return (
-            <div className="text-center py-8 text-muted-foreground">
-                <Clock className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">No activity recorded yet</p>
+            <div className="flex flex-col items-center gap-2 py-8 text-center text-muted-foreground">
+                <Clock aria-hidden="true" className="h-6 w-6" />
+                <p className="text-sm">Nothing has happened yet</p>
             </div>
         )
     }
 
     return (
-        <div className="relative">
-            {/* Timeline line */}
-            <div className="absolute left-[11px] top-1 bottom-1 w-px bg-border" />
-
-            <div className="space-y-1">
-                {activities.map((activity, index) => {
-                    const isExpanded = expandedItems.has(activity.id)
-                    const hasLongDetails = isLongText(activity.details)
-                    
-                    return (
-                        <div
-                            key={activity.id}
-                            className={`relative flex items-start gap-3 pl-8 py-2 rounded-lg transition-colors hover:bg-muted/50 ${index === 0 ? 'bg-muted/30' : ''
-                                }`}
-                        >
-                            {/* Timeline dot */}
-                            <div className={`absolute left-1 top-[14px] w-[14px] h-[14px] rounded-full flex items-center justify-center ring-2 ring-background ${activity.dotColor}`}>
-                                <div className="w-1.5 h-1.5 rounded-full bg-white/80" />
+        <ol className="relative flex flex-col">
+            <div aria-hidden="true" className="absolute bottom-3 left-[7px] top-3 w-px bg-border" />
+            {activities.map((activity) => {
+                const isExpanded = expandedItems.has(activity.id)
+                return (
+                    <li key={activity.id} className="relative flex gap-3 py-2.5 pl-6">
+                        <span aria-hidden="true" className={`absolute left-0 top-[15px] h-[15px] w-[15px] rounded-full ring-4 ring-card ${activity.dotColor}`} />
+                        <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                <span aria-hidden="true" className={`shrink-0 ${activity.color}`}>{activity.icon}</span>
+                                <p className="text-sm font-medium">{activity.description}</p>
+                                {activity.status && getStatusBadge(activity.status)}
                             </div>
-
-                            {/* Activity content */}
-                            <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
-                                    <span className={`flex-shrink-0 ${activity.color}`}>
-                                        {activity.icon}
-                                    </span>
-                                    <p className="text-sm font-medium truncate">{activity.description}</p>
-                                    {activity.status && getStatusBadge(activity.status)}
-                                </div>
-                                {activity.details && (
-                                    <div className="ml-[22px]">
-                                        <p className={`text-xs mt-0.5 ${isExpanded ? '' : 'truncate'} ${activity.status === 'failed' ? 'text-red-500' : 'text-muted-foreground'}`}>
-                                            {activity.details}
-                                        </p>
-                                        {hasLongDetails && (
-                                            <button
-                                                onClick={() => toggleExpanded(activity.id)}
-                                                className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground mt-1 transition-colors"
-                                            >
-                                                {isExpanded ? (
-                                                    <>
-                                                        <ChevronDown className="h-3 w-3" />
-                                                        Show less
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <ChevronRight className="h-3 w-3" />
-                                                        Show more
-                                                    </>
-                                                )}
-                                            </button>
-                                        )}
-                                    </div>
-                                )}
-                                <p className="text-[11px] text-muted-foreground mt-0.5 ml-[22px]">
-                                    {formatRelativeTime(activity.timestamp)}
+                            {activity.details && (
+                                <p className={`mt-1 text-[13px] ${isExpanded ? 'break-words' : 'line-clamp-1'} ${activity.status === 'failed' ? 'text-status-err-fg' : 'text-muted-foreground'}`}>
+                                    {activity.details}
                                 </p>
-                            </div>
+                            )}
+                            {isLongText(activity.details) && (
+                                <button
+                                    type="button"
+                                    aria-expanded={isExpanded}
+                                    onClick={() => toggleExpanded(activity.id)}
+                                    className="mt-1 inline-flex min-h-[44px] items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground md:min-h-0"
+                                >
+                                    {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                                    {isExpanded ? 'Show less' : 'Show more'}
+                                </button>
+                            )}
+                            <p className="mt-0.5 text-[13px] text-muted-foreground">{formatAgo(activity.timestamp.toISOString())}</p>
                         </div>
-                    )
-                })}
-            </div>
-        </div>
+                    </li>
+                )
+            })}
+        </ol>
     )
 }
 
