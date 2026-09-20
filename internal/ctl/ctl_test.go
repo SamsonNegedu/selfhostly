@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sort"
@@ -313,5 +315,30 @@ func TestAPickedContainerWithoutAServerSaysSoInsteadOfAnOCIError(t *testing.T) {
 		if strings.Contains(call, "doctor") {
 			t.Fatalf("must not run doctor in a container without the server: %v", r.calls)
 		}
+	}
+}
+
+func TestReachCheckRejectsAnythingThatIsNotASelfhostlyPrimary(t *testing.T) {
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"service":"selfhostly","status":"healthy"}`))
+	}))
+	defer primary.Close()
+	loginPage := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("<html>Sign in to continue</html>")) // what Cloudflare Access answers with
+	}))
+	defer loginPage.Close()
+	broken := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(502) }))
+	defer broken.Close()
+
+	a, _ := newApp(t, &fakeRunner{})
+	if err := a.httpGet(primary.URL); err != nil {
+		t.Fatalf("a real primary must pass: %v", err)
+	}
+	if err := a.httpGet(loginPage.URL); err == nil || !strings.Contains(err.Error(), "login page") {
+		t.Fatalf("a login page must be recognised and explained: %v", err)
+	}
+	if err := a.httpGet(broken.URL); err == nil {
+		t.Fatal("an error status must fail")
 	}
 }

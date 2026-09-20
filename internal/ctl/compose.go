@@ -33,6 +33,12 @@ func (c compose) out(ctx context.Context, extra ...string) (string, string, erro
 	return c.a.Run.Output(ctx, "docker", c.args(extra...)...)
 }
 
+// outEnv is out with extra environment variables, which take precedence over the settings file the way
+// they do for docker compose itself
+func (c compose) outEnv(ctx context.Context, env map[string]string, extra ...string) (string, string, error) {
+	return c.a.Run.OutputEnv(ctx, env, "docker", c.args(extra...)...)
+}
+
 func (c compose) pass(ctx context.Context, extra ...string) error {
 	return c.a.Run.Passthrough(ctx, "docker", c.args(extra...)...)
 }

@@ -119,6 +119,10 @@ go build -o bin/gateway ./cmd/gateway
 Images: `Dockerfile.backend` (primary and secondary), `Dockerfile.gateway`, `web/Dockerfile` (frontend),
 `Dockerfile.dev` (live reload). `go test ./...` and `cd web && npm run lint` are the checks.
 
+The command line tool has its own build (`make ctl` gives `bin/selfhostlyctl`). After changing one of its commands or
+flags, run `make docs` to regenerate [the reference](../reference/selfhostlyctl.md). Deployment-path tests:
+[testing-deployments.md](testing-deployments.md).
+
 ## UI gallery
 
 With the dev server running, open `/dev/ui` to see every UI primitive (buttons, fields, tabs, tables, status pills,

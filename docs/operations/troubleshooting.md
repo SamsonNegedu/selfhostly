@@ -1,15 +1,33 @@
 # Troubleshooting
 
-Start with the logs: `make logs`, or `docker compose -f docker-compose.prod.yml logs -f`. Run
-`selfhostlyctl doctor` for a read-only check of the install. For restarts and rollbacks see
-[safe-restart.md](safe-restart.md).
+Start with `selfhostlyctl status` (what is running) and `selfhostlyctl doctor` (a read-only check of the install; how to
+read it: [operate.md](operate.md#read-doctor)). For the server's own log, run
+`docker compose -f docker-compose.prod.yml logs -f primary` in the install folder. For restarts and rollbacks see
+[operate.md](operate.md).
+
+## After an upgrade or a setting change
+
+| Symptom | Fix |
+|---|---|
+| `refusing to start` in the log | The message names the setting. On a fresh install set auth, or `ALLOW_UNAUTHENTICATED=true`. |
+| `stored secrets are encrypted but no key is available` | Restore `secrets.key` from backup or set `SETTINGS_ENCRYPTION_KEY`. Nothing was changed. |
+| `--set` says the compose file never reads the setting | Switch to the current compose file, or add `KEY: ${KEY:-}` to the service's environment ([operate.md](operate.md#update-the-compose-file)). |
+| Login fails after pinning the gateway | `PUBLIC_HOSTS` must list the hostname users type. |
+| An app cannot start after enforce | `doctor --audit-apps` names the path: move it into the app folder or add it to `ALLOWED_VOLUME_PATHS`. |
+| Container buttons say "not part of an app" | That container is not from an app folder. Intended in enforce mode. |
+| `doctor`: host path not detected | Set `HOST_APPS_DIR` to the host path of the apps directory. |
+| `doctor`: not in the Docker socket group | Set `DOCKER_GID=<the number it shows>` in `.env` and recreate the primary. |
+| `doctor` lists folders as "not deployed apps" | They are in the apps folder but not registered in the database (copies, backups, hand-run stacks), so they are not checked. |
+| An app rebuild fails after moving its data into its folder | The data is now in the Docker build context. Add its folder to a `.dockerignore` next to the app's compose file. |
 
 ## The app will not start
 
 - Docker must be running: `docker ps`.
-- `.env` must exist with correct values (`cp env.example .env`).
+- `.env` must exist in the install folder, or pass `--dir` or `--env-file`. `selfhostlyctl setup` writes it; `env.example`
+  lists every setting.
 - Port 8080 must be free, or change `SERVER_ADDRESS`.
-- Rebuild: `make prod`.
+- Read why it stopped: `selfhostlyctl doctor`, then the primary's log (see the top of this page). To recreate it with your
+  current settings, run `selfhostlyctl upgrade --no-pull`.
 
 ## Cannot reach it from the network
 
@@ -30,7 +48,7 @@ Start with the logs: `make logs`, or `docker compose -f docker-compose.prod.yml 
 
 - The directory of `DATABASE_PATH` must exist and be writable.
 - Do not delete the database to fix an error: it holds your apps. Restore a backup instead
-  (`data/selfhostly.db.bak-*`, see [safe-restart.md](safe-restart.md)).
+  (`data/selfhostly.db.bak-*`, see [operate.md](operate.md#roll-back)).
 
 ## Cloudflare tunnel not working
 

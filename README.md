@@ -39,6 +39,7 @@ and at least 1 GB of RAM. A Cloudflare account is optional and only needed for t
 ```bash
 curl -fsSL https://raw.githubusercontent.com/samsonnegedu/selfhostly/main/scripts/install.sh | sh
 selfhostlyctl setup      # checks the machine, writes .env, starts everything
+# later: selfhostlyctl self-update
 ```
 
 Or by hand:
@@ -55,9 +56,10 @@ Open `http://localhost:8080`. Every `selfhostlyctl` command explains itself with
 
 Everything else lives in [`docs/`](docs/README.md):
 
-- **Deploy and run:** [deploy](docs/operations/deploy.md),
-  [upgrade an existing install](docs/operations/upgrade.md) (keeps your edits and rolls back on failure),
-  [safe restart](docs/operations/safe-restart.md), [troubleshooting](docs/operations/troubleshooting.md)
+- **Deploy and run:** [install](docs/operations/install.md) (new server, extra machines),
+  [operate](docs/operations/operate.md) (ship a new version, restart, roll back, back up),
+  [troubleshooting](docs/operations/troubleshooting.md),
+  [command reference](docs/reference/selfhostlyctl.md)
 - **Several machines:** [multi-node](docs/operations/multi-node.md),
   [how secondary nodes connect](docs/rfcs/node-link.md)
 - **Settings:** [`env.example`](env.example) lists every environment variable

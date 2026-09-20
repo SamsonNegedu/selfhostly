@@ -2,7 +2,7 @@
 
 ## Overview
 
-The monitoring dashboard provides comprehensive real-time visibility into your self-hosted infrastructure, eliminating the need to SSH into your Pi and run htop.
+The monitoring page shows CPU, memory, disk and every container across all your nodes in one place, so you do not need to SSH in and run `htop`. Open it at `/monitoring`.
 
 ## Features
 
@@ -46,9 +46,13 @@ Automatic alerts for:
 ## API Endpoints
 
 ### GET /api/system/stats
-Returns comprehensive system statistics including CPU, memory, disk, Docker daemon info, and all container metrics.
+Returns system statistics: CPU, memory, disk, Docker daemon info and every container's metrics.
 
-**Response:**
+- `?node_ids=all` (the default) or `?node_ids=id1,id2` chooses the nodes. The nodes are queried in parallel.
+- The response is an **array with one object per node**; a node that is offline or unreachable is left out. One element
+  is shown below. Linked nodes are queried through their connection, so they need no reachable address.
+
+**Response element:**
 ```json
 {
   "node_id": "raspberrypi",
@@ -138,27 +142,6 @@ Stops a specific container by ID.
   - `ContainerActions.tsx`: Quick action buttons
   - `ResourceAlerts.tsx`: Alert banners
 
-## Multi-Node Readiness
-
-The architecture is designed to support multiple Raspberry Pis in the future:
-
-### Current (Phase 1)
-- All stats report from local node (hostname as node_id)
-- Single API endpoint for system stats
-- Container actions execute locally
-
-### Future (Phase 2)
-When adding more Pis:
-1. Add `nodes` table to database
-2. Implement agent/heartbeat system for worker nodes
-3. Add node switcher in UI
-4. Aggregate stats across all nodes
-
-**Migration Path:**
-- `node_id` and `node_name` fields already included in SystemStats
-- API can be extended to accept `?node=pi-worker-2` parameter
-- Frontend components designed to work with single or multiple nodes
-
 ## Usage
 
 1. **Access**: Navigate to `/monitoring` in the web interface
@@ -168,55 +151,19 @@ When adding more Pis:
 5. **Take Action**: Click restart/stop buttons on any container
 6. **Check Alerts**: Review any alerts at the top of the page
 
-## Performance
-
-- Stats collection completes in < 500ms on Raspberry Pi 4
-- Frontend only polls when tab is visible
-- Minimal overhead on system resources
-- Container list handles 50+ containers efficiently
-
-## Dependencies
-
-### Backend
-- `github.com/shirou/gopsutil/v3`: Cross-platform system stats library
-  - Provides CPU, memory, and disk usage
-  - Works on Linux, macOS, Windows
-
-### Frontend
-- Uses existing React Query for data fetching
-- Uses existing UI components (Cards, Badges, Buttons)
-- No additional dependencies required
-
-## Testing
-
-To test the monitoring dashboard:
-
-1. Start the backend server:
-   ```bash
-   make dev-server
-   ```
-
-2. Start the frontend dev server:
-   ```bash
-   cd web && npm run dev
-   ```
-
-3. Navigate to `http://localhost:5173/monitoring`
-
-4. Verify:
-   - System stats display correctly
-   - Containers show up with metrics
-   - Search and filtering work
-   - Container actions (restart/stop) work with confirmation
-   - Alerts appear when resource usage is high
-   - Auto-refresh updates data every 10 seconds
-
 ## Troubleshooting
 
 ### No containers showing up
-- Ensure Docker is running
-- Check that apps have been deployed
-- Verify docker-compose.yml files exist in app directories
+- Docker must be running (`docker ps`) and apps must be deployed.
+- The backend needs the Docker socket: `selfhostlyctl doctor` checks it and names the fix.
+
+### Every container shows 0 MB of memory (Raspberry Pi)
+The kernel does not account container memory on a Pi unless asked to. `selfhostlyctl check --fix` offers the change to the boot
+command line (it needs a reboot).
+
+### A node is missing
+Offline and unreachable nodes are left out of the stats. Check **Settings → Nodes**; a linked node returns by itself when its
+connection is back ([multi-node.md](multi-node.md)).
 
 ### Stats not updating
 - Check browser console for API errors
@@ -232,14 +179,3 @@ To test the monitoring dashboard:
 - gopsutil may need elevated permissions on some systems
 - CPU/memory stats generally work without sudo
 - Disk stats may require read permissions on mount points
-
-## Future Enhancements
-
-Potential additions for Phase 2:
-- Historical metrics (store last hour/day of data)
-- Graphs and charts for CPU/memory over time
-- Email/webhook alerts for critical issues
-- Container log streaming in monitoring view
-- Batch container operations (restart all, stop all)
-- Custom alert thresholds in settings
-- Export metrics to Prometheus/Grafana

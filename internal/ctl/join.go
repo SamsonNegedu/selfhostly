@@ -3,6 +3,7 @@ package ctl
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -308,6 +309,11 @@ func (a *App) absDir(name string) string {
 	return p
 }
 
+// healthMarker is what a Selfhostly primary's /api/health says about itself
+const healthMarker = `"service":"selfhostly"`
+
+// httpGet checks that url answers like a Selfhostly primary. Reaching *something* is not enough: a login
+// page from Cloudflare Access or a captive portal answers 200 too, and the node would then never connect.
 func (a *App) httpGet(url string) error {
 	if a.HTTPGet != nil {
 		return a.HTTPGet(url)
@@ -320,6 +326,11 @@ func (a *App) httpGet(url string) error {
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if !strings.Contains(strings.ReplaceAll(string(body), " ", ""), healthMarker) {
+		return fmt.Errorf("it answered, but not like a Selfhostly primary (is a login page, such as Cloudflare Access, in front of it? " +
+			"see docs/operations/cloudflare-zero-trust.md#adding-a-secondary-machine)")
 	}
 	return nil
 }

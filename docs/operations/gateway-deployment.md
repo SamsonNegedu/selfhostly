@@ -1,297 +1,73 @@
-# Gateway Architecture Deployment Guide
+# Gateway
 
-> The gateway now forwards requests with Go's standard reverse proxy (streaming responses flush immediately,
-> WebSocket upgrades pass through), re-reads its node list at once when a node it does not know is requested,
-> and lets a secondary's outbound link (`/api/nodes/connect`) through without a user login because that request
-> carries its own credentials. Nodes that connect over that link are reached **through the primary**, not by the
-> gateway directly. For a new or existing install see [upgrade.md](upgrade.md) and [DEPLOY.md](deploy.md).
-
-## Overview
-
-The production deployment uses a **gateway architecture** to enable multi-node routing and scalability:
+The gateway is the single public entry point. This page explains what it does and how requests reach nodes. To install or
+update it, see [install.md](install.md) and [operate.md](operate.md); the compose file is `docker-compose.prod.yml`.
 
 ```
-Internet → Cloudflare Tunnel → Gateway (port 8080) → Backend Nodes (port 8082+)
+Browser → Cloudflare Tunnel → Gateway :8080 → Primary :8082 (Docker network)
+                                            → Direct secondaries (Docker/private network)
+                                            → Linked secondaries, through the primary
 ```
 
-### Components
+## What each part does
 
-1. **Gateway** - Single entry point that:
-   - Receives all incoming requests
-   - Routes requests to appropriate backend nodes
-   - Handles authentication and authorization
-   - Maintains a registry of available nodes
+| Part | Role |
+|---|---|
+| Gateway | Public port 8080. Checks the user's login, forwards each request, keeps a registry of nodes. Nothing else is public. |
+| Primary | The database, the UI's API, user login, Docker on its own machine, and the coordinator of secondaries. Published only on `127.0.0.1:${PRIMARY_NODE_PORT:-8082}` on the host; the gateway reaches it over the Docker network. |
+| Secondary | Runs Docker for its own machine. It normally connects **out** to the primary ([node link](../rfcs/node-link.md)) and publishes no port. |
 
-2. **Primary Backend** - Main application server that:
-   - Manages the database
-   - Executes Docker operations
-   - Handles user authentication
-   - Coordinates with secondary nodes
+## How a request is routed
 
-3. **Secondary Nodes** (optional) - Additional worker nodes that:
-   - Register with the primary on startup
-   - Execute their own Docker operations
-   - Report health status to primary
+1. The gateway verifies the user's session token (HS256, with the expected issuer) unless `AUTH_ENABLED=false`. Requests
+   for a node's outbound link (`/api/nodes/connect`) skip this, because they carry the node's own credentials.
+2. Requests with no `node_id` go to the primary.
+3. Requests for a node go to that node:
+   - a **direct** node is called by the gateway at its registered address;
+   - a **linked** node has no address the gateway can reach, so the request goes to the primary, which forwards it down the
+     node's connection using the node's own credentials. The user's cookies and tokens are removed and never reach the node.
+4. A node id the gateway does not know triggers an immediate refresh of its registry from the primary (at most every 3
+   seconds), so a node that just joined is routable at once. Otherwise the registry refreshes every
+   `GATEWAY_REGISTRY_TTL_SEC`.
+5. The gateway adds `X-Gateway-API-Key` (node management endpoints always require `GATEWAY_API_KEY`, whatever the user's
+   login) and `X-Forwarded-Host` (so OAuth redirects use the public hostname).
 
-## Deployment
+Responses stream and WebSocket upgrades pass through.
 
-### 1. Build the Images
+## Settings that matter
 
-Three optimized images are available:
+| Setting | Meaning |
+|---|---|
+| `GATEWAY_API_KEY` | Secret shared by the gateway, the primary and every directly connected secondary. Required. |
+| `JWT_SECRET` | Must be the same on the gateway and the primary. Changing it logs everyone out. |
+| `PUBLIC_HOSTS` | The hostnames users type. OAuth redirects and cookies only ever use these: a request that names another host (forged `X-Forwarded-Host`, `Referer` or cookie) is answered as the first one, and logged as a warning. If login fails after pinning, check this. |
+| `PRIMARY_BACKEND_URL` | Where the gateway reaches the primary. Set by the compose file. |
+| `GATEWAY_REGISTRY_TTL_SEC` | How often the node registry refreshes on its own. |
 
-```bash
-# Gateway (lean routing - ~20MB)
-docker build -f Dockerfile.gateway -t ghcr.io/selfhostly/gateway:latest .
+Every setting and its default: [security overview](../security/overview.md).
 
-# Primary backend with UI (~150MB)
-docker build -f Dockerfile.primary -t ghcr.io/selfhostly/primary:latest .
+## Keep it safe
 
-# Secondary backend without UI (~80MB)
-docker build -f Dockerfile.backend -t ghcr.io/selfhostly/backend:latest .
-```
+- Keep `GATEWAY_API_KEY` secret: it grants node management.
+- Never expose the primary or a direct node to the internet. Use the Cloudflare Tunnel (TLS at its edge) in front of the
+  gateway.
+- To publish the primary on a private address for direct-mode secondaries, set `PRIMARY_NODE_BIND` to that address only
+  ([install.md](install.md#3-add-a-secondary-machine)).
 
-See [../../BUILD_IMAGES.md](../../BUILD_IMAGES.md) for details on image differences.
+## Logs
 
-### 2. Configure Environment Variables
-
-Create a `.env` file with the required configuration:
-
-```bash
-# Gateway API Key (shared secret between gateway and backends)
-GATEWAY_API_KEY=your-secure-random-key-here
-
-# Authentication
-JWT_SECRET=your-jwt-secret
-AUTH_ENABLED=true
-GITHUB_CLIENT_ID=your-github-client-id
-GITHUB_CLIENT_SECRET=your-github-client-secret
-AUTH_BASE_URL=https://your-domain.com
-GITHUB_ALLOWED_USERS=user1,user2
-AUTH_SECURE_COOKIE=true
-
-# Node Configuration
-NODE_ID=450359e5-52c3-47e8-a256-6ea537528a06
-NODE_NAME=primary
-REGISTRATION_TOKEN=your-registration-token
-
-# Cloudflare (optional)
-CLOUDFLARE_API_TOKEN=your-cloudflare-token
-CLOUDFLARE_ACCOUNT_ID=your-cloudflare-account-id
-TUNNEL_TOKEN=your-tunnel-token
-```
-
-**Important:** Generate a strong random `GATEWAY_API_KEY`:
-
-```bash
-openssl rand -base64 64
-```
-
-### 3. Deploy with Docker Compose
-
-```bash
-docker compose -f docker-compose.prod.yml up -d
-```
-
-This will start:
-- Gateway on port 8080 (public)
-- Primary backend on port 8082 (internal only)
-- Cloudflared tunnel (if configured)
-
-### 4. Verify Deployment
-
-Check that services are healthy:
-
-```bash
-docker compose -f docker-compose.prod.yml ps
-```
-
-Test the gateway:
-
-```bash
-curl http://localhost:8080/api/health
-```
-
-## Architecture Details
-
-### Port Configuration
-
-- **Gateway**: Port 8080 (public-facing)
-  - Receives all external requests
-  - Routes to backend nodes
-  - Exposed to host and Cloudflare tunnel
-
-- **Primary Backend**: Port 8082 (internal)
-  - Not exposed to host network
-  - Only accessible within Docker network
-  - Gateway forwards requests here
-
-- **Secondary Nodes**: Ports 8083+ (internal)
-  - Each node uses a unique port
-  - Register with primary on startup
-
-### Request Flow
-
-1. **User Request** → Cloudflare Tunnel → Gateway (port 8080)
-
-2. **Gateway** analyzes the request:
-   - Global operations (list apps, stats) → Primary
-   - Node-specific operations → Target node (using `node_id` param)
-
-3. **Gateway** forwards request with:
-   - Original auth headers (JWT, cookies)
-   - `X-Gateway-API-Key` header (for node management)
-   - `X-Forwarded-Host` header (for OAuth redirects)
-
-4. **Backend** processes and returns response
-
-5. **Gateway** returns response to client
-
-### Authentication Flow
-
-The gateway validates user authentication:
-
-- **Enabled** (`AUTH_ENABLED=true`): Gateway checks JWT tokens
-- **Disabled** (`AUTH_ENABLED=false`): Gateway passes all requests through
-
-Node management endpoints always require `GATEWAY_API_KEY` regardless of user auth.
-
-## Adding Secondary Nodes
-
-To add additional worker nodes:
-
-1. Create a new service in docker-compose:
-
-```yaml
-  secondary-node-1:
-    image: ghcr.io/selfhostly/backend:latest  # No UI needed
-    container_name: selfhostly-node-1
-    environment:
-      SERVER_ADDRESS: ":8083"
-      NODE_IS_PRIMARY: "false"
-      NODE_NAME: "worker-1"
-      GATEWAY_API_KEY: ${GATEWAY_API_KEY}
-      PRIMARY_NODE_URL: http://primary:8082
-      REGISTRATION_TOKEN: ${REGISTRATION_TOKEN}
-      # ... other env vars
-    volumes:
-      - /path/to/node1/apps:/app/apps
-      - /var/run/docker.sock:/var/run/docker.sock
-    networks:
-      - selfhostly-network
-    expose:
-      - "8083"
-```
-
-2. The node will automatically register with the primary on startup
-
-3. Gateway will discover the node and route requests to it
-
-## Load Balancing
-
-For high availability, you can run multiple gateway instances behind a load balancer:
-
-1. Remove port mapping from gateway service
-2. Run multiple gateway replicas
-3. Use nginx/haproxy to load balance across gateway instances
-
-Example with docker compose scale:
-
-```bash
-docker compose -f docker-compose.prod.yml up -d --scale gateway=3
-```
-
-Then configure nginx to proxy to all gateway instances.
-
-## Security Considerations
-
-1. **GATEWAY_API_KEY**: Keep this secret secure. It grants full access to node management APIs.
-
-2. **JWT_SECRET**: Must be the same on gateway and all backends for authentication to work.
-
-3. **Network Isolation**: Backend nodes should not be exposed to the public internet directly.
-
-4. **TLS**: Use Cloudflare Tunnel or reverse proxy with TLS for production.
-
-## Monitoring
-
-Gateway logs routing decisions:
-
-```bash
-docker compose -f docker-compose.prod.yml logs -f gateway
-```
-
-Look for:
-- `gateway: incoming request` - All incoming requests
-- `gateway: routing request` - Target resolution
-- `router: resolved by node_id` - Node-specific routing
-- `router: primary-only route` - Primary-only operations
+`docker compose -f docker-compose.prod.yml logs -f gateway`. The routing lines (`gateway: incoming request`,
+`gateway: routing request`, `router: resolved by node_id`, `router: primary-only route`) are debug level, which is only on
+with `APP_ENV=development`.
 
 ## Troubleshooting
 
-### Gateway can't reach primary
+| Symptom | Look at |
+|---|---|
+| `gateway: upstream request failed` | Is the primary healthy (`selfhostlyctl status`)? Is `PRIMARY_BACKEND_URL` right? |
+| `router: node not found node_id=…` | The node has not registered yet (check the primary's logs), or it restarted with a new id. A linked node shows offline within seconds when its connection drops. |
+| `gateway: auth required` | Session missing or expired, or `JWT_SECRET` differs between gateway and primary. |
+| Login fails after pinning, or `forwarded host is not a configured public host` | `PUBLIC_HOSTS` must list the hostname users type. |
 
-**Symptom**: `gateway: upstream request failed`
-
-**Solution**: 
-- Verify primary is healthy: `docker compose ps`
-- Check network connectivity: `docker compose exec gateway ping primary`
-- Verify `PRIMARY_BACKEND_URL` is correct
-
-### Node not found errors
-
-**Symptom**: `router: node not found node_id=...`
-
-**Solution**:
-- Node may not be registered yet (check primary logs)
-- Node may have restarted with a new ID (clear stale data)
-- Verify node's `NODE_API_ENDPOINT` is reachable from gateway
-
-### Authentication issues
-
-**Symptom**: `gateway: auth required`
-
-**Solution**:
-- Verify `JWT_SECRET` matches between gateway and backends
-- Check if `AUTH_ENABLED` is correctly set
-- Verify JWT token is valid and not expired
-
-## Migration from Single-Node Setup
-
-If you're migrating from a single-node deployment:
-
-1. Backup your database: `cp /path/to/selfhostly.db /path/to/backup/`
-
-2. Update docker-compose.yml to use the gateway architecture
-
-3. Set `GATEWAY_API_KEY` in environment
-
-4. Change backend port from 8080 to 8082
-
-5. Deploy and verify gateway routes correctly
-
-6. Update any external services to point to gateway (port 8080)
-
-## Rolling Updates
-
-To update without downtime:
-
-1. Update the images:
-   ```bash
-   docker pull ghcr.io/selfhostly/gateway:latest
-   docker pull ghcr.io/selfhostly/primary:latest
-   docker pull ghcr.io/selfhostly/backend:latest  # If using secondaries
-   ```
-
-2. Update backends first:
-   ```bash
-   docker compose -f docker-compose.prod.yml up -d primary
-   ```
-
-3. Wait for primary to be healthy
-
-4. Update gateway:
-   ```bash
-   docker compose -f docker-compose.prod.yml up -d gateway
-   ```
-
-Gateway will continue routing to old backend during update, minimizing downtime.
+There is a single gateway container; the compose file gives it a fixed container name, so it is not designed to be scaled
+by replicas.

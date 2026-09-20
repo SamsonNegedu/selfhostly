@@ -20,8 +20,8 @@ jobs:
     name: Go vet, tests, vulnerabilities
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - run: go vet ./...
@@ -51,10 +51,10 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci --silent
@@ -65,7 +65,7 @@ jobs:
     name: Shell script checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: bash -n scripts/*.sh
       - name: shellcheck
         run: |
@@ -76,7 +76,7 @@ jobs:
     name: Compose files render
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Production file, and the optional socket-proxy overlay
         env:
           JWT_SECRET: ci
@@ -91,7 +91,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       # Builds the images, bootstraps a throwaway install, asserts the security behaviour, restarts
       # the primary and asserts nothing was lost (see scripts/smoke-test.sh)
       - run: ./scripts/smoke-test.sh

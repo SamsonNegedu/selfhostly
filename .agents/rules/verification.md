@@ -14,7 +14,7 @@ next to the code (`newTestServer` in `internal/http` is the usual harness). Run 
 edit.
 
 **Frontend.** Run `cd web && npx tsc --noEmit -p . && npm run lint && npm run build`. Lint is clean and
-is a gate (`--max-warnings 0`), so do not add warnings. A disabled rule needs a comment saying why.
+is a gate (`oxlint --deny-warnings`), so do not add warnings. A disabled rule needs a comment saying why.
 
 **UI changes are checked in a browser.** Look at the screen in dark and light, at 1440, 768 and 390
 wide, and in its empty, loading and error states. Check contrast (4.5:1 for text), tap targets (44px on

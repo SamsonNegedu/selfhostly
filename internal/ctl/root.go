@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -46,6 +47,11 @@ type App struct {
 	SkipNet, SkipHostChecks bool
 	NodeExtraCompose        string // extra compose files for the node (tests, unusual networks)
 	HTTPGet                 func(url string) error
+	// ReleaseBase and HTTPClient let tests point self-update at a fake release server
+	// ExecPath is the file self-update replaces (tests; default: the running binary)
+	ReleaseBase string
+	ExecPath    string
+	HTTPClient  *http.Client
 
 	Dir            string
 	EnvFile        string
@@ -83,12 +89,13 @@ func (a *App) Root() *cobra.Command {
 	f.StringVar(&a.EnvFile, "env-file", a.EnvFile, "settings file, relative to --dir")
 	f.BoolVarP(&a.Yes, "yes", "y", a.Yes, "answer yes to every question")
 	f.BoolVar(&a.NonInteractive, "non-interactive", a.NonInteractive, "never ask; use defaults and flags")
-	f.StringVar(&a.Container, "container", a.Container, "the Selfhostly container to use (default: found by its compose service label)")
+	f.StringVar(&a.Container, "container", a.Container, "the Selfhostly container to use (default: found by probing what is running)")
 	f.BoolVar(&a.SkipHostChecks, "skip-host-checks", a.SkipHostChecks, "trust that this machine is ready (for automation)")
 	f.BoolVar(&a.DryRun, "dry-run", a.DryRun, "show what would change and change nothing")
 
 	root.AddCommand(a.checkCmd(), a.joinTokenCmd(), a.statusCmd(), a.doctorCmd(), a.versionCmd(),
-		a.joinCmd(), a.setupCmd(), a.bootstrapCmd(), a.upgradeCmd(), a.backupCmd(), a.composeDiffCmd(), a.pinImagesCmd(), a.composeCmd())
+		a.joinCmd(), a.setupCmd(), a.bootstrapCmd(), a.upgradeCmd(), a.backupCmd(), a.composeDiffCmd(), a.pinImagesCmd(), a.composeCmd(), a.selfUpdateCmd())
+	root.AddCommand(a.docsCmd(root))
 	return root
 }
 

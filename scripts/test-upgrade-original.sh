@@ -11,7 +11,9 @@
 # local image tags, container/network names, and user 0:0 (this machine's Docker socket group differs
 # from a Linux host's).
 #
-#   OLD_REF=HEAD ./scripts/test-upgrade-original.sh    (before committing, HEAD is the previous version)
+#   OLD_REF=<commit> ./scripts/test-upgrade-original.sh    the version the install runs today
+#   With no OLD_REF it uses HEAD, which is only the old version until you commit the change under test:
+#   after committing, pass the commit that is deployed (CI passes the pull request's base).
 #   SKIP_BUILD=1 ./scripts/test-upgrade-original.sh
 set -euo pipefail
 
@@ -118,7 +120,7 @@ sql "$WORK/live/data/selfhostly.db" "INSERT INTO apps (id,name,description,compo
 DC "$LIVE" start primary >/dev/null
 for _ in $(seq 1 30); do healthy orig-primary && break; sleep 2; done
 [[ "$NODE_ID_BEFORE" == 450359e5-52c3-47e8-a256-6ea537528a06 ]] && pass "the old install runs with the original compose file's fixed node id" || fail "node id before: $NODE_ID_BEFORE"
-LOGS_OLD="$(docker logs orig-primary 2>&1 | head -5)"
+LOGS_OLD="$(docker logs orig-primary 2>&1 | sed -n 1,5p)"
 [[ "$LOGS_OLD" != *'{"time"'* ]] && pass "and writes plain-text logs (LOG_JSON=false, hard-coded in that file)" || fail "old logs are JSON"
 
 echo
@@ -145,6 +147,15 @@ contains "$LOGS_NEW" "applied database migration" && pass "the database was migr
 ls "$WORK/live/data/"selfhostly.db.bak-pre-migration-* >/dev/null 2>&1 && pass "with an automatic backup taken first" || fail "no pre-migration backup"
 
 echo
+echo "A setting the original compose file never reads is refused instead of silently ignored"
+ENV_BEFORE="$(cat "$ENVF")"
+if "$CTL" upgrade --container orig-primary --env-file "$ENVF" --no-pull --yes --set SECURITY_MODE=enforce > "$WORK/unread.log" 2>&1; then
+  fail "--set on a setting the file never reads must not report success"
+else pass "--set SECURITY_MODE=enforce is refused"; fi
+grep -q "never reads SECURITY_MODE" "$WORK/unread.log" && grep -q "Nothing was changed" "$WORK/unread.log" && pass "and it says why and what to do" || fail "unhelpful refusal: $(tail -5 "$WORK/unread.log")"
+[[ "$(cat "$ENVF")" == "$ENV_BEFORE" ]] && pass "and the settings file is untouched" || fail "the settings file was edited"
+
+echo
 echo "Phase B: what would the new compose file lose?"
 cp "$LIVE" "$WORK/live/docker-compose.yml.before-upgrade"
 "$CTL" compose-diff "$WORK/live/docker-compose.yml.before-upgrade" "$NEW" --env-file "$ENVF" > "$WORK/diff1.log" 2>&1 || true
@@ -169,6 +180,8 @@ contains "$DOC" "node identity matches the database" && pass "node identity unch
 LOGS_B="$(docker logs orig-primary 2>&1 | tail -20)"
 [[ "$LOGS_B" != *'{"time"'* ]] && pass "logs are still plain text (LOG_JSON carried through .env)" || fail "logs became JSON"
 N="$(app_count "$LIVE")"; [[ "$N" == 1 ]] && pass "the app record still exists" || fail "app record lost (count=$N)"
+"$CTL" upgrade --container orig-primary --project "$PROJECT" --compose "$LIVE" --env-file "$ENVF" --no-pull --yes --health-timeout 60 --set AUTH_SESSION_HOURS=12 > "$WORK/set-new.log" 2>&1 \
+  && [[ "$(docker exec orig-primary printenv AUTH_SESSION_HOURS)" == 12 ]] && pass "on the new file the same kind of --set takes effect inside the container" || fail "--set on the new file: $(tail -5 "$WORK/set-new.log")"
 
 echo
 echo "Undo: back to the original compose file"

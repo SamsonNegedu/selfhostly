@@ -27,7 +27,11 @@ func (s *scripted) Output(_ context.Context, name string, args ...string) (strin
 	return out, "", nil
 }
 
-func (s *scripted) OutputEnv(ctx context.Context, _ map[string]string, name string, args ...string) (string, string, error) {
+// OutputEnv records the extra variables in the call, so a handler can tell a probing render from a plain one
+func (s *scripted) OutputEnv(ctx context.Context, env map[string]string, name string, args ...string) (string, string, error) {
+	for k, v := range env {
+		args = append(args, "ENV:"+k+"="+v)
+	}
 	return s.Output(ctx, name, args...)
 }
 
@@ -46,12 +50,18 @@ func (s *scripted) index(sub string) int {
 }
 
 type stack struct {
-	primaryHealthy bool
-	dryStartFails  bool
+	primaryHealthy  bool
+	dryStartFails   bool
+	ignoresSettings bool // the compose file never reads any variable: rendering does not change with them
 }
 
 func (st *stack) handle(cmd string) (string, bool) {
 	switch {
+	case strings.HasSuffix(strings.Fields(cmd)[len(strings.Fields(cmd))-1], "config") || strings.Contains(cmd, " config ENV:"):
+		if strings.Contains(cmd, "ENV:") && !st.ignoresSettings {
+			return "rendered-with-the-variable-set", false
+		}
+		return "rendered", false
 	case strings.Contains(cmd, "ps -q primary"):
 		return "pc\n", false
 	case strings.Contains(cmd, "ps -q gateway"):
@@ -161,5 +171,42 @@ func TestRollbackWithoutSavedStateSaysSo(t *testing.T) {
 	a, _, _ := upgradeApp(t, &stack{})
 	if err := runCLI(a, "upgrade", "--rollback"); err == nil || !strings.Contains(err.Error(), "no saved state") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestUpgradeRefusesASettingTheComposeFileNeverReadsAndChangesNothing(t *testing.T) {
+	a, sc, out := upgradeApp(t, &stack{primaryHealthy: true, ignoresSettings: true})
+	err := runCLI(a, "upgrade", "--project", "p", "--set", "SECURITY_MODE=enforce", "--health-timeout", "2")
+	if err == nil || !strings.Contains(err.Error(), "never reads SECURITY_MODE") || !strings.Contains(err.Error(), "Nothing was changed") {
+		t.Fatalf("got %v\n%s", err, out)
+	}
+	for _, sub := range []string{"stop primary", "docker tag", " up -d"} {
+		if sc.index(sub) >= 0 {
+			t.Fatalf("it must refuse before touching anything, but ran %q", sub)
+		}
+	}
+	if env, _ := os.ReadFile(filepath.Join(a.Dir, ".env")); strings.Contains(string(env), "enforce") {
+		t.Fatal("the settings file must not be edited")
+	}
+}
+
+func TestUpgradeForceWritesASettingTheFileDoesNotRead(t *testing.T) {
+	a, _, out := upgradeApp(t, &stack{primaryHealthy: true, ignoresSettings: true})
+	if err := runCLI(a, "upgrade", "--project", "p", "--set", "SECURITY_MODE=enforce", "--force", "--health-timeout", "2"); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if !strings.Contains(out.String(), "never reads SECURITY_MODE") {
+		t.Fatalf("it must still say so:\n%s", out)
+	}
+}
+
+func TestUpgradeWithoutSetDoesNotRenderProbes(t *testing.T) {
+	a, sc, _ := upgradeApp(t, &stack{primaryHealthy: true, ignoresSettings: true})
+	a.DryRun = true
+	if err := runCLI(a, "upgrade", "--project", "p"); err != nil {
+		t.Fatal(err)
+	}
+	if sc.index("ENV:") >= 0 {
+		t.Fatal("nothing to probe without --set")
 	}
 }

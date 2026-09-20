@@ -1,246 +1,82 @@
-# Volume Path Whitelist Configuration
+# Volume paths
 
-## Overview
+What an app may bind-mount from the host, and how to allow more. The rules apply when an app is created or redeployed, and
+`selfhostlyctl doctor --audit-apps` applies them to what is already deployed.
 
-By default, Selfhostly blocks mounting certain host paths (like `/home`) in Docker Compose files for security reasons. However, you can configure a whitelist of trusted paths that should be allowed for your specific use case.
+## Where an app's data may live
 
-## Use Case
+| Where | Result |
+|---|---|
+| Inside the app's own folder (`./data:/data`) | Always allowed. This is the default. |
+| A folder listed in `ALLOWED_VOLUME_PATHS` (or anywhere beneath it) | Allowed. |
+| Anywhere else on the host | Logged in `warn` mode, blocked in `enforce` mode. |
+| A path with a variable (`${DATA}/x`) or `~` | Cannot be verified: logged in `warn`, blocked in `enforce`. Use a literal path. |
+| Docker's socket, `/etc`, `/root` and the other paths listed [below](#never-allowed) | Never allowed, in any mode. |
+| A relative path that climbs out of the app folder (`../x`), or a symlink under the apps folder that leaves it | Never allowed, in any mode. |
 
-If you want all your applications to store data in a unified location for easier backups (e.g., `/home/user/Documents/apps`), you can whitelist this path to allow your apps to mount it.
-
-## Configuration
-
-Set the `ALLOWED_VOLUME_PATHS` environment variable with a comma-separated list of paths you want to whitelist:
-
-```bash
-ALLOWED_VOLUME_PATHS=/home/user/Documents/opq,/home/user/backup
-```
-
-### Example `.env` file:
+## Allow a folder
 
 ```env
-# Allow apps to mount paths under your apps directory
-ALLOWED_VOLUME_PATHS=/home/user/Documents/opq
-
-# Other configuration...
-SERVER_ADDRESS=:8080
-DATABASE_PATH=./data/selfhostly.db
+ALLOWED_VOLUME_PATHS=/home/me/media,/mnt/external/data
 ```
 
-## How It Works
+Comma-separated, absolute. Subfolders are included: allowing `/home/me/media` allows `/home/me/media/tv/data`, not
+`/home/me/other`. Apply it with `selfhostlyctl upgrade --set ALLOWED_VOLUME_PATHS=...` (this **replaces** the whole value, so
+include the folders you already allow).
 
-1. **Critical paths are ALWAYS blocked** - Even if whitelisted, the following paths can never be mounted:
-   - `/var/run/docker.sock` (Docker socket)
-   - `/` (root filesystem)
-   - `/etc` (system configuration)
-   - `/root` (root home directory)
-   - `/sys`, `/proc`, `/dev` (kernel interfaces)
-   - `/boot` (boot partition)
-   - `/var/lib/docker` (Docker internal storage)
-   - `/var/lib/kubelet`, `/var/lib/rancher` (orchestration storage)
+Find what needs allowing before you switch to `enforce`: `selfhostlyctl doctor --audit-apps`. It checks only apps registered
+in the database and groups every folder that just needs allowing into one finding with the exact value to set, keeping
+the folders you already allow.
 
-2. **Whitelist overrides non-critical restrictions** - The whitelist can override blocks on:
-   - `/home/*` paths (user directories)
-   - Other non-critical paths
+## Keep the data in the app folder, or allow an outside folder?
 
-3. **Subdirectories are automatically included** - If you whitelist `/home/user/Documents/apps`, then:
-   - `/home/user/Documents/apps` is allowed
-   - `/home/user/Documents/apps/app1` is allowed
-   - `/home/user/Documents/apps/app1/data` is allowed
-   - But `/home/user/Documents/other` is still blocked
+- *In the folder*: nothing to configure. But deleting the app deletes its data. If the container writes files as another user
+  (Redis, databases), Selfhostly cannot remove them, so a delete leaves them behind for you to remove with `sudo`. If the app
+  uses `build:`, the data sits inside the Docker build context and the build can fail with "no permission to read": put the
+  folder's name in a `.dockerignore` next to the app's compose file.
+- *Outside, and allowed*: the data survives deleting the app and stays out of build contexts. It costs one line in
+  `ALLOWED_VOLUME_PATHS`.
 
-## Examples
+## Never allowed
 
-### Example 1: Unified Backup Directory
+The list cannot override these: mounting one, or a folder that contains one, is refused.
 
-**Scenario**: You want all apps to store data in `/home/user/Documents/opq` for unified backups.
+| Path | Why |
+|---|---|
+| `/var/run/docker.sock`, `/run/docker.sock`, `/var/run/docker`, `/run/docker` | Full control of the host |
+| `/root`, `/etc`, `/boot`, `/sys`, `/proc`, `/dev`, `/host` | System and kernel interfaces |
+| `/var/lib/docker`, `/var/lib/kubelet`, `/var/lib/rancher` | Container runtime storage |
+| `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64` themselves | The system (a subfolder is judged on its own) |
+| `/`, `/var`, `/run` and other folders that contain one of the above | Mounting them would expose it |
 
-**Configuration**:
+The policy is a blocklist plus this allow-list, not a sandbox: see the limitations in the
+[security overview](overview.md).
+
+## Example
+
 ```env
-ALLOWED_VOLUME_PATHS=/home/user/Documents/opq
+ALLOWED_VOLUME_PATHS=/home/me/apps,/mnt/external/data
 ```
 
-**Docker Compose** (now allowed):
 ```yaml
-version: '3.8'
-services:
-  finkit:
-    image: myapp/finkit:latest
-    volumes:
-      - /home/user/Documents/opq/finkit/data:/data
-      - /home/user/Documents/opq/finkit/config:/config
-    ports:
-      - "8080:8080"
-```
-
-### Example 2: Multiple Whitelisted Paths
-
-**Scenario**: You have separate directories for app data and backups.
-
-**Configuration**:
-```env
-ALLOWED_VOLUME_PATHS=/home/user/apps,/home/user/backups,/mnt/external/data
-```
-
-**Docker Compose** (now allowed):
-```yaml
-version: '3.8'
 services:
   app:
     image: nginx
     volumes:
-      - /home/user/apps/nginx/html:/usr/share/nginx/html
-      - /home/user/backups/nginx:/backups
-      - /mnt/external/data:/data
+      - ./config:/etc/nginx/conf.d          # in the app folder: always fine
+      - /home/me/apps/nginx/html:/html      # under an allowed folder
+      - /mnt/external/data:/data            # an allowed folder
+      # - /var/run/docker.sock:/s           # never allowed
 ```
 
-### Example 3: What's Still Blocked
+## Messages and what to do
 
-Even with whitelisting, these are NEVER allowed:
-
-```yaml
-version: '3.8'
-services:
-  # BLOCKED: Docker socket (critical path)
-  attacker:
-    image: alpine
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-
-  # BLOCKED: Root filesystem (critical path)
-  bad:
-    image: alpine
-    volumes:
-      - /:/host
-
-  # BLOCKED: Not in whitelist
-  unauthorized:
-    image: alpine
-    volumes:
-      - /home/otheruser/data:/data
-```
-
-## Security Considerations
-
-1. **Be specific with your whitelist** - Only whitelist the exact paths you need. Don't whitelist broad paths like `/home` or `/home/user`.
-
-2. **Understand the risks** - Whitelisting a path means all apps can read/write to it. Make sure you trust the Docker images you're deploying.
-
-3. **Critical paths cannot be overridden** - The system will always block mounting critical system paths, even if you add them to the whitelist.
-
-4. **Path traversal is prevented** - The system uses `filepath.Clean()` to resolve `..` and `.` in paths, so attempts to escape the whitelist via path traversal are blocked.
-
-5. **Backup your data** - Since multiple apps can access the whitelisted paths, ensure you have proper backups in place.
-
-## Troubleshooting
-
-### Error: "mounting /home paths is not allowed"
-
-**Problem**: You're trying to mount a path under `/home` but it's not whitelisted.
-
-**Solution**: Add the path to `ALLOWED_VOLUME_PATHS`:
-```env
-ALLOWED_VOLUME_PATHS=/home/youruser/Documents/apps
-```
-
-### Error: "mounting ... is not allowed (grants full Docker control)"
-
-**Problem**: You're trying to mount a critical path like `/var/run/docker.sock`.
-
-**Solution**: This cannot be whitelisted for security reasons. These paths are always blocked:
-- Docker socket
-- Root filesystem
-- System directories (`/etc`, `/sys`, `/proc`, `/dev`)
-- Docker internal storage
-
-### Whitelist Not Working
-
-1. **Check environment variable syntax**:
-   ```env
-   # Correct
-   ALLOWED_VOLUME_PATHS=/home/user/data,/mnt/backup
-   
-   # Incorrect (no spaces after commas)
-   ALLOWED_VOLUME_PATHS=/home/user/data, /mnt/backup
-   ```
-
-2. **Restart the application** after changing the environment variable.
-
-3. **Check the path is correct** - Use absolute paths, not relative paths.
-
-4. **Verify subdirectory structure** - If you whitelist `/home/user/data`, then `/home/user/data/app1` is allowed, but `/home/user/other` is not.
-
-## Best Practices
-
-1. **Use a dedicated directory structure**:
-   ```
-   /home/user/apps/
-   ├── app1/
-   │   ├── data/
-   │   └── config/
-   ├── app2/
-   │   ├── data/
-   │   └── config/
-   └── backups/
-   ```
-
-2. **Set proper permissions**:
-   ```bash
-   mkdir -p ~/apps
-   chmod 755 ~/apps
-   ```
-
-3. **Document your whitelist** in your deployment documentation.
-
-4. **Use named volumes when possible** - They don't require whitelisting:
-   ```yaml
-   volumes:
-     - app_data:/data  # Named volume, always allowed
-   
-   volumes:
-     app_data:
-   ```
-
-5. **Consider alternatives**:
-   - Use `/opt/apps` instead of `/home/user/apps` (no whitelist needed)
-   - Use `/data/apps` instead of `/home/user/apps` (no whitelist needed)
-   - Use Docker named volumes (no whitelist needed)
-
-## Migration Guide
-
-If you have existing apps using `/home` paths:
-
-1. **Option A: Add whitelist** (recommended if you want unified backups):
-   ```env
-   ALLOWED_VOLUME_PATHS=/home/user/Documents/apps
-   ```
-
-2. **Option B: Move data to allowed paths**:
-   ```bash
-   # Move data to /opt
-   sudo mkdir -p /opt/apps
-   sudo chown $USER:$USER /opt/apps
-   mv ~/Documents/apps/* /opt/apps/
-   
-   # Update compose files
-   # Before: /home/user/Documents/apps/app:/data
-   # After:  /opt/apps/app:/data
-   ```
-
-3. **Option C: Use named volumes**:
-   ```yaml
-   # Before
-   volumes:
-     - /home/user/Documents/apps/app:/data
-   
-   # After
-   volumes:
-     - app_data:/data
-   
-   volumes:
-     app_data:
-   ```
-
-## Related Documentation
-
-- [Security Documentation](overview.md) - Full security model and blocked configurations
+| Message | Do this |
+|---|---|
+| `... is outside the app directory and ALLOWED_VOLUME_PATHS` | Move the data into the app folder, or add the folder to `ALLOWED_VOLUME_PATHS`. |
+| `... must never be mounted into an app` or `... is inside /...` or `... contains /...` | Remove that mount. Nothing allows it. |
+| `... contains a variable, so its host path cannot be verified` | Write the path out. The policy reads the file before variables are filled in. |
+| `... uses ~` | Write the absolute path. |
+| `... escapes the app directory` | A `../` path. Use a folder inside the app, or an allowed absolute path. |
+| `... resolves through a symlink that leaves the apps directory` | A folder under the apps directory is a symlink pointing elsewhere. Mount the real path and allow it. |
+| The policy cannot judge a path at all | `HOST_APPS_DIR` is unknown. Set it to the host path of the apps folder (`selfhostlyctl doctor` shows whether it was detected). |

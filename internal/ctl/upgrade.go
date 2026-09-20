@@ -242,6 +242,9 @@ func (a *App) upgrade(ctx context.Context, o upgradeOpts) (err error) {
 	if err := u.checkJobs(ctx, db, dbErr == nil); err != nil {
 		return err
 	}
+	if err := u.checkSettingsAreRead(ctx); err != nil {
+		return err
+	}
 	othersBefore := u.otherContainers(ctx)
 	a.say("  %d other container(s) running (your apps); they will not be touched", len(othersBefore))
 
@@ -425,6 +428,7 @@ func (a *App) upgrade(ctx context.Context, o upgradeOpts) (err error) {
 	finished = true
 	a.say("\ndone. Rollback point: %s   (selfhostlyctl upgrade --rollback)", stamp)
 	a.say("database copy:       %s", filepath.Join(dir, "backup"))
+	a.noteNewerTool()
 	return nil
 }
 
@@ -555,4 +559,39 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return out.Close()
+}
+
+// checkSettingsAreRead refuses a --set that the compose file never reads. A value written to the settings
+// file only reaches the server if the compose file passes it on, and a hand-edited or older file may not:
+// the command would then report success and change nothing. Whether the file reads a variable is decided
+// the way compose itself would: render it with and without the variable set, and see if anything differs.
+func (u *upgrader) checkSettingsAreRead(ctx context.Context) error {
+	if len(u.o.sets) == 0 {
+		return nil
+	}
+	base, _, err := u.dc.outEnv(ctx, nil, "config")
+	if err != nil {
+		return nil // the file already rendered for the check above; do not block on a second rendering
+	}
+	var unread []string
+	for _, kv := range u.o.sets {
+		key, _, _ := strings.Cut(kv, "=")
+		probed, _, err := u.dc.outEnv(ctx, map[string]string{key: probeValue}, "config")
+		if err == nil && probed == base {
+			unread = append(unread, key)
+		}
+	}
+	if len(unread) == 0 {
+		return nil
+	}
+	msg := fmt.Sprintf("your compose file never reads %s, so setting it in %s would change nothing", strings.Join(unread, ", "), u.env.Path)
+	if u.o.force {
+		u.a.say("  warning: %s (continuing: --force)", msg)
+		return nil
+	}
+	return fmt.Errorf("%s.\n"+
+		"  Nothing was changed. Either switch to the current compose file, which reads it from the settings file\n"+
+		"  (selfhostlyctl compose write, then selfhostlyctl upgrade --compose docker-compose.prod.yml), or add the\n"+
+		"  variable to the service's environment in your file, for example:  %s: ${%s:-}\n"+
+		"  Pass --force to write it anyway", msg, unread[0], unread[0])
 }

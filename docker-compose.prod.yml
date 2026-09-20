@@ -17,7 +17,7 @@
 #   3. docker compose -f docker-compose.prod.yml up -d
 #   4. docker exec selfhostly-primary ./selfhostly doctor
 #
-# Upgrading a running system: follow docs/operations/safe-restart.md.
+# Updating a running system: docs/operations/operate.md.
 #
 # Image versions: SELFHOSTLY_VERSION picks a release tag. To pin exact digests run
 # selfhostlyctl pin-images, which writes GATEWAY_IMAGE / BACKEND_IMAGE / FRONTEND_IMAGE /

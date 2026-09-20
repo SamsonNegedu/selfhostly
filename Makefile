@@ -20,7 +20,7 @@ BACKEND_RUN = $(if $(NOAIR),go run ./cmd/server,air)
 GATEWAY_RUN = $(if $(NOAIR),go run ./cmd/gateway,air -c .air-gateway.toml)
 
 .DEFAULT_GOAL := help
-.PHONY: help dev backend gateway frontend prod down clean logs test ctl
+.PHONY: help dev backend gateway frontend prod down clean logs test ctl docs
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-10s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -55,6 +55,9 @@ frontend: ## Frontend dev server on :5173
 
 test: ## Run the Go tests (ARGS=-v, ARGS=-cover)
 	go test $(ARGS) ./...
+
+docs: ## Regenerate docs/reference/selfhostlyctl.md from the command definitions
+	go run ./cmd/selfhostlyctl docs --out docs/reference/selfhostlyctl.md
 
 ctl: ## Build the selfhostlyctl command line into bin/
 	go build -ldflags "-X github.com/selfhostly/internal/ctl.Version=$(shell git describe --tags --always --dirty 2>/dev/null || echo dev)" -o bin/selfhostlyctl ./cmd/selfhostlyctl
