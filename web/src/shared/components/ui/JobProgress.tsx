@@ -51,7 +51,9 @@ export function JobProgress({ job, compact = false }: JobProgressProps) {
                 <div className="flex min-w-0 items-center gap-2">
                     <StatusIcon status={job.status} />
                     <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{message}</p>
+                        <p className="truncate text-sm font-medium" title={message}>
+                            {message}
+                        </p>
                         {!compact && when && <p className="text-xs text-muted-foreground">{when}</p>}
                     </div>
                 </div>

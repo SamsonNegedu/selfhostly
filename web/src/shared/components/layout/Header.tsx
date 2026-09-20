@@ -50,7 +50,9 @@ function Header() {
                     </span>
                 </Link>
             )}
-            <p className="min-w-0 flex-1 truncate text-base font-semibold md:hidden">{title}</p>
+            <p className="min-w-0 flex-1 truncate text-base font-semibold md:hidden" title={title}>
+                {title}
+            </p>
 
             <TopbarBreadcrumbs className="hidden min-w-0 md:block" />
 
@@ -59,7 +61,7 @@ function Header() {
                     type="button"
                     onClick={() => openPalette(true)}
                     aria-haspopup="dialog"
-                    className="hidden h-9 w-[340px] items-center gap-2.5 rounded-lg border border-input bg-card px-3 text-[13px] text-muted-foreground ring-offset-background transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 lg:flex"
+                    className="hidden h-9 w-[340px] items-center gap-2.5 rounded-lg border border-input bg-card px-3 text-compact text-muted-foreground ring-offset-background transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 lg:flex"
                 >
                     <Search className="h-[15px] w-[15px]" />
                     <span className="flex-1 text-left">Search apps, actions, pages</span>

@@ -34,3 +34,24 @@ export function formatUntil(iso: string, now: number = Date.now()): string {
     if (hours < HOURS_PER_DAY) return `in ${hours}h ${minutes % MINUTES_PER_HOUR}m`
     return `in ${Math.floor(hours / HOURS_PER_DAY)}d ${hours % HOURS_PER_DAY}h`
 }
+
+// A calendar-ish age for a date: "Today", "Yesterday", "3 days ago", then the date itself.
+export function formatDayAgo(dateString: string, now: Date = new Date()): string {
+    const date = new Date(dateString)
+    const diffMs = now.getTime() - date.getTime()
+    const diffDays = Math.floor(diffMs / 86400000)
+
+    if (diffDays === 0) return 'Today'
+    if (diffDays === 1) return 'Yesterday'
+    if (diffDays < 7) return `${diffDays} days ago`
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+// The host of an address, such as "app.example.com", or the text itself when it is not a valid URL.
+export const hostOf = (url: string) => {
+    try {
+        return new URL(url).host
+    } catch {
+        return url
+    }
+}

@@ -33,6 +33,9 @@ function applyThemeClass(actual: ActualTheme) {
     const root = window.document.documentElement
     root.classList.remove('light', 'dark')
     root.classList.add(actual)
+    // The phone's browser bar takes the page background, read from the token so it never drifts from the theme.
+    const background = getComputedStyle(root).getPropertyValue('--background').trim()
+    if (background) document.querySelector('meta[name="theme-color"]')?.setAttribute('content', `hsl(${background})`)
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {

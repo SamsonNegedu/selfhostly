@@ -42,7 +42,7 @@ export function buttonClasses({
     className,
 }: { variant?: Variant; size?: Size; className?: string } = {}) {
     return [
-        'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-[13px] font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:shrink-0',
+        'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-compact font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:shrink-0',
         buttonVariants.variant[variant],
         buttonVariants.size[size],
         className,

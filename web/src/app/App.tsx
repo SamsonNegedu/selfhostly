@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { createBrowserRouter, RouterProvider, Routes, Route, Navigate } from 'react-router-dom'
 import MainLayout from '@/shared/components/layout/MainLayout'
 import { AuthProvider, useAuth } from '@/shared/components/auth/AuthProvider'
 import ServerUnavailable from '@/shared/components/auth/ServerUnavailable'
@@ -41,7 +41,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
     if (isLoading) {
         return (
-            <div className="min-h-screen bg-background flex items-center justify-center">
+            <div className="min-h-dvh bg-background flex items-center justify-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
             </div>
         )
@@ -78,7 +78,7 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
 
     if (isLoading) {
         return (
-            <div className="min-h-screen bg-background flex items-center justify-center">
+            <div className="min-h-dvh bg-background flex items-center justify-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
             </div>
         )
@@ -224,23 +224,32 @@ function AppRoutes() {
     )
 }
 
-function App() {
+// The providers that need to know where the page is. They sit inside the router so they can read the address.
+function AppShell() {
     const { toasts, removeToast } = useToast()
 
     return (
+        <ThemeProvider>
+            <AuthProvider>
+                <NodeContextProvider>
+                    <ErrorBoundary>
+                        <AppRoutes />
+                    </ErrorBoundary>
+                    <ToastContainer toasts={toasts} removeToast={removeToast} />
+                </NodeContextProvider>
+            </AuthProvider>
+        </ThemeProvider>
+    )
+}
+
+// A data router, because blocking navigation away from unsaved edits (useBlocker) needs one. One catch-all route
+// hands the whole address to the <Routes> tree in AppRoutes.
+const router = createBrowserRouter([{ path: '*', element: <AppShell /> }])
+
+function App() {
+    return (
         <>
-            <BrowserRouter>
-                <ThemeProvider>
-                    <AuthProvider>
-                        <NodeContextProvider>
-                            <ErrorBoundary>
-                                <AppRoutes />
-                            </ErrorBoundary>
-                            <ToastContainer toasts={toasts} removeToast={removeToast} />
-                        </NodeContextProvider>
-                    </AuthProvider>
-                </ThemeProvider>
-            </BrowserRouter>
+            <RouterProvider router={router} />
             <Agentation />
         </>
     )

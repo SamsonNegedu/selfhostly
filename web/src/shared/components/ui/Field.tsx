@@ -27,7 +27,7 @@ function Field({ label, hint, error, id, className, children }: FieldProps) {
 
     return (
         <div className={cn('flex flex-col gap-1.5', className)}>
-            <label htmlFor={controlId} className="text-[13px] font-medium">
+            <label htmlFor={controlId} className="text-compact font-medium">
                 {label}
             </label>
             {control}

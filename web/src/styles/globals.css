@@ -6,6 +6,8 @@
     :root {
         /* Height of the phone tab bar including the home indicator, so bars that sit above it stay in step. */
         --mobile-nav-h: calc(68px + env(safe-area-inset-bottom, 0px));
+        /* Clear space kept under the last thing on a page, above the tab bar, on phones. */
+        --mobile-content-gap: 32px;
         --background: 220 20% 97%;
         --foreground: 218 18% 9%;
         --card: 0 0% 100%;
@@ -24,6 +26,8 @@
         --border: 216 17% 89%;
         --input: 216 17% 89%;
         --ring: 243 75% 55%;
+        /* The dim behind dialogs and sheets. Same in both themes so every overlay reads alike. */
+        --scrim: 0 0% 0% / 0.7;
         --status-ok: 156 69% 39%;
         --status-ok-bg: 148 41% 92%;
         --status-ok-fg: 161 81% 23%;
@@ -122,11 +126,29 @@
     * {
         @apply border-border;
     }
+    /* A visible focus ring for anything a keyboard can reach. Components with their own ring classes win over
+       this, so it only catches controls that do not have one. */
+    :where(a, button, summary, [role='button'], [role='tab'], [role='menuitem'], [tabindex]):focus-visible {
+        outline: 2px solid hsl(var(--ring));
+        outline-offset: 2px;
+    }
     body {
         @apply bg-background text-foreground;
         transition:
             background-color 0.2s ease,
             color 0.2s ease;
+    }
+
+    /* Honor the OS setting: cut motion to a single frame. Spinners stay because they say work is in progress. */
+    @media (prefers-reduced-motion: reduce) {
+        *:not(.animate-spin),
+        *:not(.animate-spin)::before,
+        *:not(.animate-spin)::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+            scroll-behavior: auto !important;
+        }
     }
 
     /* Mobile-optimized font sizes */
@@ -138,152 +160,18 @@
 }
 
 @layer components {
-    /* Smooth transitions for interactive elements */
-    .interactive-element {
-        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    /* A bar pinned to the bottom of the page, such as Save or Create. A sticky offset is measured inside the scroll
+       container's padding, and the page already keeps the tab bar's height plus --mobile-content-gap clear there.
+       So on phones the offset only makes up the difference to sit 12px above the tab bar. Using the tab bar's
+       height here as well would count it twice and leave the bar floating mid-page. */
+    .sticky-action-bar {
+        position: sticky;
+        bottom: calc(12px - var(--mobile-content-gap));
     }
-
-    /* Card hover effect - clean with pronounced shadow */
-    .card-hover {
-        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    .card-hover:hover {
-        transform: translateY(-4px);
-        box-shadow:
-            0 10px 25px -5px rgb(0 0 0 / 0.1),
-            0 8px 10px -6px rgb(0 0 0 / 0.1);
-    }
-    .dark .card-hover:hover {
-        box-shadow:
-            0 10px 25px -5px rgb(0 0 0 / 0.3),
-            0 8px 10px -6px rgb(0 0 0 / 0.2);
-    }
-
-    /* Button press effect */
-    .button-press {
-        transition: transform 0.1s ease;
-    }
-    .button-press:active {
-        transform: scale(0.97);
-    }
-
-    /* Fade in animation */
-    @keyframes fadeIn {
-        from {
-            opacity: 0;
-            transform: translateY(10px);
+    @media (min-width: 768px) {
+        .sticky-action-bar {
+            bottom: 1rem;
         }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-    .fade-in {
-        animation: fadeIn 0.3s ease-out;
-    }
-
-    /* Slide in animation */
-    @keyframes slideIn {
-        from {
-            opacity: 0;
-            transform: translateX(-20px);
-        }
-        to {
-            opacity: 1;
-            transform: translateX(0);
-        }
-    }
-    .slide-in {
-        animation: slideIn 0.3s ease-out;
-    }
-
-    /* Scale in animation */
-    @keyframes scaleIn {
-        from {
-            opacity: 0;
-            transform: scale(0.9);
-        }
-        to {
-            opacity: 1;
-            transform: scale(1);
-        }
-    }
-    .scale-in {
-        animation: scaleIn 0.2s ease-out;
-    }
-
-    /* Ripple effect */
-    @keyframes ripple {
-        to {
-            transform: scale(4);
-            opacity: 0;
-        }
-    }
-    .ripple {
-        position: absolute;
-        border-radius: 50%;
-        background: currentColor;
-        opacity: 0.2;
-        animation: ripple 0.6s linear;
-        pointer-events: none;
-    }
-
-    /* Status pulse animation */
-    @keyframes statusPulse {
-        0%,
-        100% {
-            opacity: 1;
-        }
-        50% {
-            opacity: 0.5;
-        }
-    }
-    .status-pulse {
-        animation: statusPulse 2s ease-in-out infinite;
-    }
-
-    /* Progress bar animation */
-    @keyframes progressStripes {
-        0% {
-            background-position: 1rem 0;
-        }
-        100% {
-            background-position: 0 0;
-        }
-    }
-    .progress-animated {
-        background-image: linear-gradient(
-            45deg,
-            rgba(255, 255, 255, 0.15) 25%,
-            transparent 25%,
-            transparent 50%,
-            rgba(255, 255, 255, 0.15) 50%,
-            rgba(255, 255, 255, 0.15) 75%,
-            transparent 75%,
-            transparent
-        );
-        background-size: 1rem 1rem;
-        animation: progressStripes 1s linear infinite;
-    }
-
-    /* Staggered animation delays */
-    .stagger-1 {
-        animation-delay: 0.1s;
-    }
-    .stagger-2 {
-        animation-delay: 0.2s;
-    }
-    .stagger-3 {
-        animation-delay: 0.3s;
-    }
-    .stagger-4 {
-        animation-delay: 0.4s;
-    }
-    .stagger-5 {
-        animation-delay: 0.5s;
-    }
-    .stagger-6 {
-        animation-delay: 0.6s;
     }
 
     /* Hide scrollbar utility */

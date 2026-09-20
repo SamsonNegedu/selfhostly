@@ -11,8 +11,8 @@ const SheetClose = DialogPrimitive.Close
 type SheetSide = 'bottom' | 'right'
 
 const SIDE_CLASSES: Record<SheetSide, string> = {
-    bottom: 'inset-x-0 bottom-0 rounded-t-[20px] border-t px-4 pb-7 pt-3',
-    right: 'inset-y-0 right-0 h-full w-full max-w-sm border-l p-6',
+    bottom: 'inset-x-0 bottom-0 rounded-t-[20px] border-t px-4 pb-7 pt-3 data-[state=open]:animate-sheet-bottom-in data-[state=closed]:animate-sheet-bottom-out',
+    right: 'inset-y-0 right-0 h-full w-full max-w-sm border-l p-6 data-[state=open]:animate-sheet-right-in data-[state=closed]:animate-sheet-right-out',
 }
 
 interface SheetContentProps extends React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> {
@@ -23,7 +23,7 @@ interface SheetContentProps extends React.ComponentPropsWithoutRef<typeof Dialog
 const SheetContent = React.forwardRef<React.ElementRef<typeof DialogPrimitive.Content>, SheetContentProps>(
     ({ side = 'bottom', className, children, ...props }, ref) => (
         <DialogPrimitive.Portal>
-            <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/65" />
+            <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-scrim data-[state=open]:animate-overlay-in data-[state=closed]:animate-overlay-out" />
             <DialogPrimitive.Content
                 ref={ref}
                 className={cn(

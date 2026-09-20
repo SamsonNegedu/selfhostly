@@ -43,7 +43,7 @@ function UpdateProgress() {
                 )}
                 <Link
                     to={UPDATES_ADDRESS}
-                    className="inline-flex min-h-[44px] items-center text-[13px] font-medium hover:underline md:min-h-0"
+                    className="inline-flex min-h-[44px] items-center text-compact font-medium hover:underline md:min-h-0"
                 >
                     Details
                 </Link>

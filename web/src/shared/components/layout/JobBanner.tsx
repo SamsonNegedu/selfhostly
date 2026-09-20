@@ -28,7 +28,7 @@ function JobBanner() {
                                 {(job && VERBS[job.type]) ?? 'Working on'}{' '}
                                 <Link
                                     to={appHref(app)}
-                                    className="inline-flex min-h-[44px] items-center font-semibold hover:underline md:min-h-0"
+                                    className="inline-flex min-h-[44px] min-w-[44px] items-center font-semibold hover:underline md:min-h-0 md:min-w-0"
                                 >
                                     {app.name}
                                 </Link>

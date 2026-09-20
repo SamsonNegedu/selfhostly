@@ -35,7 +35,7 @@ function SegmentedControl({ options, value, onValueChange, className, ...props }
                 <RadioGroupPrimitive.Item
                     key={option.value}
                     value={option.value}
-                    className="inline-flex h-[30px] min-h-[44px] min-w-[44px] items-center justify-center gap-2 whitespace-nowrap rounded-md px-3 text-[13px] font-medium text-muted-foreground ring-offset-background transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground sm:min-h-0 sm:min-w-0"
+                    className="inline-flex h-[30px] min-h-[44px] min-w-[44px] items-center justify-center gap-2 whitespace-nowrap rounded-md px-3 text-compact font-medium text-muted-foreground ring-offset-background transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground sm:min-h-0 sm:min-w-0"
                 >
                     {option.icon}
                     {option.label}

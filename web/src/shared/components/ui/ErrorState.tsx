@@ -11,6 +11,8 @@ interface ErrorStateProps {
     description?: string
     onRetry?: () => void
     retryLabel?: string
+    // 2 inside a page that has its own title. 1 when this is the whole page.
+    headingLevel?: 1 | 2
     className?: string
     children?: React.ReactNode
 }
@@ -22,9 +24,11 @@ function ErrorState({
     description,
     onRetry,
     retryLabel = 'Try again',
+    headingLevel = 2,
     className,
     children,
 }: ErrorStateProps) {
+    const Heading = headingLevel === 1 ? 'h1' : 'h2'
     return (
         <div
             role="alert"
@@ -37,7 +41,7 @@ function ErrorState({
                 <AlertTriangle className="h-5 w-5" />
             </div>
             <div className="flex max-w-xl flex-col gap-1">
-                <h2 className="text-lg font-semibold">{title}</h2>
+                <Heading className="text-lg font-semibold">{title}</Heading>
                 <p className="text-sm text-muted-foreground">{description ?? describeError(error)}</p>
             </div>
             {children}

@@ -56,7 +56,7 @@ function Terminal({ lines, className, follow = false, ...props }: TerminalProps)
             tabIndex={0}
             aria-label={props['aria-label']}
             className={cn(
-                'overflow-auto rounded-[10px] bg-terminal px-4 py-3.5 font-mono text-[12px] leading-5 text-terminal-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:text-[12.5px]',
+                'overflow-auto rounded-[10px] bg-terminal px-4 py-3.5 font-mono text-detail leading-5 text-terminal-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:text-compact',
                 className,
             )}
         >

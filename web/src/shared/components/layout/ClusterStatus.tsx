@@ -31,7 +31,7 @@ function ClusterStatus({ collapsed }: ClusterStatusProps) {
 
     return (
         <div className="rounded-lg border border-border bg-card p-3" role="status">
-            <div className="flex items-center gap-2 text-[13px] font-semibold">
+            <div className="flex items-center gap-2 text-compact font-semibold">
                 <StatusDot kind={kind} />
                 {headline}
             </div>

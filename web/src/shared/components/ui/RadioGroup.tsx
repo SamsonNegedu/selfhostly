@@ -54,8 +54,8 @@ const RadioCard = React.forwardRef<React.ElementRef<typeof RadioGroupPrimitive.I
             >
                 <RadioGroupItem ref={ref} id={itemId} className="mt-0.5" {...props} />
                 <span className="flex flex-col">
-                    <span className="text-[13.5px] font-medium">{title}</span>
-                    {description && <span className="text-[12.5px] text-muted-foreground">{description}</span>}
+                    <span className="text-compact font-medium">{title}</span>
+                    {description && <span className="text-compact text-muted-foreground">{description}</span>}
                 </span>
             </label>
         )
