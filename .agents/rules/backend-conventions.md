@@ -47,5 +47,5 @@ sessions, read the audit log or open the event stream use `denyNodeAuthMiddlewar
 3. Route in `routes.go` with the right auth middleware.
 4. `auditRoutes` entry if it changes state.
 5. Test through `newTestServer` in `internal/http`.
-6. Web hook in `web/src/shared/services/api.ts` and a type in `types/api.ts`.
+6. Web hook in the matching file under `web/src/shared/services/api/` and a type in `types/api.ts`.
 7. Amend `AGENTS.md` or `docs/` if behavior a reader relies on changed.

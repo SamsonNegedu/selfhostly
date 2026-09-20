@@ -114,7 +114,7 @@ go build -o bin/gateway ./cmd/gateway
 ```
 
 Images: `Dockerfile.backend` (primary and secondary), `Dockerfile.gateway`, `web/Dockerfile` (frontend),
-`Dockerfile.dev` (live reload). `go test ./...` and `cd web && npm run lint` are the checks.
+`Dockerfile.dev` (live reload). `go test ./...` and `cd web && npm run lint && npm test` are the checks. The web tests (`web/tests/`) cover the pure logic behind the screens and run on Node's built-in test runner, so there is nothing to install.
 
 The command line tool has its own build (`make ctl` gives `bin/selfhostlyctl`). After changing one of its commands or
 flags, run `make docs` to regenerate [the reference](../reference/selfhostlyctl.md). Deployment-path tests:
