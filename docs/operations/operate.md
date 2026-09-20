@@ -35,6 +35,56 @@ Edited `.env`? Use `upgrade`, not `docker compose restart`: restart keeps the ol
 | Several Selfhostly containers run here | It asks which. In scripts pass `--container NAME`. |
 | A new `selfhostlyctl` behaviour is needed | Run `selfhostlyctl self-update` (add `sudo` if it lives in `/usr/local/bin`). `--check` only reports. `upgrade` does not update the tool, but ends with a note when a newer one exists (silent offline or with `SELFHOSTLYCTL_NO_UPDATE_CHECK=1`). `selfhostlyctl version` shows what you have. |
 
+## Update from the UI
+
+Settings, Updates does what `selfhostlyctl upgrade` does, from the browser. It is off by default. Design and threat
+model: [ui-updates.md](../design/ui-updates.md).
+
+**Turn it on** in `.env`, then `selfhostlyctl upgrade --set UI_UPDATES_ENABLED=true`:
+
+| Setting | Meaning |
+|---|---|
+| `UI_UPDATES_ENABLED=true` | Turns the feature on. Needs `AUTH_ENABLED=true` and the Docker socket (not the socket proxy). |
+| `UPDATE_PUBLIC_KEY` | The base64 ed25519 key releases must be signed with. Empty uses the key built into the release. |
+| `UPDATE_MANIFEST_URL`, `UPDATE_IMAGE_REPO_PREFIX`, `UPDATE_CHECK_INTERVAL_HOURS` | Where releases are published, which repository their images must live in, and how often to look. The defaults are right for the official releases. |
+
+The compose file has to pass these on (the current `docker-compose.prod.yml` does). Until it does, `--set` refuses with
+"your compose file never reads ...": update the compose file first (below).
+
+**When updates appear.** Every push to main that changes the gateway, backend or frontend is published as a release,
+numbered `1.0.<commits on main>`. Nobody tags anything. Your install checks every `UPDATE_CHECK_INTERVAL_HOURS` (6 by
+default), or straight away with **Check for updates**. Installs from before this feature have no updater: move them once with
+`selfhostlyctl upgrade`, and from then on they update from the UI. How releases are built and signed:
+[ui-updates.md](../design/ui-updates.md#releases).
+
+**Use it.** An "Update available" badge appears in the header. In Settings, Updates:
+
+1. **Review** pulls the release's backend image by digest and checks it against your install: a running deployment, the
+   compose file, and any new settings.
+2. **Fill in** what the release needs. Values only you know are asked for. Secrets it can generate are listed and created
+   for you. A compose file that is just an older stock file shows its diff and needs your approval.
+3. **Update now** asks you to type the version. A short-lived updater container then runs the same steps as `upgrade`.
+   The UI is unavailable for 10 to 30 seconds while the primary is replaced, then reconnects by itself.
+
+If the new version does not become healthy, or `doctor` reports a failure after it starts, it rolls back by itself and the
+screen says why. If the updater is killed halfway (a reboot, an out-of-memory kill), the screen shows the run as
+interrupted after the next start and offers **Roll back** or **Review and retry**.
+
+| The screen says | What to do |
+|---|---|
+| Blocked: a deployment is running | Wait for it to finish. The blocker clears by itself. |
+| Blocked: your compose file has edits the release would drop | Merge by hand: `selfhostlyctl compose-diff` shows what would be lost. Then review again. |
+| Blocked: needs values | Type them in the form. They are written to `.env`. |
+| Blocked: socket proxy | Not supported yet. Update with `selfhostlyctl upgrade`. |
+| Rolled back | The reason is on the screen. The old version runs. Fix it, or wait for the next release. |
+| Interrupted | Roll back, or review and retry. A stale lock is cleared by the next run. |
+
+The rollback button restores the state saved before the last update: images, `.env`, the compose file. It keeps the
+database, because an older backend runs on a migrated database. Your apps are never touched.
+
+Only a signed-in user can start an update. Node credentials cannot, and every action is in the activity log. Releases that
+are not signed with the trusted key are refused, and so is any image outside the trusted repository.
+
 ## Coming from an install that predates `selfhostlyctl`
 
 Your install keeps running and your apps are never touched. In the folder with your compose file, `.env` and `data/`:

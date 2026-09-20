@@ -459,6 +459,10 @@ func (s *Server) listApps(c *gin.Context) {
 		s.handleServiceError(c, "list apps", err)
 		return
 	}
+	// an install with no apps answers [], never null: the UI calls .filter on the list
+	if apps == nil {
+		apps = []*db.App{}
+	}
 
 	c.JSON(http.StatusOK, apps)
 }

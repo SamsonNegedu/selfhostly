@@ -53,7 +53,10 @@ type stack struct {
 	primaryHealthy  bool
 	dryStartFails   bool
 	ignoresSettings bool // the compose file never reads any variable: rendering does not change with them
-	unchanged       bool // the running containers already match the images and configuration
+	// only the compose file whose path contains this text ignores settings, so a test can move from an old file to a
+	// current one
+	ignoresSettingsIn string
+	unchanged         bool // the running containers already match the images and configuration
 }
 
 func (st *stack) handle(cmd string) (string, bool) {
@@ -71,7 +74,8 @@ func (st *stack) handle(cmd string) (string, bool) {
 		}
 		return "sha256:new\n", false
 	case strings.HasSuffix(strings.Fields(cmd)[len(strings.Fields(cmd))-1], "config") || strings.Contains(cmd, " config ENV:"):
-		if strings.Contains(cmd, "ENV:") && !st.ignoresSettings {
+		ignores := st.ignoresSettings || (st.ignoresSettingsIn != "" && strings.Contains(cmd, st.ignoresSettingsIn))
+		if strings.Contains(cmd, "ENV:") && !ignores {
 			return "rendered-with-the-variable-set", false
 		}
 		return "rendered", false
@@ -79,6 +83,8 @@ func (st *stack) handle(cmd string) (string, bool) {
 		return "pc\n", false
 	case strings.Contains(cmd, "ps -q gateway"):
 		return "gc\n", false
+	case strings.Contains(cmd, "ps -q frontend"):
+		return "fc\n", false
 	case strings.Contains(cmd, "State.Health"):
 		if strings.HasSuffix(cmd, " pc") && !st.primaryHealthy {
 			return "starting\n", false
@@ -299,5 +305,36 @@ func TestUpgradeListsRecommendedSettingsThatAreMissing(t *testing.T) {
 	}
 	if env, _ := os.ReadFile(filepath.Join(a.Dir, ".env")); strings.Contains(string(env), "ENCRYPT_SECRETS_AT_REST") {
 		t.Fatal("recommendations are only reported, never written")
+	}
+}
+
+// Turning on a new setting on an install whose compose file predates it is one upgrade: the current compose file is
+// named with --compose, and the setting is checked against that file, not the one the install runs today.
+func TestUpgradeSetsANewSettingInOneRunWhenSwitchingToACurrentComposeFile(t *testing.T) {
+	const oldFile = "docker-compose.old.yml"
+	a, sc, out := upgradeApp(t, &stack{primaryHealthy: true, ignoresSettingsIn: oldFile})
+	os.WriteFile(filepath.Join(a.Dir, oldFile), []byte("services: {}\n"), 0o600)
+
+	// the old file alone refuses the setting and changes nothing
+	err := runCLI(a, "upgrade", "--project", "p", "--compose", oldFile, "--set", "UI_UPDATES_ENABLED=true", "--health-timeout", "2")
+	if err == nil || !strings.Contains(err.Error(), "never reads UI_UPDATES_ENABLED") {
+		t.Fatalf("the old file must refuse the setting, got %v\n%s", err, out)
+	}
+	if sc.index("stop primary") >= 0 {
+		t.Fatal("it must refuse before touching anything")
+	}
+
+	// naming the current file in the same run is accepted and the setting is written
+	if err := runCLI(a, "upgrade", "--project", "p", "--compose", "docker-compose.prod.yml", "--pull", "--with-frontend", "--set", "UI_UPDATES_ENABLED=true", "--health-timeout", "4"); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if env, _ := os.ReadFile(filepath.Join(a.Dir, ".env")); !strings.Contains(string(env), "UI_UPDATES_ENABLED=true") {
+		t.Fatalf("the setting was not written: %q", env)
+	}
+	if sc.index("up -d --no-deps primary") < 0 {
+		t.Fatal("the primary was not recreated")
+	}
+	if sc.index(" pull ") < 0 {
+		t.Fatal("--pull must fetch the new images even with --set")
 	}
 }

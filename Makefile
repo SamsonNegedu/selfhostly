@@ -7,6 +7,7 @@
 #   NOAIR=1                 run with `go run` instead of Air hot reload
 #   SERVICE=backend         limit `dev` and `logs` to one Docker service
 #   ARGS=-v                 extra flags for `make test`
+#   OLD_REF=<commit>        for `make e2e-update`: the version the install runs today (SKIP_BUILD=1, KEEP=1 also work)
 #
 # Two nodes on one machine: `make backend ENV_FILE=.env.primary` in one terminal,
 # `make backend ENV_FILE=.env.secondary` in another.
@@ -20,10 +21,10 @@ BACKEND_RUN = $(if $(NOAIR),go run ./cmd/server,air)
 GATEWAY_RUN = $(if $(NOAIR),go run ./cmd/gateway,air -c .air-gateway.toml)
 
 .DEFAULT_GOAL := help
-.PHONY: help dev backend gateway frontend prod down clean logs test ctl docs
+.PHONY: help dev backend gateway frontend prod down clean logs test ctl docs e2e-update
 
 help: ## Show this help
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-10s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 # --- Run in Docker -----------------------------------------------------------
 
@@ -62,7 +63,11 @@ docs: ## Regenerate docs/reference/selfhostlyctl.md from the command definitions
 ctl: ## Build the selfhostlyctl command line into bin/
 	go build -ldflags "-X github.com/selfhostly/internal/ctl.Version=$(shell git describe --tags --always --dirty 2>/dev/null || echo dev)" -o bin/selfhostlyctl ./cmd/selfhostlyctl
 
+e2e-update: ## Build production images locally and test the UI-driven update in a browser (OLD_REF=, SKIP_BUILD=1, KEEP=1)
+	scripts/e2e/run.sh all
+
 clean: ## Remove containers, volumes and build output
+	-scripts/e2e/run.sh purge
 	$(DC) -f docker-compose.dev.yml down -v
 	$(DC) -f docker-compose.prod.yml down -v
 	rm -rf tmp tmp-gateway build-errors.log build-errors-gateway.log

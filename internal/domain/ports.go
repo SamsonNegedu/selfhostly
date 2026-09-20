@@ -7,6 +7,7 @@ import (
 	"github.com/selfhostly/internal/db"
 	"github.com/selfhostly/internal/system"
 	"github.com/selfhostly/internal/tunnel"
+	"github.com/selfhostly/internal/update"
 )
 
 // ============================================================================
@@ -125,6 +126,17 @@ type SystemService interface {
 	RestartContainer(ctx context.Context, containerID, nodeID string) error
 	StopContainer(ctx context.Context, containerID, nodeID string) error
 	DeleteContainer(ctx context.Context, containerID, nodeID string) error
+}
+
+// UpdateService defines the primary port for updating Selfhostly itself from the UI
+type UpdateService interface {
+	// Start marks an unfinished run interrupted, then checks for releases on a schedule until ctx ends
+	Start(ctx context.Context)
+	View(ctx context.Context) update.View
+	Check(ctx context.Context) error
+	Review(version string) error
+	Apply(ctx context.Context, req update.ApplyRequest) (*update.Run, error)
+	Rollback(ctx context.Context) (*update.Run, error)
 }
 
 // ComposeService defines the primary port for compose version management

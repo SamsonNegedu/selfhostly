@@ -366,3 +366,26 @@ func TestUnreadableAppTokenIsAnErrorNotAnEmptyToken(t *testing.T) {
 		t.Fatal("expected an error for a token that cannot be decrypted")
 	}
 }
+
+func TestCountActiveJobsCountsPendingAndRunningOnly(t *testing.T) {
+	database, _ := newTestDB(t)
+	if n, err := database.CountActiveJobs(); err != nil || n != 0 {
+		t.Fatalf("no jobs: %d %v", n, err)
+	}
+	app := NewApp("demo", "", "services: {}")
+	if err := database.CreateApp(app); err != nil {
+		t.Fatal(err)
+	}
+	for _, status := range []string{"pending", "running", "completed", "failed"} {
+		job := NewJob("app_update", app.ID, nil)
+		if err := database.CreateJob(job); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := database.Exec(`UPDATE jobs SET status = ? WHERE id = ?`, status, job.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n, err := database.CountActiveJobs(); err != nil || n != 2 {
+		t.Fatalf("want 2 (pending and running), got %d %v", n, err)
+	}
+}

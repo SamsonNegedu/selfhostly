@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/selfhostly/internal/update"
 	"github.com/spf13/cobra"
 )
 
@@ -41,6 +42,30 @@ type upgradeOpts struct {
 	rollbackTo, project  string
 	healthTimeout        int
 	compose              []string
+
+	// Set by the updater that the UI starts, never by flags. strict makes a doctor failure or a failed database
+	// copy roll back. progress reports each phase. configure runs after the rollback point is saved and before
+	// anything is pulled: it may edit the settings file and the compose file, and rollback restores both.
+	strict    bool
+	progress  func(phase, message string)
+	configure func(ctx context.Context, u *upgrader) error
+}
+
+// upgradeFailure is how upgrade reports a failure after it started changing things. rolledBack says whether
+// the previous state was restored, so the caller can tell "rolled back" from "left broken".
+type upgradeFailure struct {
+	msg         string
+	rolledBack  bool
+	rollbackErr error
+}
+
+func (f *upgradeFailure) Error() string { return f.msg }
+
+// phase tells the caller which step is starting
+func (u *upgrader) phase(name, message string) {
+	if u.o.progress != nil {
+		u.o.progress(name, message)
+	}
 }
 
 func (a *App) upgradeCmd() *cobra.Command {
@@ -165,6 +190,14 @@ func (a *App) rollbackCmd(ctx context.Context, o upgradeOpts) error {
 	return u.doRollback(ctx, stamp, dir)
 }
 
+// restoreEnv puts back the settings file saved in the rollback point
+func (u *upgrader) restoreEnv(dir string) {
+	if b, err := os.ReadFile(filepath.Join(dir, "env")); err == nil {
+		_ = os.WriteFile(u.env.Path, b, 0o600)
+		u.a.say("  restored %s", u.env.Path)
+	}
+}
+
 func (u *upgrader) doRollback(ctx context.Context, stamp, dir string) error {
 	a := u.a
 	a.say("rolling back to the state saved as %s", stamp)
@@ -174,6 +207,8 @@ func (u *upgrader) doRollback(ctx context.Context, stamp, dir string) error {
 		}
 		a.say("  restored %s", u.env.Path)
 	}
+	u.restoreCompose(dir)
+	ok := true
 	if f, err := os.Open(filepath.Join(dir, "images")); err == nil {
 		sc := bufio.NewScanner(f)
 		for sc.Scan() {
@@ -186,14 +221,18 @@ func (u *upgrader) doRollback(ctx context.Context, stamp, dir string) error {
 				a.say("  %s is pinned by digest (%s): nothing to retag; change the *_IMAGE line in %s to go back", svc, image, u.env.Path)
 				continue
 			}
-			if _, _, err := a.Run.Output(ctx, "docker", "tag", u.prefix+"/"+svc+":"+stamp, image); err == nil {
-				a.say("  %s image restored to its previous build", svc)
+			if _, _, err := a.Run.Output(ctx, "docker", "tag", u.prefix+"/"+svc+":"+stamp, image); err != nil {
+				// recreating now would start the new image again, and a healthy new image is not a rollback
+				a.say("  %s image could NOT be restored to its previous build (%s)", svc, u.prefix+"/"+svc+":"+stamp)
+				ok = false
+				continue
 			}
+			a.say("  %s image restored to its previous build", svc)
 		}
 		_ = f.Close()
 	}
-	ok := true
 	for _, s := range u.services {
+		u.phase(s, "restoring the last saved state")
 		if _, _, err := u.dc.out(ctx, "up", "-d", "--no-deps", "--force-recreate", s); err != nil {
 			ok = false
 		}
@@ -283,20 +322,20 @@ func (a *App) upgrade(ctx context.Context, o upgradeOpts) (err error) {
 	if err := os.MkdirAll(a.stateRoot(), 0o700); err != nil {
 		return err
 	}
-	lock := filepath.Join(a.stateRoot(), ".lock")
-	if err := os.Mkdir(lock, 0o700); err != nil {
-		return fmt.Errorf("another upgrade is running (remove %s if it is stale)", lock)
+	lock := filepath.Join(a.stateRoot(), lockName)
+	if err := a.acquireLock(ctx, lock); err != nil {
+		return err
 	}
 	stamp := a.now()
 	lastBefore, _ := os.ReadFile(filepath.Join(a.stateRoot(), "last"))
 	dir := filepath.Join(a.stateRoot(), stamp)
 	if err := os.MkdirAll(filepath.Join(dir, "backup"), 0o700); err != nil {
-		_ = os.Remove(lock)
+		_ = os.RemoveAll(lock)
 		return err
 	}
 	primaryStopped, finished := false, false
 	defer func() {
-		_ = os.Remove(lock)
+		_ = os.RemoveAll(lock)
 		if !finished && primaryStopped {
 			a.say("the primary was stopped before the command finished: starting it again")
 			_, _, _ = u.dc.out(context.Background(), "start", "primary")
@@ -305,19 +344,28 @@ func (a *App) upgrade(ctx context.Context, o upgradeOpts) (err error) {
 
 	// 2. rollback point
 	a.step("2/7: saving a rollback point (%s)", stamp)
+	u.phase(update.PhaseRollbackPoint, "")
 	if err := u.saveRollbackPoint(ctx, stamp, dir); err != nil {
 		return err
 	}
 	fail := func(msg string) error {
 		a.say("\nFAILED: %s", msg)
 		finished = true
+		f := &upgradeFailure{msg: msg}
 		if o.noRollback {
 			a.say("left as is. Roll back with: selfhostlyctl upgrade --rollback")
 		} else {
-			_ = u.doRollback(ctx, stamp, dir)
+			f.rollbackErr = u.doRollback(ctx, stamp, dir)
+			f.rolledBack = f.rollbackErr == nil
 		}
-		return errors.New(msg)
+		return f
 	}
+	// undoConfig puts the settings and compose files back when nothing running has been touched yet
+	undoConfig := func() {
+		u.restoreEnv(dir)
+		u.restoreCompose(dir)
+	}
+	u.phase(update.PhaseConfigure, "")
 	for _, kv := range o.sets {
 		k, v, _ := strings.Cut(kv, "=")
 		if err := u.env.Set(k, v); err != nil {
@@ -325,17 +373,33 @@ func (a *App) upgrade(ctx context.Context, o upgradeOpts) (err error) {
 		}
 		a.say("  set %s", k)
 	}
+	if o.configure != nil {
+		if err := o.configure(ctx, u); err != nil {
+			undoConfig()
+			u.discardRollbackPoint(ctx, stamp, dir, lastBefore)
+			finished = true
+			a.say("\nFAILED: %v", err)
+			return err
+		}
+	}
 
 	// 3. pull and dry start
 	a.step("3/7: images")
+	u.phase(update.PhasePull, "")
 	if pull {
 		if err := u.dc.pass(ctx, append([]string{"pull"}, u.services...)...); err != nil {
-			return fail("could not pull images (nothing was changed on the running system)")
+			// nothing running has been touched yet, so a rollback would only restart healthy containers
+			undoConfig()
+			u.discardRollbackPoint(ctx, stamp, dir, lastBefore)
+			finished = true
+			a.say("\nFAILED: could not pull images")
+			return errors.New("could not pull images (nothing was changed on the running system)")
 		}
 	} else {
 		a.say("  not pulling")
 	}
 	a.say("  dry start: checking that the new image will start with this configuration")
+	u.phase(update.PhaseDryStart, "")
 	if _, _, err := u.dc.out(ctx, "run", "--rm", "--no-deps", "-T", "--entrypoint", "sh", "primary", "-c", `grep -q "selfhostly doctor" ./selfhostly`); err != nil {
 		a.say("  this image has no 'doctor' command (older build): skipping the dry start")
 	} else {
@@ -350,10 +414,7 @@ func (a *App) upgrade(ctx context.Context, o upgradeOpts) (err error) {
 			}
 			if !o.force {
 				// nothing has been stopped or recreated yet, so only the settings edits need undoing
-				if b, err := os.ReadFile(filepath.Join(dir, "env")); err == nil {
-					_ = os.WriteFile(u.env.Path, b, 0o600)
-					a.say("  restored %s", u.env.Path)
-				}
+				undoConfig()
 				finished = true
 				a.say("\nABORTED before any change to the running system: fix the problems above, or pass --force")
 				return errAborted
@@ -374,11 +435,16 @@ func (a *App) upgrade(ctx context.Context, o upgradeOpts) (err error) {
 
 	// 4. database copy
 	a.step("4/7: database copy")
+	u.phase(update.PhaseDatabase, "")
 	_, _, _ = u.dc.out(ctx, "stop", "primary")
 	primaryStopped = true
 	if dbErr == nil {
 		for _, suffix := range []string{"", "-wal", "-shm"} {
 			if err := copyFile(db+suffix, filepath.Join(dir, "backup", filepath.Base(db)+suffix)); err != nil && suffix == "" {
+				if o.strict {
+					// an update started from the UI has nobody watching: no copy, no change
+					return fail(fmt.Sprintf("could not copy the database (%v), so nothing was changed", err))
+				}
 				a.say("  warning: could not copy the database: %v", err)
 			}
 		}
@@ -389,6 +455,7 @@ func (a *App) upgrade(ctx context.Context, o upgradeOpts) (err error) {
 
 	// 5. primary
 	a.step("5/7: primary")
+	u.phase(update.PhasePrimary, "")
 	if _, _, err := u.dc.out(ctx, "up", "-d", "--no-deps", "primary"); err != nil {
 		return fail("the primary could not be recreated")
 	}
@@ -416,6 +483,9 @@ func (a *App) upgrade(ctx context.Context, o upgradeOpts) (err error) {
 		for _, l := range lines {
 			a.say("    %s", l)
 		}
+		if o.strict && strings.Contains(so+se, "FAIL") {
+			return fail("the new version started but doctor reports failures: " + truncate(strings.Join(lines, "; "), 300))
+		}
 	default:
 		a.say("  doctor is not available in the previous build (expected on the first upgrade)")
 	}
@@ -423,6 +493,7 @@ func (a *App) upgrade(ctx context.Context, o upgradeOpts) (err error) {
 	// 6. gateway (and frontend)
 	a.step("6/7: gateway")
 	for _, s := range u.services[1:] {
+		u.phase(s, "")
 		if _, _, err := u.dc.out(ctx, "up", "-d", "--no-deps", s); err != nil {
 			return fail(s + " could not be recreated")
 		}
@@ -434,6 +505,7 @@ func (a *App) upgrade(ctx context.Context, o upgradeOpts) (err error) {
 
 	// 7. apps
 	a.step("7/7: checking your apps were not disturbed")
+	u.phase(update.PhaseApps, "")
 	after := setOf(u.otherContainers(ctx))
 	var missing []string
 	for _, n := range othersBefore {
@@ -538,6 +610,9 @@ func (u *upgrader) saveRollbackPoint(ctx context.Context, stamp, dir string) err
 		if err := copyFile(u.env.Path, filepath.Join(dir, "env")); err != nil {
 			return err
 		}
+	}
+	if err := u.saveComposeFiles(dir); err != nil {
+		return err
 	}
 	return os.WriteFile(filepath.Join(a.stateRoot(), "last"), []byte(stamp+"\n"), 0o600)
 }

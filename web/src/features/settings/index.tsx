@@ -5,6 +5,7 @@ import ActivitySection from './sections/ActivitySection'
 import AppearanceSection from './sections/AppearanceSection'
 import GeneralSection from './sections/GeneralSection'
 import TunnelProviderSection from './sections/TunnelProviderSection'
+import UpdatesSection from './sections/UpdatesSection'
 
 const SECTIONS = [
     { id: 'tunnel', label: 'Tunnel provider' },
@@ -12,6 +13,7 @@ const SECTIONS = [
     { id: 'appearance', label: 'Appearance' },
     { id: 'account', label: 'Sign in' },
     { id: 'activity', label: 'Activity' },
+    { id: 'updates', label: 'Updates' },
 ] as const
 
 type SectionId = (typeof SECTIONS)[number]['id']
@@ -53,6 +55,9 @@ function Settings() {
                 </TabsContent>
                 <TabsContent value="activity">
                     <ActivitySection />
+                </TabsContent>
+                <TabsContent value="updates">
+                    <UpdatesSection />
                 </TabsContent>
             </Tabs>
         </div>

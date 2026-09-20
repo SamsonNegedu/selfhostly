@@ -27,7 +27,13 @@ const (
 type diffOpts struct {
 	newFile, envFile, apply string
 	showSecrets             bool
+	// result, when set, receives what the report found, so a caller need not parse the text
+	result *diffResult
 }
+
+// diffResult counts what compose-diff found. Pending lines are carry-overs the env file does not have yet:
+// they are fixed by --apply, unlike lost and conflicts, which need a person.
+type diffResult struct{ Lost, Conflicts, Pending int }
 
 // errNeedsAttention gives compose-diff its exit status 1: something would be lost or needs a decision
 var errNeedsAttention = fmt.Errorf("something would be lost")
@@ -388,6 +394,9 @@ func (a *App) composeDiff(ctx context.Context, oldFile string, o diffOpts) error
 		a.say("")
 	}
 
+	if o.result != nil {
+		*o.result = diffResult{Lost: len(lost), Conflicts: len(conflicts), Pending: len(pending)}
+	}
 	if o.apply != "" && len(pending) > 0 {
 		env := EnvFile{o.apply}
 		var names []string

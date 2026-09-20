@@ -20,6 +20,7 @@ const (
 	targetContainer = "container"
 	targetSettings  = "settings"
 	targetSessions  = "sessions"
+	targetUpdate    = "update"
 )
 
 // auditRoutes maps "METHOD route-pattern" to what it does. A route that is not listed is still recorded, with
@@ -53,6 +54,10 @@ var auditRoutes = map[string]auditRoute{
 	"POST /api/nodes/:id/check":                      {"node.check", targetNode, "id"},
 	"POST /api/nodes/register":                       {"node.join", targetNode, ""},
 	"POST /api/security/revoke-sessions":             {"session.revoke_all", targetSessions, ""},
+	"POST /api/system/update/check":                  {"update.check", targetUpdate, ""},
+	"POST /api/system/update/plan":                   {"update.plan", targetUpdate, ""},
+	"POST /api/system/update/apply":                  {"update.apply", targetUpdate, ""},
+	"POST /api/system/update/rollback":               {"update.rollback", targetUpdate, ""},
 }
 
 const auditTargetKey = "audit_target"

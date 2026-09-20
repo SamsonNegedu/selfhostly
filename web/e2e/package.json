@@ -1,0 +1,13 @@
+{
+    "name": "selfhostly-e2e",
+    "private": true,
+    "description": "Browser tests for the UI-driven update. Kept apart from web/package.json so the frontend image build (npm ci) never installs a browser test runner. Run through scripts/e2e/run.sh.",
+    "type": "module",
+    "scripts": {
+        "test": "playwright test -c playwright.config.ts"
+    },
+    "devDependencies": {
+        "@playwright/test": "^1.49.0",
+        "@types/node": "^24.13.6"
+    }
+}
