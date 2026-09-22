@@ -14,7 +14,12 @@
 # =============================================================================
 
 # Build Stage
-FROM golang:1.26-alpine AS builder
+#
+# Built with --platform=$BUILDPLATFORM so this stage runs on the machine doing the build, not the target
+# (arm64). CGO_ENABLED=0 below means the actual cross-compiling is just GOARCH, which the Go toolchain
+# does natively and fast; the slow part was ever running the compiler itself under emulation (QEMU on
+# CI's amd64 runners) just because the base image matched the target platform instead of the builder's.
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
 
 WORKDIR /app
 
@@ -22,7 +27,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 
 # Download dependencies (cached layer)
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 # Copy only necessary source files (respects .dockerignore)
 COPY cmd/ ./cmd/
@@ -30,7 +35,8 @@ COPY internal/ ./internal/
 
 # Build gateway binary (no CGO needed with modernc.org/sqlite)
 ARG TARGETARCH
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -o gateway cmd/gateway/main.go
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build,id=go-build-${TARGETARCH} \
+    CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -o gateway cmd/gateway/main.go
 
 # Production Stage - Minimal runtime
 FROM alpine:latest
