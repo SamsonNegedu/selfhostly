@@ -12,7 +12,7 @@ import type { App } from '@/shared/types/api'
 import { readEnv, readServiceNames, removeEnv, setEnv } from '../lib/compose-env'
 import { envChecks, rawEnvLines } from '../lib/env-view'
 import { useSaveCompose } from '../hooks/useSaveCompose'
-import ComposeChecks from './ComposeChecks'
+import { ComposeCheckList } from './ComposeChecks'
 import { AddVariableDialog, ImportDialog } from './EnvDialogs'
 import EnvTable from './EnvTable'
 import SaveBar from './SaveBar'
@@ -103,7 +103,9 @@ function EnvironmentTab({ app }: { app: App }) {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+            <ComposeCheckList checks={checks} className="gap-1.5" />
+
+            <div className="flex flex-col gap-5">
                 {current.entries.length === 0 && !current.error ? (
                     <EmptyState
                         icon={<Plus className="h-5 w-5" />}
@@ -130,8 +132,6 @@ function EnvironmentTab({ app }: { app: App }) {
                         onRemove={(entry) => setDraft(removeEnv(draft, entry.service, entry.key))}
                     />
                 )}
-
-                <ComposeChecks checks={checks} />
             </div>
 
             <UnsavedChangesGuard when={dirty} />
