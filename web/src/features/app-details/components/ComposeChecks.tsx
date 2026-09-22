@@ -26,7 +26,9 @@ function ComposeCheckList({ checks, className }: { checks: ComposeCheck[]; class
                                 <span className="sr-only">{LEVEL_WORDS[check.level]}: </span>
                                 {check.title}
                             </p>
-                            {check.detail && <p className="break-words text-compact text-muted-foreground">{check.detail}</p>}
+                            {check.detail && (
+                                <p className="break-words text-compact text-muted-foreground">{check.detail}</p>
+                            )}
                         </div>
                     </li>
                 )

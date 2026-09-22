@@ -93,7 +93,7 @@ func (f *linkFixture) dialWithBackoff(t *testing.T, id, name, key, token string,
 
 func (f *linkFixture) waitStatus(t *testing.T, id, want string) {
 	t.Helper()
-	deadline := time.Now().Add(6 * time.Second)
+	deadline := time.Now().Add(15 * time.Second)
 	var last string
 	for time.Now().Before(deadline) {
 		if n, err := f.primaryDB.GetNode(id); err == nil {
@@ -105,6 +105,29 @@ func (f *linkFixture) waitStatus(t *testing.T, id, want string) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatalf("node %s never became %q (last status %q)", id, want, last)
+}
+
+// disconnectAndWaitOffline drops id's link and confirms it went offline. A bare Registry.Disconnect
+// call is a no-op if there is no live session for id at that exact moment, and under load there
+// briefly is none: the client backs off and reconnects on its own (by design, and normally
+// unremarkable) even seconds into a link that was already up, and a Disconnect that lands in that gap
+// silently disconnects nothing. Retrying the call alongside the status poll means a Disconnect that
+// missed is simply tried again against whatever session is live by the next tick.
+func (f *linkFixture) disconnectAndWaitOffline(t *testing.T, id string) {
+	t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	var last string
+	for time.Now().Before(deadline) {
+		f.primary.nodeLinks.Disconnect(id)
+		if n, err := f.primaryDB.GetNode(id); err == nil {
+			last = n.Status
+			if n.Status == constants.NodeStatusOffline {
+				return
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("node %s never became %q after Disconnect (last status %q)", id, constants.NodeStatusOffline, last)
 }
 
 func (f *linkFixture) joinToken(t *testing.T) string {
@@ -314,7 +337,7 @@ func TestExistingDirectNodeSwitchesToTheLinkKeepingItsIdentity(t *testing.T) {
 	}
 	sec := newTestSecondary(t, "old1", "old1")
 	f.dial(t, "old1", "old1", linkNodeKey, "", sec.engine) // no token: the node is recognised by its key
-	deadline := time.Now().Add(6 * time.Second)
+	deadline := time.Now().Add(15 * time.Second)          // same CI-contention margin as waitStatus
 	for time.Now().Before(deadline) {
 		if n, _ := f.primaryDB.GetNode("old1"); n != nil && n.APIEndpoint == "tunnel://old1" {
 			return
@@ -379,8 +402,7 @@ func TestJoiningOverTheLinkIsAuditedButReconnectingIsNot(t *testing.T) {
 		t.Fatal("registering a node over its link must be recorded, with the node's name and no secrets")
 	}
 
-	f.primary.nodeLinks.Disconnect("sec1")
-	f.waitStatus(t, "sec1", constants.NodeStatusOffline)
+	f.disconnectAndWaitOffline(t, "sec1")
 	f.waitStatus(t, "sec1", constants.NodeStatusOnline) // the secondary reconnects by itself
 	if count("node.join") != 1 {
 		t.Fatal("a reconnect changes nothing and must not add audit noise")

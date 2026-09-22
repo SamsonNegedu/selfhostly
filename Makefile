@@ -21,14 +21,14 @@ BACKEND_RUN = $(if $(NOAIR),go run ./cmd/server,air)
 GATEWAY_RUN = $(if $(NOAIR),go run ./cmd/gateway,air -c .air-gateway.toml)
 
 .DEFAULT_GOAL := help
-.PHONY: help dev backend gateway frontend prod down clean logs test ctl docs e2e-update
+.PHONY: help dev backend gateway frontend prod down clean logs test ctl docs e2e-update hooks
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 # --- Run in Docker -----------------------------------------------------------
 
-dev: ## Backend and frontend in Docker with live reload (SERVICE=backend for one)
+dev: hooks ## Backend and frontend in Docker with live reload (SERVICE=backend for one)
 	$(DC) -f docker-compose.dev.yml up --build $(SERVICE)
 
 prod: ## Production services in the background
@@ -43,19 +43,22 @@ logs: ## Follow the dev logs (SERVICE=backend for one)
 
 # --- Run on this machine, no Docker -----------------------------------------
 
-backend: check-env check-air ## Backend with hot reload on :8080 (ENV_FILE=..., NOAIR=1)
+backend: check-env check-air hooks ## Backend with hot reload on :8080 (ENV_FILE=..., NOAIR=1)
 	ENV_FILE=$(ENV_FILE) $(BACKEND_RUN)
 
-gateway: check-env check-air ## API gateway with hot reload (ENV_FILE=..., NOAIR=1)
+gateway: check-env check-air hooks ## API gateway with hot reload (ENV_FILE=..., NOAIR=1)
 	ENV_FILE=$(ENV_FILE) $(GATEWAY_RUN)
 
-frontend: ## Frontend dev server on :5173
+frontend: hooks ## Frontend dev server on :5173
 	cd web && npm run dev
 
 # --- Checks and cleanup ------------------------------------------------------
 
 test: ## Run the Go tests (ARGS=-v, ARGS=-cover)
 	go test $(ARGS) ./...
+
+hooks: ## Point git at .githooks/ (a pre-push hook runs CI's web checks before a push touching web/)
+	@git config core.hooksPath .githooks
 
 docs: ## Regenerate docs/reference/selfhostlyctl.md from the command definitions
 	go run ./cmd/selfhostlyctl docs --out docs/reference/selfhostlyctl.md

@@ -10,6 +10,10 @@ make test       # Go tests
 make down       # stop the containers
 ```
 
+The first `make dev`, `make backend`, `make gateway` or `make frontend` also points git at `.githooks/`: a
+pre-push hook then runs CI's web checks (`lint`, `format:check`, `test`, `build`) before a push that
+touches `web/`, so the exact thing CI would catch is caught here first.
+
 Open http://localhost:5173. Vite proxies `/api` and `/auth` to the backend.
 
 ## Live Reload Setup
