@@ -40,7 +40,8 @@ Edited `.env`? Use `upgrade`, not `docker compose restart`: restart keeps the ol
 Settings, Updates does what `selfhostlyctl upgrade` does, from the browser. It is off by default. Design and threat
 model: [ui-updates.md](../design/ui-updates.md).
 
-**Turn it on** in `.env`, then `selfhostlyctl upgrade --set UI_UPDATES_ENABLED=true`:
+**Turn it on** with `selfhostlyctl upgrade --pull --with-frontend --set UI_UPDATES_ENABLED=true`. `--pull` and `--with-frontend` matter
+the first time: the updater is in the new backend image and the Settings screen in the new frontend. The settings:
 
 | Setting | Meaning |
 |---|---|
@@ -48,13 +49,25 @@ model: [ui-updates.md](../design/ui-updates.md).
 | `UPDATE_PUBLIC_KEY` | The base64 ed25519 key releases must be signed with. Empty uses the key built into the release. |
 | `UPDATE_MANIFEST_URL`, `UPDATE_IMAGE_REPO_PREFIX`, `UPDATE_CHECK_INTERVAL_HOURS` | Where releases are published, which repository their images must live in, and how often to look. The defaults are right for the official releases. |
 
-The compose file has to pass these on (the current `docker-compose.prod.yml` does). Until it does, `--set` refuses with
-"your compose file never reads ...": update the compose file first (below).
+**An install from before this feature** has a compose file that does not pass these on, so `--set` refuses ("your compose
+file never reads ..."). Switch to the current file and set the value in the same upgrade, once:
+
+```bash
+selfhostlyctl self-update                                                    # the current compose file ships inside the tool
+selfhostlyctl compose write --out docker-compose.new.yml                     # beside yours, nothing overwritten
+selfhostlyctl compose-diff <your file> docker-compose.new.yml --env-file .env --apply .env   # carry your edits into .env
+selfhostlyctl compose-diff <your file> docker-compose.new.yml --env-file .env                # must say: Nothing would be lost
+selfhostlyctl upgrade --compose docker-compose.new.yml --pull --with-frontend --set UI_UPDATES_ENABLED=true
+```
+
+If the last `compose-diff` says something would be lost, merge it by hand first: [update the compose
+file](#update-the-compose-file). From then on, updates come from Settings, Updates, and any new setting a release needs is
+asked for there.
 
 **When updates appear.** Every push to main that changes the gateway, backend or frontend is published as a release,
 numbered `1.0.<commits on main>`. Nobody tags anything. Your install checks every `UPDATE_CHECK_INTERVAL_HOURS` (6 by
-default), or straight away with **Check for updates**. Installs from before this feature have no updater: move them once with
-`selfhostlyctl upgrade`, and from then on they update from the UI. How releases are built and signed:
+default), or straight away with **Check for updates**. Installs from before this feature have no updater: switch them once, as above.
+How releases are built and signed:
 [ui-updates.md](../design/ui-updates.md#releases).
 
 **Use it.** An "Update available" badge appears in the header. In Settings, Updates:

@@ -1,10 +1,10 @@
 # Selfhostly
 
 <p>
-	<a href="https://github.com/user-attachments/assets/4d8df016-2bbe-4975-9dfd-474a79b12c85" target="_blank">
+	<a href="https://github.com/user-attachments/assets/39dbc171-d8f6-4837-8071-5f4581cc88b7" target="_blank">
 		<img alt="Screenshot 2026-09-20 at 13 17 23" src="https://github.com/user-attachments/assets/39dbc171-d8f6-4837-8071-5f4581cc88b7"  width="45%" height="auto"/>
 	</a>
-	<a href="https://github.com/user-attachments/assets/822001e0-ab5c-42e7-9b08-e993b7bc4283" target="_blank">
+	<a href="https://github.com/user-attachments/assets/3597c935-0ad3-49dd-97e7-cdf9b04621d0" target="_blank">
 		<img alt="Screenshot 2026-09-20 at 13 18 57" src="https://github.com/user-attachments/assets/3597c935-0ad3-49dd-97e7-cdf9b04621d0" width="45%" height="auto" />
 	</a>
 </p>
