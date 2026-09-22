@@ -1,0 +1,30 @@
+#!/bin/sh
+# Runs the same checks CI's "web" job runs, before anything leaves this machine. Skips entirely if the
+# push touches no file under web/. Installed by `make hooks` (git config core.hooksPath .githooks).
+set -e
+
+repo_root=$(git rev-parse --show-toplevel)
+
+touches_web=false
+while read -r local_ref local_sha remote_ref remote_sha; do
+    [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue # deleting a ref
+    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+        range="$local_sha" # new branch on the remote: check everything reachable from it
+    else
+        range="$remote_sha..$local_sha"
+    fi
+    if git diff --name-only "$range" -- web/ 2>/dev/null | grep -q .; then
+        touches_web=true
+    fi
+done
+
+if [ "$touches_web" = false ]; then
+    exit 0
+fi
+
+echo "pre-push: web/ changed, running CI's web checks (lint, format:check, test, build)..."
+cd "$repo_root/web"
+npm run lint
+npm run format:check
+npm test
+npm run build

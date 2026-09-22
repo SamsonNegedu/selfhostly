@@ -8,6 +8,7 @@ make backend    # or on this machine, no Docker: backend with hot reload on :808
 make frontend   # frontend dev server on :5173 (run `cd web && npm install` once first)
 make test       # Go tests
 make down       # stop the containers
+make hooks      # once: install a pre-push hook that runs CI's web checks before a push touching web/
 ```
 
 Open http://localhost:5173. Vite proxies `/api` and `/auth` to the backend.

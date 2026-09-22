@@ -21,7 +21,7 @@ BACKEND_RUN = $(if $(NOAIR),go run ./cmd/server,air)
 GATEWAY_RUN = $(if $(NOAIR),go run ./cmd/gateway,air -c .air-gateway.toml)
 
 .DEFAULT_GOAL := help
-.PHONY: help dev backend gateway frontend prod down clean logs test ctl docs e2e-update
+.PHONY: help dev backend gateway frontend prod down clean logs test ctl docs e2e-update hooks
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -56,6 +56,9 @@ frontend: ## Frontend dev server on :5173
 
 test: ## Run the Go tests (ARGS=-v, ARGS=-cover)
 	go test $(ARGS) ./...
+
+hooks: ## Install the pre-push hook (runs CI's web checks locally before a push that touches web/)
+	git config core.hooksPath .githooks
 
 docs: ## Regenerate docs/reference/selfhostlyctl.md from the command definitions
 	go run ./cmd/selfhostlyctl docs --out docs/reference/selfhostlyctl.md
