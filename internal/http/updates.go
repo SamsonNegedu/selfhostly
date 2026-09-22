@@ -105,7 +105,10 @@ func (s *Server) updateError(c *gin.Context, err error) {
 	case errors.Is(err, update.ErrNotApproved):
 		c.JSON(http.StatusConflict, ErrorResponse{Error: err.Error(), Code: codeComposeNotApproved})
 	case errors.Is(err, update.ErrUnknownVersion):
-		c.JSON(http.StatusConflict, ErrorResponse{Error: err.Error(), Code: codeUnknownVersion})
+		c.JSON(http.StatusConflict, ErrorResponse{
+			Error: err.Error(), Code: codeUnknownVersion,
+			Details: "The available release changed, or this server restarted, since the last check. Check for updates again.",
+		})
 	case errors.Is(err, update.ErrBadInput):
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error(), Code: codeInvalidInput})
 	default:
