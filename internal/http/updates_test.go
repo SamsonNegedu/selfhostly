@@ -158,6 +158,22 @@ func TestUpdateErrorsMapToStableCodes(t *testing.T) {
 	}
 }
 
+// The manager's "last check found" state lives only in memory (a restart, or another check finding a
+// different release, forgets it), so this error is routine, not a bug report: it needs a sentence that
+// tells the operator what to do, not just what went wrong.
+func TestUnknownVersionTellsTheOperatorToCheckAgain(t *testing.T) {
+	s, _ := newTestServer(t, constants.SecurityModeEnforce)
+	s.updateService = &stubUpdates{err: update.ErrUnknownVersion}
+	w := do(s, "POST", "/api/system/update/apply", map[string]string{"version": "1.4.0"}, gatewayAuth)
+	var body struct {
+		Details string `json:"details"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &body)
+	if body.Details == "" {
+		t.Fatal("unknown_version must explain that checking again will refresh it, not just name the error")
+	}
+}
+
 func TestFailedCheckStillAnswersWithTheView(t *testing.T) {
 	s, _ := newTestServer(t, constants.SecurityModeEnforce)
 	s.updateService = &stubUpdates{err: errors.New("could not fetch"), view: update.View{Enabled: true, CheckError: "could not fetch"}}

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ApiRequestError } from '@/shared/lib/api-client'
 import { updateApi } from '@/shared/services/api'
 import { isRunActive, isRunFinished, isUpdateBusy } from '@/shared/lib/update'
 import type { ApplyUpdateRequest, PlanUpdateRequest, UpdateStatus } from '@/shared/types/api'
@@ -40,6 +41,14 @@ function useUpdateMutation<Variables = void>(call: (variables: Variables) => Pro
             if (isUpdateStatus(data)) queryClient.setQueryData(UPDATE_QUERY_KEY, data)
             // The write calls only start the work, so ask again for what the server now says.
             void queryClient.invalidateQueries({ queryKey: UPDATE_QUERY_KEY })
+        },
+        onError: (error) => {
+            // The server's idea of the available release only lives in memory: a restart, or another check
+            // finding something else, can make the version this tab still shows unknown to it. Refreshing
+            // now means the stale card updates (or goes away) instead of just failing the same way again.
+            if (error instanceof ApiRequestError && error.code === 'unknown_version') {
+                void queryClient.invalidateQueries({ queryKey: UPDATE_QUERY_KEY })
+            }
         },
     })
 }
