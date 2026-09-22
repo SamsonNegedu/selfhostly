@@ -37,14 +37,18 @@ jobs:
               - 'Dockerfile.gateway'
               - 'go.mod'
               - 'go.sum'
+              - '!internal/gateway/**/*_test.go'
             backend:
               - 'cmd/server/**'
               - 'internal/**'
               - 'Dockerfile.backend'
               - 'go.mod'
               - 'go.sum'
+              - '!cmd/server/**/*_test.go'
+              - '!internal/**/*_test.go'
             frontend:
               - 'web/**'
+              - '!web/tests/**'
 
       # Every push to main that changes the gateway, backend or frontend is a release, numbered automatically:
       # <RELEASE_SERIES>.<number of commits on main>. It only ever grows, and nobody tags anything. The number is
