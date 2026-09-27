@@ -19,7 +19,7 @@
 # (arm64). CGO_ENABLED=0 below means the actual cross-compiling is just GOARCH, which the Go toolchain
 # does natively and fast; the slow part was ever running the compiler itself under emulation (QEMU on
 # CI's amd64 runners) just because the base image matched the target platform instead of the builder's.
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS builder
 
 WORKDIR /app
 
