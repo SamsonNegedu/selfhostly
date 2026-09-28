@@ -58,6 +58,12 @@ var (
 		Code:    "TUNNEL_NOT_CONFIGURED",
 		Message: "Cloudflare not configured",
 	}
+
+	// ErrDeployHookNotFound: no deploy hook exists for that app with that id
+	ErrDeployHookNotFound = &DomainError{
+		Code:    "DEPLOY_HOOK_NOT_FOUND",
+		Message: "deploy hook not found",
+	}
 )
 
 // ============================================================================
@@ -181,7 +187,8 @@ func IsNotFoundError(err error) bool {
 			domainErr.Code == ErrComposeVersionNotFound.Code ||
 			domainErr.Code == codeSettingsNotFound ||
 			domainErr.Code == codeNodeNotFound ||
-			domainErr.Code == codeJobNotFound
+			domainErr.Code == codeJobNotFound ||
+			domainErr.Code == ErrDeployHookNotFound.Code
 	}
 	return false
 }

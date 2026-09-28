@@ -66,6 +66,13 @@ func (c *Config) pathSkipsAuth(path string) bool {
 		return true
 	}
 
+	// A deploy hook's bearer token is not a JWT: it is an opaque per-app secret the backend checks
+	// itself. Without this, the gateway would try to parse it as one and reject every call here
+	// before the backend ever saw it.
+	if strings.HasPrefix(path, "/api/apps/") && strings.HasSuffix(path, "/deploy-trigger") {
+		return true
+	}
+
 	return false
 }
 

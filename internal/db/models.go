@@ -14,37 +14,37 @@ import (
 
 // Node represents a node in the cluster
 type Node struct {
-	ID                 string     `json:"id" db:"id"`
-	Name               string     `json:"name" db:"name"`
-	APIEndpoint        string     `json:"api_endpoint" db:"api_endpoint"`
-	APIKey             string     `json:"api_key" db:"api_key"` // For authenticating requests to this node
-	IsPrimary          bool       `json:"is_primary" db:"is_primary"`
-	Status             string     `json:"status" db:"status"` // online, offline, unreachable
-	LastSeen           *time.Time `json:"last_seen" db:"last_seen"`
-	ConsecutiveFailures int       `json:"consecutive_failures" db:"consecutive_failures"` // Track health check failures
-	LastHealthCheck    *time.Time `json:"last_health_check" db:"last_health_check"`      // When we last checked this node
-	LastLatencyMs      int        `json:"last_latency_ms" db:"last_latency_ms"`           // Round trip of the last successful check, 0 if none yet
-	CreatedAt          time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt          time.Time  `json:"updated_at" db:"updated_at"`
+	ID                  string     `json:"id" db:"id"`
+	Name                string     `json:"name" db:"name"`
+	APIEndpoint         string     `json:"api_endpoint" db:"api_endpoint"`
+	APIKey              string     `json:"api_key" db:"api_key"` // For authenticating requests to this node
+	IsPrimary           bool       `json:"is_primary" db:"is_primary"`
+	Status              string     `json:"status" db:"status"` // online, offline, unreachable
+	LastSeen            *time.Time `json:"last_seen" db:"last_seen"`
+	ConsecutiveFailures int        `json:"consecutive_failures" db:"consecutive_failures"` // Track health check failures
+	LastHealthCheck     *time.Time `json:"last_health_check" db:"last_health_check"`       // When we last checked this node
+	LastLatencyMs       int        `json:"last_latency_ms" db:"last_latency_ms"`           // Round trip of the last successful check, 0 if none yet
+	CreatedAt           time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at" db:"updated_at"`
 }
 
 // App represents a self-hosted application
 type App struct {
-	ID             string        `json:"id" db:"id"`
-	Name           string        `json:"name" db:"name"`
-	Description    string        `json:"description" db:"description"`
-	ComposeContent string        `json:"compose_content" db:"compose_content"`
-	TunnelToken    string        `json:"tunnel_token" db:"tunnel_token"`
-	TunnelID       string        `json:"tunnel_id" db:"tunnel_id"`
-	TunnelDomain   string        `json:"tunnel_domain" db:"tunnel_domain"`
-	PublicURL      string        `json:"public_url" db:"public_url"`
-	Status         string        `json:"status" db:"status"`               // running, stopped, updating, error
-	ErrorMessage   *string       `json:"error_message" db:"error_message"` // Make nullable to handle NULL values
-	NodeID         string        `json:"node_id" db:"node_id"`             // Which node this app is deployed on
-	TunnelMode     string        `json:"tunnel_mode" db:"tunnel_mode"`     // "custom" | "quick" | "" (empty = no tunnel)
-	CreatedAt      time.Time     `json:"created_at" db:"created_at"`
-	UpdatedAt      time.Time     `json:"updated_at" db:"updated_at"`
-	Schedule       *AppSchedule  `json:"schedule,omitempty" db:"-"`         // Optional schedule (not stored in apps table)
+	ID             string       `json:"id" db:"id"`
+	Name           string       `json:"name" db:"name"`
+	Description    string       `json:"description" db:"description"`
+	ComposeContent string       `json:"compose_content" db:"compose_content"`
+	TunnelToken    string       `json:"tunnel_token" db:"tunnel_token"`
+	TunnelID       string       `json:"tunnel_id" db:"tunnel_id"`
+	TunnelDomain   string       `json:"tunnel_domain" db:"tunnel_domain"`
+	PublicURL      string       `json:"public_url" db:"public_url"`
+	Status         string       `json:"status" db:"status"`               // running, stopped, updating, error
+	ErrorMessage   *string      `json:"error_message" db:"error_message"` // Make nullable to handle NULL values
+	NodeID         string       `json:"node_id" db:"node_id"`             // Which node this app is deployed on
+	TunnelMode     string       `json:"tunnel_mode" db:"tunnel_mode"`     // "custom" | "quick" | "" (empty = no tunnel)
+	CreatedAt      time.Time    `json:"created_at" db:"created_at"`
+	UpdatedAt      time.Time    `json:"updated_at" db:"updated_at"`
+	Schedule       *AppSchedule `json:"schedule,omitempty" db:"-"` // Optional schedule (not stored in apps table)
 }
 
 // CloudflareTunnel represents Cloudflare tunnel configuration and metadata
@@ -86,24 +86,24 @@ type User struct {
 
 // Settings holds application settings
 type Settings struct {
-	ID                  string    `json:"id" db:"id"`
-	
+	ID string `json:"id" db:"id"`
+
 	// DEPRECATED: Keep for backward compatibility during migration
 	// Use TunnelProviderConfig instead for new implementations
-	CloudflareAPIToken  *string   `json:"cloudflare_api_token,omitempty" db:"cloudflare_api_token"`
-	CloudflareAccountID *string   `json:"cloudflare_account_id,omitempty" db:"cloudflare_account_id"`
-	
+	CloudflareAPIToken  *string `json:"cloudflare_api_token,omitempty" db:"cloudflare_api_token"`
+	CloudflareAccountID *string `json:"cloudflare_account_id,omitempty" db:"cloudflare_account_id"`
+
 	// New multi-provider tunnel configuration
 	// ActiveTunnelProvider identifies which tunnel provider is currently active
 	// (e.g., "cloudflare")
-	ActiveTunnelProvider *string   `json:"active_tunnel_provider,omitempty" db:"active_tunnel_provider"`
-	
+	ActiveTunnelProvider *string `json:"active_tunnel_provider,omitempty" db:"active_tunnel_provider"`
+
 	// TunnelProviderConfig stores provider-specific configuration as JSON
 	// Structure: {"cloudflare": {"api_token": "...", "account_id": "..."}}
-	TunnelProviderConfig *string   `json:"tunnel_provider_config,omitempty" db:"tunnel_provider_config"`
-	
-	AutoStartApps        bool      `json:"auto_start_apps" db:"auto_start_apps"`
-	UpdatedAt            time.Time `json:"updated_at" db:"updated_at"`
+	TunnelProviderConfig *string `json:"tunnel_provider_config,omitempty" db:"tunnel_provider_config"`
+
+	AutoStartApps bool      `json:"auto_start_apps" db:"auto_start_apps"`
+	UpdatedAt     time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // NewNode creates a new Node with a generated UUID (or uses provided ID if not empty)
@@ -190,25 +190,38 @@ func NewSettings() *Settings {
 
 // ComposeVersion represents a versioned snapshot of a compose file
 type ComposeVersion struct {
-	ID             string     `json:"id" db:"id"`
-	AppID          string     `json:"app_id" db:"app_id"`
-	Version        int        `json:"version" db:"version"`                 // Sequential version number
-	ComposeContent string     `json:"compose_content" db:"compose_content"` // The actual compose file content
-	ChangeReason   *string    `json:"change_reason" db:"change_reason"`     // Optional reason for the change
-	ChangedBy      *string    `json:"changed_by" db:"changed_by"`           // Optional user who made the change
-	IsCurrent      bool       `json:"is_current" db:"is_current"`           // Whether this is the active version
-	CreatedAt      time.Time  `json:"created_at" db:"created_at"`
-	RolledBackFrom *int       `json:"rolled_back_from" db:"rolled_back_from"` // Version number this was rolled back from (if applicable)
+	ID             string    `json:"id" db:"id"`
+	AppID          string    `json:"app_id" db:"app_id"`
+	Version        int       `json:"version" db:"version"`                 // Sequential version number
+	ComposeContent string    `json:"compose_content" db:"compose_content"` // The actual compose file content
+	ChangeReason   *string   `json:"change_reason" db:"change_reason"`     // Optional reason for the change
+	ChangedBy      *string   `json:"changed_by" db:"changed_by"`           // Optional user who made the change
+	IsCurrent      bool      `json:"is_current" db:"is_current"`           // Whether this is the active version
+	CreatedAt      time.Time `json:"created_at" db:"created_at"`
+	RolledBackFrom *int      `json:"rolled_back_from" db:"rolled_back_from"` // Version number this was rolled back from (if applicable)
+}
+
+// DeployHook is a named, per-app secret an external pipeline presents to trigger a pull and
+// restart. TokenHash is never sent to the client; the plaintext token exists only at creation.
+type DeployHook struct {
+	ID         string     `json:"id" db:"id"`
+	AppID      string     `json:"app_id" db:"app_id"`
+	Name       string     `json:"name" db:"name"`
+	SourceKind string     `json:"source_kind" db:"source_kind"`
+	TokenHash  string     `json:"-" db:"token_hash"`
+	CreatedAt  time.Time  `json:"created_at" db:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at" db:"last_used_at"`
+	LastUsedIP string     `json:"last_used_ip" db:"last_used_ip"`
 }
 
 // AppSchedule represents a scheduling configuration for an app
 type AppSchedule struct {
 	ID        string    `json:"id" db:"id"`
 	AppID     string    `json:"app_id" db:"app_id"`
-	StartCron string    `json:"start_cron" db:"start_cron"`   // Cron expression for when to start
-	StopCron  string    `json:"stop_cron" db:"stop_cron"`     // Cron expression for when to stop
-	Timezone  string    `json:"timezone" db:"timezone"`       // IANA timezone (e.g., "America/New_York")
-	Enabled   bool      `json:"enabled" db:"enabled"`         // Whether the schedule is active
+	StartCron string    `json:"start_cron" db:"start_cron"` // Cron expression for when to start
+	StopCron  string    `json:"stop_cron" db:"stop_cron"`   // Cron expression for when to stop
+	Timezone  string    `json:"timezone" db:"timezone"`     // IANA timezone (e.g., "America/New_York")
+	Enabled   bool      `json:"enabled" db:"enabled"`       // Whether the schedule is active
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
@@ -228,22 +241,22 @@ type Job struct {
 	CompletedAt     *time.Time `json:"completed_at,omitempty" db:"completed_at"`
 	CreatedAt       time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at" db:"updated_at"`
-	
+
 	// Worker tracking for multi-worker support
 	ClaimedBy *string    `json:"claimed_by,omitempty" db:"claimed_by"`
 	ClaimedAt *time.Time `json:"claimed_at,omitempty" db:"claimed_at"`
-	
+
 	// Retry support
 	RetryCount int        `json:"retry_count" db:"retry_count"`
 	MaxRetries int        `json:"max_retries" db:"max_retries"`
 	RetryAfter *time.Time `json:"retry_after,omitempty" db:"retry_after"`
-	
+
 	// Cancellation support
 	CancelledAt *time.Time `json:"cancelled_at,omitempty" db:"cancelled_at"`
-	
+
 	// Timeout in seconds
 	TimeoutSeconds *int `json:"timeout_seconds,omitempty" db:"timeout_seconds"`
-	
+
 	// Deduplication hash
 	JobHash *string `json:"job_hash,omitempty" db:"job_hash"`
 }

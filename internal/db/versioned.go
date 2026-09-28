@@ -61,6 +61,23 @@ var versionedMigrations = []versionedMigration{
 			`ALTER TABLE audit_log ADD COLUMN target_name TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		version: 3,
+		name:    "app deploy hooks",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS app_deploy_hooks (
+				id TEXT PRIMARY KEY,
+				app_id TEXT NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
+				name TEXT NOT NULL,
+				source_kind TEXT NOT NULL DEFAULT 'generic',
+				token_hash TEXT NOT NULL UNIQUE,
+				created_at DATETIME NOT NULL,
+				last_used_at DATETIME,
+				last_used_ip TEXT
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_app_deploy_hooks_app_id ON app_deploy_hooks(app_id)`,
+		},
+	},
 }
 
 // LatestSchemaVersion is the highest versioned migration this binary knows

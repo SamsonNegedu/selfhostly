@@ -11,7 +11,10 @@ import AppHeader from './components/AppHeader'
 import AppTabContent from './components/AppTabContent'
 import { useAppRecord } from './hooks/useAppRecord'
 
-type TabType = Extract<AppTab, 'overview' | 'config' | 'environment' | 'logs' | 'access' | 'schedule' | 'history'>
+type TabType = Extract<
+    AppTab,
+    'overview' | 'config' | 'environment' | 'deploy' | 'logs' | 'access' | 'schedule' | 'history'
+>
 
 function AppDetails() {
     const { id } = useParams<{ id: string }>()

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -104,6 +105,11 @@ func actorFor(c *gin.Context) string {
 			return "cf:" + e
 		}
 	}
+	if actor, ok := c.Get("deploy_hook_actor"); ok {
+		if s, _ := actor.(string); s != "" {
+			return s
+		}
+	}
 	if id, ok := c.Get("node_id"); ok {
 		if s, _ := id.(string); s != "" {
 			return "node:" + s
@@ -198,6 +204,22 @@ func (s *Server) registerRateLimitMiddleware() gin.HandlerFunc {
 		if !limiter.allow(c.ClientIP(), time.Now()) {
 			c.Header("Retry-After", "60")
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, ErrorResponse{Error: "Too many attempts", Details: "try again in a minute"})
+			return
+		}
+		c.Next()
+	}
+}
+
+// deployTriggerRateLimitMiddleware bounds attempts per app, not per caller: the deploy-trigger
+// endpoint has no session to key on, and a CI runner's IP is not a stable identity, but an app's own
+// budget still bounds how hard its hooks can be brute-forced or misfired regardless of source.
+func (s *Server) deployTriggerRateLimitMiddleware() gin.HandlerFunc {
+	limiter := newAttemptLimiter(constants.DeployTriggerRateLimitAttempts, constants.DeployTriggerRateLimitWindow)
+	retryAfter := strconv.Itoa(int(constants.DeployTriggerRateLimitWindow.Seconds()))
+	return func(c *gin.Context) {
+		if !limiter.allow(c.Param("id"), time.Now()) {
+			c.Header("Retry-After", retryAfter)
+			c.AbortWithStatusJSON(http.StatusTooManyRequests, ErrorResponse{Error: "Too many attempts", Details: "try again later"})
 			return
 		}
 		c.Next()

@@ -320,6 +320,133 @@ func TestRequestToAnUnconnectedLinkedNodeIsServiceUnavailable(t *testing.T) {
 	}
 }
 
+// TestDeployHookCreationIsForwardedToALinkedNode is the regression test for a bug live testing
+// caught: creating a hook for an app on a linked node is only reachable through
+// forwardToLinkedNode, which re-signs the forwarded request with the target's own node credentials
+// (the secondary has no way to see the original session). A denyNodeAuthMiddleware guard on that
+// route, briefly added during review, silently broke this legitimate path - a node's own
+// credentials already give it full control over apps hosted on it (start/stop/update/delete all
+// allow node auth too), so the guard stopped nothing a node could not already do to its own app.
+func TestDeployHookCreationIsForwardedToALinkedNode(t *testing.T) {
+	f := newLinkFixture(t)
+	sec := newTestSecondary(t, "sec1", "sec1")
+	f.dial(t, "sec1", "sec1", linkNodeKey, f.joinToken(t), sec.engine)
+	f.waitStatus(t, "sec1", constants.NodeStatusOnline)
+
+	app := db.NewApp("hook-via-forward", "", "services: {}")
+	if err := sec.database.CreateApp(app); err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := http.Post(f.httpServer.URL+"/api/apps/"+app.ID+"/deploy-hooks?node_id=sec1",
+		"application/json", strings.NewReader(`{"name":"forwarded"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("creating a hook for an app on a linked node must succeed, got %d: %s", resp.StatusCode, body)
+	}
+
+	// Stored on the secondary's own database, not the primary's - same as the app itself.
+	hooks, err := sec.database.ListDeployHooks(app.ID)
+	if err != nil || len(hooks) != 1 || hooks[0].Name != "forwarded" {
+		t.Fatalf("expected the hook on the secondary's own database: %v %+v", err, hooks)
+	}
+}
+
+// TestDeployTriggerIsForwardedToALinkedNodeKeepingAuthorization exercises the whole path end to
+// end: a real secondary, its own local hook, forwarded over a real link by the primary. It is the
+// regression test for the bug this forwarding was added to fix - the deploy-trigger route used to
+// have no node-forwarding at all, so a hook for an app on any node but the one that received the
+// HTTP request always 401'd.
+func TestDeployTriggerIsForwardedToALinkedNodeKeepingAuthorization(t *testing.T) {
+	f := newLinkFixture(t)
+	sec := newTestSecondary(t, "sec1", "sec1")
+	f.dial(t, "sec1", "sec1", linkNodeKey, f.joinToken(t), sec.engine)
+	f.waitStatus(t, "sec1", constants.NodeStatusOnline)
+
+	// The app and its hook live only on the secondary's own local database, exactly as they would
+	// on a real deployment: the primary has no row for either.
+	app := db.NewApp("on-the-secondary", "", "services: {}")
+	if err := sec.database.CreateApp(app); err != nil {
+		t.Fatal(err)
+	}
+	token, _, err := sec.database.CreateDeployHook(app.ID, "ci", constants.DeploySourceGeneric)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req, _ := http.NewRequest("POST", f.httpServer.URL+"/api/apps/"+app.ID+"/deploy-trigger?node_id=sec1", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("a valid token for an app on the linked node must be accepted, got %d: %s", resp.StatusCode, body)
+	}
+	var accepted struct {
+		JobID string `json:"job_id"`
+	}
+	if err := json.Unmarshal(body, &accepted); err != nil || accepted.JobID == "" {
+		t.Fatalf("expected a job id from the secondary that actually holds the app: %v %s", err, body)
+	}
+
+	// The primary's own database never saw any of this - it has no app and no hook by this id.
+	if _, err := f.primaryDB.GetApp(app.ID); err == nil {
+		t.Fatal("the app must not exist on the primary; the request must have been handled by the secondary")
+	}
+}
+
+// TestDeployTriggerRejectsAWrongTokenOnceForwarded confirms the token check still runs, on the
+// secondary, after forwarding - forwarding is not itself the authorization.
+func TestDeployTriggerRejectsAWrongTokenOnceForwarded(t *testing.T) {
+	f := newLinkFixture(t)
+	sec := newTestSecondary(t, "sec1", "sec1")
+	f.dial(t, "sec1", "sec1", linkNodeKey, f.joinToken(t), sec.engine)
+	f.waitStatus(t, "sec1", constants.NodeStatusOnline)
+
+	app := db.NewApp("wrong-token-app", "", "services: {}")
+	if err := sec.database.CreateApp(app); err != nil {
+		t.Fatal(err)
+	}
+
+	req, _ := http.NewRequest("POST", f.httpServer.URL+"/api/apps/"+app.ID+"/deploy-trigger?node_id=sec1", nil)
+	req.Header.Set("Authorization", "Bearer sfd_wrong")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("a wrong token must still be rejected after forwarding, got %d", resp.StatusCode)
+	}
+}
+
+// TestDeployTriggerToAnUnconnectedLinkedNodeIsServiceUnavailable mirrors
+// TestRequestToAnUnconnectedLinkedNodeIsServiceUnavailable for the deploy-trigger route.
+func TestDeployTriggerToAnUnconnectedLinkedNodeIsServiceUnavailable(t *testing.T) {
+	f := newLinkFixture(t)
+	n := db.NewNodeWithID("gone", "gone", linkEndpoint("gone"), linkNodeKey, false)
+	if err := f.primaryDB.CreateNode(n); err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest("POST", f.httpServer.URL+"/api/apps/abc/deploy-trigger?node_id=gone", nil)
+	req.Header.Set("Authorization", "Bearer sfd_whatever")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("a linked node with no live link must give 503, got %d", resp.StatusCode)
+	}
+}
+
 func TestDroppedLinkMarksTheNodeOfflineAtOnce(t *testing.T) {
 	f := newLinkFixture(t)
 	sec := newTestSecondary(t, "sec1", "sec1")
@@ -337,7 +464,7 @@ func TestExistingDirectNodeSwitchesToTheLinkKeepingItsIdentity(t *testing.T) {
 	}
 	sec := newTestSecondary(t, "old1", "old1")
 	f.dial(t, "old1", "old1", linkNodeKey, "", sec.engine) // no token: the node is recognised by its key
-	deadline := time.Now().Add(15 * time.Second)          // same CI-contention margin as waitStatus
+	deadline := time.Now().Add(15 * time.Second)           // same CI-contention margin as waitStatus
 	for time.Now().Before(deadline) {
 		if n, _ := f.primaryDB.GetNode("old1"); n != nil && n.APIEndpoint == "tunnel://old1" {
 			return
