@@ -152,3 +152,8 @@ unchanged - node credentials are not involved on this route at all.
   `app_deploy_hooks`, checked in a verifier) but nothing does today.
 - Zero-touch app creation from a repository (declaring a brand-new app from a build with no app to point a hook at
   yet) is a separate, larger feature and is not part of this one.
+
+If the instance is behind [Cloudflare Access](../operations/cloudflare-zero-trust.md) rather than (or alongside) GitHub
+login, the exemption above only covers the gateway's own check - Access runs earlier, at Cloudflare's edge, and gates
+every path by default. It needs its own Bypass policy for the trigger path; see
+[Deploy hooks](../operations/cloudflare-zero-trust.md#deploy-hooks) in that doc.

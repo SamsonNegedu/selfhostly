@@ -56,6 +56,19 @@ rate limited), and they are the only ones:
 Everything else on the hostname stays behind the login. I have not tested this against a live Cloudflare account, so check
 that a signed-out request to any other path still gets the Access login.
 
+## Deploy hooks
+
+A [deploy hook](../design/app-deploy-hooks.md) authenticates itself with its own bearer token, the same reasoning as the
+node link above, so it needs the same treatment: without a Bypass policy, Access answers a CI pipeline's unauthenticated
+`POST /api/apps/:id/deploy-trigger` with its own login page or a 403 before Selfhostly's own token check ever runs -
+`CF_ACCESS_*` verification and a deploy hook's token are unrelated checks, and Access runs first, at Cloudflare's edge.
+
+Add a **Bypass** policy for the path `/api/apps/*/deploy-trigger`. Unlike `/api/nodes/connect`, this path has a variable
+app id in the middle, so the policy needs a wildcard there. I have not verified against a live Cloudflare account whether
+Access path matching supports a wildcard in the middle of a path (only a trailing one is guaranteed on every plan) - check
+that a deploy hook actually works through Access before relying on it, and that the wildcard is not so broad it bypasses
+Access for other `/api/apps/*` routes you want to keep behind the login.
+
 ## Policy examples
 
 | Who | Include rule |
