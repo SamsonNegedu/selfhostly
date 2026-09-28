@@ -157,3 +157,13 @@ If the instance is behind [Cloudflare Access](../operations/cloudflare-zero-trus
 login, the exemption above only covers the gateway's own check - Access runs earlier, at Cloudflare's edge, and gates
 every path by default. It needs its own Bypass policy for the trigger path; see
 [Deploy hooks](../operations/cloudflare-zero-trust.md#deploy-hooks) in that doc.
+
+A separate, unrelated Cloudflare feature can also block a trigger even with no Access configured at all: **Bot Fight
+Mode**, **Super Bot Fight Mode**, or a Managed Ruleset can flag CI traffic (a scripted `curl`, a data-center ASN like
+GitHub Actions') as bot-like and 403 it at the edge, before Selfhostly ever sees the request. Confirmed by a real
+deployment: the identical request worked from a different source but was blocked from GitHub Actions specifically,
+with nothing in Selfhostly's own logs to explain it, because it never arrived. Check Security > Events in the
+Cloudflare dashboard for the zone - it names the exact rule that fired - then add a WAF custom rule
+(Security > WAF > Custom rules) matching the trigger path (`URI Path contains /deploy-trigger`) with action `Skip`,
+checking only the specific protection Events showed firing. The route already authenticates itself and rate-limits
+per app, so skipping Cloudflare's bot heuristics for this one path trades nothing away.
