@@ -92,19 +92,30 @@ The last step of a build-and-push job, after it pushes the app's image to its `:
 
 ```yaml
 - name: Trigger Selfhostly deploy hook
+  env:
+    SELFHOSTLY_URL: ${{ vars.SELFHOSTLY_URL }}
+    SELFHOSTLY_APP_ID: ${{ vars.SELFHOSTLY_APP_ID }}
+    SELFHOSTLY_NODE_ID: ${{ vars.SELFHOSTLY_NODE_ID }}
+    SELFHOSTLY_DEPLOY_TOKEN: ${{ secrets.SELFHOSTLY_DEPLOY_TOKEN }}
   run: |
+    if [ -z "$SELFHOSTLY_URL" ] || [ -z "$SELFHOSTLY_APP_ID" ] || [ -z "$SELFHOSTLY_NODE_ID" ] || [ -z "$SELFHOSTLY_DEPLOY_TOKEN" ]; then
+      echo "Missing Selfhostly configuration - check the repository variables and secret are set." >&2
+      exit 1
+    fi
     curl --fail --silent --show-error \
       --retry 3 --retry-delay 5 \
-      -X POST "${{ vars.SELFHOSTLY_URL }}/api/apps/${{ vars.SELFHOSTLY_APP_ID }}/deploy-trigger?node_id=${{ vars.SELFHOSTLY_NODE_ID }}" \
-      -H "Authorization: Bearer ${{ secrets.SELFHOSTLY_DEPLOY_TOKEN }}"
+      -X POST "${SELFHOSTLY_URL}/api/apps/${SELFHOSTLY_APP_ID}/deploy-trigger?node_id=${SELFHOSTLY_NODE_ID}" \
+      -H "Authorization: Bearer ${SELFHOSTLY_DEPLOY_TOKEN}"
 ```
 
 `SELFHOSTLY_URL`, `SELFHOSTLY_APP_ID` and `SELFHOSTLY_NODE_ID` are plain repo variables, deliberately not baked into
 the workflow file: the same step then needs no edit if any of them ever changes (a new domain, a new tunnel, moving
 the app to a different node), and nothing instance-specific ends up committed to the repo. `SELFHOSTLY_DEPLOY_TOKEN`
-is the one-time token from the app's Deploy tab, stored as a repo secret. `--fail` turns a bad or revoked token into
-a failed workflow step instead of a silent no-op; `--retry` covers a briefly-unreachable instance (a home-hosted
-primary restarting for its own update, a network blip), not anything token-related.
+is the one-time token from the app's Deploy tab, stored as a repo secret. Pulling all four into `env:` once, then
+checking them before `curl` runs, turns a variable or secret nobody set into a clear failure message instead of a
+curl error against a malformed URL. `--fail` turns a bad or revoked token into a failed workflow step instead of a
+silent no-op; `--retry` covers a briefly-unreachable instance (a home-hosted primary restarting for its own update,
+a network blip), not anything token-related.
 
 The dashboard's Deploy tab shows this exact step (unfilled) plus the three variable values ready to copy, and warns
 when the address it was opened through is a loopback or private-network one (`localhost`, `192.168.x.x`, ...): that

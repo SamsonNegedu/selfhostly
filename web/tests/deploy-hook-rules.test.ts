@@ -6,13 +6,30 @@ import {
 } from '../src/features/app-details/lib/deploy-hook-rules.ts'
 
 test('the workflow step reads the instance, app id and node id from variables, never bakes them in', () => {
+    assert.match(GITHUB_ACTIONS_DEPLOY_STEP, /SELFHOSTLY_URL: \$\{\{ vars\.SELFHOSTLY_URL \}\}/)
+    assert.match(GITHUB_ACTIONS_DEPLOY_STEP, /SELFHOSTLY_APP_ID: \$\{\{ vars\.SELFHOSTLY_APP_ID \}\}/)
+    assert.match(GITHUB_ACTIONS_DEPLOY_STEP, /SELFHOSTLY_NODE_ID: \$\{\{ vars\.SELFHOSTLY_NODE_ID \}\}/)
+    assert.match(GITHUB_ACTIONS_DEPLOY_STEP, /SELFHOSTLY_DEPLOY_TOKEN: \$\{\{ secrets\.SELFHOSTLY_DEPLOY_TOKEN \}\}/)
     assert.match(
         GITHUB_ACTIONS_DEPLOY_STEP,
-        /-X POST "\$\{\{ vars\.SELFHOSTLY_URL \}\}\/api\/apps\/\$\{\{ vars\.SELFHOSTLY_APP_ID \}\}\/deploy-trigger\?node_id=\$\{\{ vars\.SELFHOSTLY_NODE_ID \}\}"/,
+        /-X POST "\$\{SELFHOSTLY_URL\}\/api\/apps\/\$\{SELFHOSTLY_APP_ID\}\/deploy-trigger\?node_id=\$\{SELFHOSTLY_NODE_ID\}"/,
     )
-    assert.match(GITHUB_ACTIONS_DEPLOY_STEP, /Authorization: Bearer \$\{\{ secrets\.SELFHOSTLY_DEPLOY_TOKEN \}\}/)
+    assert.match(GITHUB_ACTIONS_DEPLOY_STEP, /Authorization: Bearer \$\{SELFHOSTLY_DEPLOY_TOKEN\}/)
     assert.doesNotMatch(GITHUB_ACTIONS_DEPLOY_STEP, /sfd_/) // never bakes in an actual token
     assert.doesNotMatch(GITHUB_ACTIONS_DEPLOY_STEP, /:\/\/(?!\$)/) // no literal scheme://host baked in either
+})
+
+test('the step fails fast with a clear message when a variable or secret was never set', () => {
+    assert.match(GITHUB_ACTIONS_DEPLOY_STEP, /if \[ -z "\$SELFHOSTLY_URL" \]/)
+    assert.match(GITHUB_ACTIONS_DEPLOY_STEP, /-z "\$SELFHOSTLY_APP_ID"/)
+    assert.match(GITHUB_ACTIONS_DEPLOY_STEP, /-z "\$SELFHOSTLY_NODE_ID"/)
+    assert.match(GITHUB_ACTIONS_DEPLOY_STEP, /-z "\$SELFHOSTLY_DEPLOY_TOKEN"/)
+    assert.match(GITHUB_ACTIONS_DEPLOY_STEP, /Missing Selfhostly configuration/)
+    assert.match(GITHUB_ACTIONS_DEPLOY_STEP, /exit 1/)
+    // the guard must run before curl, not after
+    const guardIndex = GITHUB_ACTIONS_DEPLOY_STEP.indexOf('exit 1')
+    const curlIndex = GITHUB_ACTIONS_DEPLOY_STEP.indexOf('curl ')
+    assert.ok(guardIndex > 0 && curlIndex > guardIndex, 'the missing-config check must come before curl runs')
 })
 
 test('the step retries and fails the job on a bad response, instead of failing silently', () => {
