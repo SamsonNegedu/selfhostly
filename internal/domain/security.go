@@ -11,6 +11,9 @@ import (
 // ErrRegistrationUnauthorized: the registration token is wrong, expired or was already used
 var ErrRegistrationUnauthorized = errors.New("invalid registration token")
 
+// ErrDeployTriggerUnauthorized: the deploy hook token is missing, unknown, or does not belong to this app
+var ErrDeployTriggerUnauthorized = errors.New("invalid deploy hook token")
+
 // SecurityService defines the primary port for the administrative security use cases: join tokens,
 // ending sessions and the audit log.
 type SecurityService interface {
@@ -31,6 +34,36 @@ const (
 	AuditTargetApp  = "app"
 	AuditTargetNode = "node"
 )
+
+// DeployHook is a named, per-app secret an external pipeline presents to trigger a pull and
+// restart. The token itself is never read back after creation; only this metadata is.
+type DeployHook struct {
+	ID         string     `json:"id"`
+	AppID      string     `json:"app_id"`
+	Name       string     `json:"name"`
+	SourceKind string     `json:"source_kind"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at"`
+	LastUsedIP string     `json:"last_used_ip"`
+}
+
+// DeployHookService defines the primary port for creating, listing and revoking per-app deploy
+// hooks, and for verifying one and triggering the update it authorizes. A hook's SourceKind names
+// which class of caller it is for (today only DeploySourceGeneric exists); adding a kind that needs
+// more than a bearer-token check means adding a verifier in internal/service, not changing this port.
+type DeployHookService interface {
+	// CreateDeployHook issues a new hook for an app. Only its hash is stored, so the plaintext token
+	// is returned once and cannot be recovered later.
+	CreateDeployHook(ctx context.Context, appID, name string) (token string, hook *DeployHook, err error)
+	// ListDeployHooks returns an app's hooks, newest first, never nil. Tokens are never included.
+	ListDeployHooks(ctx context.Context, appID string) ([]*DeployHook, error)
+	// RevokeDeployHook deletes one hook. It stops working immediately; other hooks on the app are unaffected.
+	RevokeDeployHook(ctx context.Context, appID, hookID string) error
+	// TriggerDeploy verifies a presented token against appID's hooks and, on success, starts the same
+	// update job the manual Update button starts. callerIP is recorded against the hook, never used
+	// to authenticate. Returns ErrDeployTriggerUnauthorized for a missing, wrong or revoked token.
+	TriggerDeploy(ctx context.Context, appID, presentedToken, callerIP string) (*db.Job, *DeployHook, error)
+}
 
 // AutoRegisterRequest is what a secondary sends to register itself with the primary
 type AutoRegisterRequest struct {

@@ -132,38 +132,77 @@ func (s *Server) forwardToLinkedNode() gin.HandlerFunc {
 			c.Next() // unknown or directly reached: the existing handling applies
 			return
 		}
-		if !s.nodeLinks.Connected(nodeID) {
-			c.AbortWithStatusJSON(http.StatusServiceUnavailable, ErrorResponse{
-				Error:   "Node is not connected",
-				Details: "the node " + node.Name + " has no live link to the primary right now",
-			})
+		s.proxyToLinkedNode(c, node, func(pr *httputil.ProxyRequest) {
+			out := pr.Out
+			for _, h := range []string{"Cookie", "Authorization", "Origin", "Referer", "X-Xsrf-Token",
+				constants.HeaderGatewayAPIKey, constants.HeaderCFAccessJWT} {
+				out.Header.Del(h)
+			}
+			out.Header.Set(constants.HeaderNodeID, node.ID)
+			out.Header.Set(constants.HeaderNodeAPIKey, node.APIKey)
+		})
+	}
+}
+
+// forwardDeployTriggerToLinkedNode is forwardToLinkedNode's counterpart for POST
+// /api/apps/:id/deploy-trigger, which sits outside the user-or-node auth group entirely (see
+// routes.go) and so never has request_scope set - there is no user session or node credential on
+// this request to key that check on in the first place.
+//
+// Unlike forwardToLinkedNode, this deliberately keeps the Authorization header instead of
+// stripping it: here Authorization carries the deploy hook's bearer token, the only credential the
+// request has, and it must reach the target node's own check. There is no user session to protect
+// by removing it, and node credentials are never involved: the target's deploy-trigger route
+// checks only the bearer token, not X-Node-ID/X-Node-API-Key.
+func (s *Server) forwardDeployTriggerToLinkedNode() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		nodeID := c.Query("node_id")
+		if nodeID == "" || nodeID == s.config.Node.ID {
+			c.Next() // this node is the target, or no node_id was given: handle locally
 			return
 		}
-
-		proxy := &httputil.ReverseProxy{
-			Transport: s.nodeLinks.RoundTripper(),
-			Rewrite: func(pr *httputil.ProxyRequest) {
-				out := pr.Out
-				out.URL.Scheme = constants.LinkEndpointScheme
-				out.URL.Host = node.ID
-				out.Host = ""
-				for _, h := range []string{"Cookie", "Authorization", "Origin", "Referer", "X-Xsrf-Token",
-					constants.HeaderGatewayAPIKey, constants.HeaderCFAccessJWT} {
-					out.Header.Del(h)
-				}
-				out.Header.Set(constants.HeaderNodeID, node.ID)
-				out.Header.Set(constants.HeaderNodeAPIKey, node.APIKey)
-			},
-			ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
-				slog.Warn("forwarding to a linked node failed", "node_id", nodeID, "error", err)
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusBadGateway)
-				_, _ = w.Write([]byte(`{"error":"Node did not answer"}`))
-			},
+		node, _ := s.nodeLinkService.LinkedNode(c.Request.Context(), nodeID)
+		if node == nil {
+			// Unknown, or a direct node - the gateway routes those straight to the node's own
+			// address, so this process should never be asked for one; handling it locally just
+			// means the trigger 401s or 404s instead of the request being dropped silently.
+			c.Next()
+			return
 		}
-		proxy.ServeHTTP(c.Writer, c.Request)
-		c.Abort()
+		s.proxyToLinkedNode(c, node, func(pr *httputil.ProxyRequest) {
+			pr.Out.Header.Del("Cookie") // a CI caller never sends one, stripped for hygiene regardless
+		})
 	}
+}
+
+// proxyToLinkedNode relays the current request down a linked node's live connection, refusing if
+// the link is not currently up. rewrite makes the header decisions a caller's trust model requires;
+// the target address is always set here so neither caller can get that part wrong.
+func (s *Server) proxyToLinkedNode(c *gin.Context, node *db.Node, rewrite func(*httputil.ProxyRequest)) {
+	if !s.nodeLinks.Connected(node.ID) {
+		c.AbortWithStatusJSON(http.StatusServiceUnavailable, ErrorResponse{
+			Error:   "Node is not connected",
+			Details: "the node " + node.Name + " has no live link to the primary right now",
+		})
+		return
+	}
+	proxy := &httputil.ReverseProxy{
+		Transport: s.nodeLinks.RoundTripper(),
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.Out.URL.Scheme = constants.LinkEndpointScheme
+			pr.Out.URL.Host = node.ID
+			pr.Out.Host = ""
+			rewrite(pr)
+		},
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			slog.Warn("forwarding to a linked node failed", "node_id", node.ID, "error", err)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = w.Write([]byte(`{"error":"Node did not answer"}`))
+		},
+	}
+	proxy.ServeHTTP(c.Writer, c.Request)
+	c.Abort()
 }
 
 // peekNodeID reads node_id from a JSON body and puts the body back for the handler

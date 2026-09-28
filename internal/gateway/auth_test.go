@@ -160,6 +160,8 @@ func TestConfig_pathSkipsAuth(t *testing.T) {
 		{"health endpoint", "/api/health", http.MethodGet, true},
 		{"health POST", "/api/health", http.MethodPost, true},
 		{"me endpoint", "/api/me", http.MethodGet, true},
+		{"deploy trigger", "/api/apps/app-123/deploy-trigger", http.MethodPost, true},
+		{"deploy hooks management is not skipped, only the trigger is", "/api/apps/app-123/deploy-hooks", http.MethodPost, false},
 		{"protected path", "/api/apps", http.MethodGet, false},
 		{"other path", "/api/other", http.MethodGet, false},
 	}

@@ -32,30 +32,31 @@ import (
 
 // Server wraps the HTTP server
 type Server struct {
-	config          *config.Config
-	database        *db.DB
-	dockerManager   *docker.Manager
-	appService      domain.AppService
-	tunnelService   domain.TunnelService
-	systemService   domain.SystemService
-	composeService  domain.ComposeService
-	nodeService     domain.NodeService
-	scheduleService domain.ScheduleService
-	jobWorker       *jobs.Worker
-	scheduler       *scheduler.Scheduler
-	engine          *gin.Engine
-	authService     *auth.Service
-	allowList       *selfauth.AllowList
-	nodeLinks       *nodelink.Registry
-	nodeLinkService domain.NodeLinkService
-	securityService domain.SecurityService
-	jobService      domain.JobService
-	updateService   domain.UpdateService
-	cfAccess        *selfauth.CFAccessVerifier
-	httpServer      *http.Server
-	shutdownCtx     context.Context
-	shutdownCancel  context.CancelFunc
-	events          *events.Bus
+	config            *config.Config
+	database          *db.DB
+	dockerManager     *docker.Manager
+	appService        domain.AppService
+	tunnelService     domain.TunnelService
+	systemService     domain.SystemService
+	composeService    domain.ComposeService
+	nodeService       domain.NodeService
+	scheduleService   domain.ScheduleService
+	jobWorker         *jobs.Worker
+	scheduler         *scheduler.Scheduler
+	engine            *gin.Engine
+	authService       *auth.Service
+	allowList         *selfauth.AllowList
+	nodeLinks         *nodelink.Registry
+	nodeLinkService   domain.NodeLinkService
+	securityService   domain.SecurityService
+	jobService        domain.JobService
+	updateService     domain.UpdateService
+	deployHookService domain.DeployHookService
+	cfAccess          *selfauth.CFAccessVerifier
+	httpServer        *http.Server
+	shutdownCtx       context.Context
+	shutdownCancel    context.CancelFunc
+	events            *events.Bus
 }
 
 // NewServer creates a new HTTP server
@@ -149,6 +150,7 @@ func NewServer(cfg *config.Config, database *db.DB) *Server {
 	securityService := service.NewSecurityService(database)
 	jobService := service.NewJobService(database)
 	updateService := service.NewUpdateService(database, cfg)
+	deployHookService := service.NewDeployHookService(database, appService, appLogger)
 
 	// Initialize job processing system
 	jobProcessor := jobs.NewProcessor(database, dockerManager, appService, tunnelService, appLogger)
@@ -165,29 +167,30 @@ func NewServer(cfg *config.Config, database *db.DB) *Server {
 
 	// Initialize server
 	*server = Server{
-		config:          cfg,
-		database:        database,
-		dockerManager:   dockerManager,
-		appService:      appService,
-		tunnelService:   tunnelService,
-		systemService:   systemService,
-		composeService:  composeService,
-		nodeService:     nodeService,
-		scheduleService: scheduleService,
-		jobWorker:       jobWorker,
-		scheduler:       appScheduler,
-		engine:          engine,
-		authService:     authService,
-		allowList:       allowList,
-		nodeLinks:       links,
-		nodeLinkService: nodeLinkService,
-		securityService: securityService,
-		jobService:      jobService,
-		updateService:   updateService,
-		cfAccess:        cfAccess,
-		shutdownCtx:     shutdownCtx,
-		shutdownCancel:  shutdownCancel,
-		events:          server.events,
+		config:            cfg,
+		database:          database,
+		dockerManager:     dockerManager,
+		appService:        appService,
+		tunnelService:     tunnelService,
+		systemService:     systemService,
+		composeService:    composeService,
+		nodeService:       nodeService,
+		scheduleService:   scheduleService,
+		jobWorker:         jobWorker,
+		scheduler:         appScheduler,
+		engine:            engine,
+		authService:       authService,
+		allowList:         allowList,
+		nodeLinks:         links,
+		nodeLinkService:   nodeLinkService,
+		securityService:   securityService,
+		jobService:        jobService,
+		updateService:     updateService,
+		deployHookService: deployHookService,
+		cfAccess:          cfAccess,
+		shutdownCtx:       shutdownCtx,
+		shutdownCancel:    shutdownCancel,
+		events:            server.events,
 	}
 
 	// Origin/content-type and audit middleware need the fully built server

@@ -289,6 +289,25 @@ const (
 	JoinTokenByteSize = 24
 )
 
+// Deploy hooks are per-app, long-lived secrets an external pipeline presents to trigger a pull and
+// restart without a session. Unlike join tokens they are not single-use: they live until revoked or
+// rotated, so there is no TTL.
+const (
+	DeployHookTokenPrefix   = "sfd_"
+	DeployHookTokenByteSize = 24
+	// DeploySourceGeneric is the only trigger-source kind today: a hook that needs nothing beyond its
+	// bearer token. A future kind (e.g. one that also checks a caller's identity) adds its own value
+	// here and a verifier in internal/service, without changing the schema or the route.
+	DeploySourceGeneric = "generic"
+)
+
+// Rate limiting for the deploy-trigger endpoint, keyed per app so one app's noisy or leaked hook
+// cannot exhaust another app's budget.
+const (
+	DeployTriggerRateLimitAttempts = 20
+	DeployTriggerRateLimitWindow   = 5 * time.Minute
+)
+
 // Secrets at rest
 const (
 	SecretsCipherPrefix = "enc:v1:"
@@ -312,7 +331,7 @@ const (
 	LabelComposeWorkingDir = "com.docker.compose.project.working_dir"
 	// LabelComposeConfigFiles lists, comma separated, the compose files a project was started from
 	LabelComposeConfigFiles = "com.docker.compose.project.config_files"
-	LabelManaged           = "com.selfhostly.managed"
+	LabelManaged            = "com.selfhostly.managed"
 )
 
 // Cloudflare Access verification

@@ -14,7 +14,7 @@ export const LEGACY_REDIRECTS: { from: string; to: string }[] = [
     { from: '/monitoring', to: ROUTES.insights },
 ]
 
-const APP_TABS = ['overview', 'config', 'environment', 'logs', 'access', 'schedule', 'history'] as const
+const APP_TABS = ['overview', 'config', 'environment', 'deploy', 'logs', 'access', 'schedule', 'history'] as const
 export type AppTab = (typeof APP_TABS)[number]
 
 const DEFAULT_APP_TAB: AppTab = 'overview'
@@ -38,6 +38,7 @@ export const AVAILABLE_APP_TABS: readonly AppTab[] = [
     'overview',
     'config',
     'environment',
+    'deploy',
     'logs',
     'access',
     'schedule',
@@ -53,6 +54,7 @@ export function resolveAppTab(value: string | null): AppTab {
 export const APP_TAB_LABELS: Record<Exclude<AppTab, 'overview'>, string> = {
     config: 'Config',
     environment: 'Environment',
+    deploy: 'Deploy',
     logs: 'Logs',
     access: 'Access',
     schedule: 'Schedule',

@@ -43,6 +43,22 @@ func (s *Server) setupRoutes() {
 	// outside the user login group, and rate limited like registration.
 	s.engine.GET(constants.LinkPath, s.registerRateLimitMiddleware(), s.nodeConnect)
 
+	// Deploy hook trigger: an external CI pipeline calls this, authenticated only by the per-app
+	// token in its Authorization header. It carries its own credential, so like registration and the
+	// node link it sits outside the user-or-node auth group, and is rate limited per app.
+	//
+	// It still needs to reach the right node: the gateway routes any /api/apps/:id/... path by the
+	// node_id query param, straight to that node's own address when it is directly reachable, or to
+	// the primary when it is a linked (tunnel) node - the same as every other by-id route. For the
+	// linked case, forwardDeployTriggerToLinkedNode does the second hop the primary must do itself,
+	// the same job forwardToLinkedNode does for session-authed routes but keeping Authorization
+	// instead of stripping it, since that header carries this route's only credential.
+	s.engine.POST("/api/apps/:id/deploy-trigger",
+		s.deployTriggerRateLimitMiddleware(),
+		s.forwardDeployTriggerToLinkedNode(),
+		s.triggerDeployUpdate,
+	)
+
 	// Single API: user auth OR node auth (composite auth)
 	api := s.engine.Group("/api")
 	api.Use(s.userOrNodeAuthMiddleware())
@@ -130,6 +146,22 @@ func (s *Server) setupAppRoutes(api *gin.RouterGroup) {
 
 			// Job routes for this app
 			appSpecific.GET("/jobs", s.getAppJobs)
+
+			// Deploy hooks: session-authed management (create/list/revoke). The hook is triggered
+			// through the /deploy-trigger route registered above, not here - that route carries its
+			// own credential (the hook's bearer token) instead of a session, the same reason node
+			// registration sits outside this group too, so it is not nested under appSpecific.
+			//
+			// Deliberately no denyNodeAuthMiddleware on create, unlike join-tokens: a node's own
+			// credentials already give it full control over apps hosted on it (start/stop/update/
+			// delete all allow node auth too), and creating a hook for an app on a linked secondary
+			// is only reachable at all because forwardToLinkedNode re-signs the forwarded request
+			// with the target's node credentials - the secondary has no way to see the original
+			// session. Denying node auth here does not stop anything a node could not already do to
+			// its own app, and it silently breaks that legitimate forwarded path.
+			appSpecific.POST("/deploy-hooks", s.createDeployHook)
+			appSpecific.GET("/deploy-hooks", s.listDeployHooks)
+			appSpecific.DELETE("/deploy-hooks/:hookId", s.revokeDeployHook)
 		}
 	}
 }

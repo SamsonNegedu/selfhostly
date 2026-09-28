@@ -201,6 +201,18 @@ export interface RollbackRequest {
     change_reason?: string
 }
 
+// A named, per-app secret an external pipeline presents to trigger a pull and restart. The token
+// itself is never part of this shape - it exists only in the one-time response to creating a hook.
+export interface DeployHook {
+    id: string
+    app_id: string
+    name: string
+    source_kind: string
+    created_at: string
+    last_used_at?: string | null
+    last_used_ip?: string
+}
+
 // System monitoring types
 export interface SystemStats {
     node_id: string

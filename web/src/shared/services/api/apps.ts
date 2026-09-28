@@ -10,6 +10,7 @@ import type {
     RollbackRequest,
     Job,
     JobResponse,
+    DeployHook,
 } from '../../types/api'
 
 // Apps API
@@ -309,6 +310,50 @@ export function useRollbackToVersion(appId: string, nodeId: string) {
             queryClient.invalidateQueries({ queryKey: ['app', appId] })
             queryClient.invalidateQueries({ queryKey: ['apps'] })
             queryClient.invalidateQueries({ queryKey: ['compose-versions', appId] })
+        },
+    })
+}
+
+// ============================================================================
+// Deploy hooks API
+// ============================================================================
+
+// The one-time response to creating a hook. The token is never part of DeployHook - it exists only
+// here, and only until the caller navigates away.
+export interface CreatedDeployHook extends DeployHook {
+    token: string
+}
+
+export function useDeployHooks(appId: string, nodeId: string) {
+    return useQuery<DeployHook[]>({
+        queryKey: ['deploy-hooks', appId, nodeId],
+        queryFn: () => apiClient.get<DeployHook[]>(`/api/apps/${appId}/deploy-hooks`, { node_id: nodeId }),
+        enabled: !!appId && !!nodeId,
+    })
+}
+
+export function useCreateDeployHook(appId: string, nodeId: string) {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: (name: string) =>
+            apiClient.post<CreatedDeployHook, { name: string }>(`/api/apps/${appId}/deploy-hooks?node_id=${nodeId}`, {
+                name,
+            }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['deploy-hooks', appId, nodeId] })
+        },
+    })
+}
+
+export function useRevokeDeployHook(appId: string, nodeId: string) {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: (hookId: string) =>
+            apiClient.delete<void>(`/api/apps/${appId}/deploy-hooks/${hookId}?node_id=${nodeId}`),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['deploy-hooks', appId, nodeId] })
         },
     })
 }

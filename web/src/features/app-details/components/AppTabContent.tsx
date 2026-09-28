@@ -5,6 +5,7 @@ import { AppLogsPanel } from './AppLogsPanel'
 import AppOverview from './AppOverview'
 import CloudflareTab from './CloudflareTab'
 import ComposeEditor from './ComposeEditor'
+import DeployHooksTab from './DeployHooksTab'
 import EnvironmentTab from './EnvironmentTab'
 import HistoryTab from './HistoryTab'
 import { ScheduleEditor } from './ScheduleEditor'
@@ -29,6 +30,8 @@ function AppTabContent({ app, tab }: { app: App; tab: AppTab }) {
                     missingNode('the compose editor')
                 ))}
             {tab === 'environment' && (app.node_id ? <EnvironmentTab app={app} /> : missingNode('the environment'))}
+            {tab === 'deploy' &&
+                (app.node_id ? <DeployHooksTab appId={app.id} nodeId={app.node_id} /> : missingNode('deploy hooks'))}
             {tab === 'logs' &&
                 (app.node_id ? <AppLogsPanel appId={app.id} nodeId={app.node_id} /> : missingNode('logs'))}
             {tab === 'access' &&
