@@ -2,6 +2,7 @@ package docker
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -49,5 +50,46 @@ func TestComposeGuardBlocksDeploy(t *testing.T) {
 	m.SetComposeGuard(func(string, []byte) error { return nil })
 	if err := m.checkGuard("a"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestMissingEnvFileBlocksDeploy(t *testing.T) {
+	const compose = "services:\n  web:\n    image: nginx\n    env_file: .env\n"
+	dir := t.TempDir()
+	m := NewManagerWithExecutor(dir, NewMockCommandExecutor())
+	if err := m.CreateAppDirectory("a", compose); err != nil {
+		t.Fatal(err)
+	}
+
+	err := m.StartApp("a")
+	if err == nil || !strings.Contains(err.Error(), ".env") || !strings.Contains(err.Error(), filepath.Join(dir, "a")) {
+		t.Fatalf("missing env_file must block StartApp and name the file and folder, got %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "a", ".env"), []byte("A=1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.checkGuard("a"); err != nil {
+		t.Fatalf("present env_file must pass, got %v", err)
+	}
+}
+
+func TestOptionalAndInterpolatedEnvFiles(t *testing.T) {
+	dir := t.TempDir()
+	m := NewManagerWithExecutor(dir, NewMockCommandExecutor())
+	optional := "services:\n  web:\n    image: nginx\n    env_file:\n      - path: .env\n        required: false\n"
+	if err := m.CreateAppDirectory("opt", optional); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.checkGuard("opt"); err != nil {
+		t.Fatalf("required: false must pass when the file is missing, got %v", err)
+	}
+	// A path that depends on a variable cannot be checked without Docker, so it is left to Docker.
+	interp := "services:\n  web:\n    image: nginx\n    env_file: ${ENV_FILE}\n"
+	if err := m.CreateAppDirectory("interp", interp); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.checkGuard("interp"); err != nil {
+		t.Fatalf("interpolated env_file must be left to Docker, got %v", err)
 	}
 }

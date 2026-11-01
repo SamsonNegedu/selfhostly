@@ -1047,3 +1047,20 @@ func TestInjectTunnelContainerPreservesExistingNetwork(t *testing.T) {
 		t.Errorf("Expected web service to keep [my-custom-network], got %v", webService.Networks)
 	}
 }
+
+// env_file contents are resolved by Docker at deploy time, from the app directory.
+// Parsing must not read them from the server's working directory.
+func TestParseComposeEnvFileMissingFromWorkingDir(t *testing.T) {
+	content := `services:
+  web:
+    image: nginx
+    env_file: .env
+`
+	compose, err := ParseCompose([]byte(content))
+	if err != nil {
+		t.Fatalf("ParseCompose() error = %v, want nil", err)
+	}
+	if _, ok := compose.Services["web"]; !ok {
+		t.Fatalf("service web missing from parsed compose")
+	}
+}
