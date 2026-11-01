@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -275,6 +276,40 @@ func extractLineNumberFromError(err error) (line, column int) {
 	return line, column
 }
 
+// RequiredEnvFiles returns the env_file paths Docker will refuse to start without, as written in
+// the compose file. Optional files (required: false) and paths that depend on a variable are
+// left out, since only Docker can resolve those.
+func RequiredEnvFiles(content []byte) ([]string, error) {
+	project, err := loader.LoadWithContext(context.Background(), composetypes.ConfigDetails{
+		ConfigFiles: []composetypes.ConfigFile{{Content: content}},
+		Environment: composetypes.Mapping{},
+	}, parseOptions)
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	seen := map[string]bool{}
+	for _, svc := range project.Services {
+		for _, f := range svc.EnvFiles {
+			if !bool(f.Required) || f.Path == "" || strings.Contains(f.Path, "$") || seen[f.Path] {
+				continue
+			}
+			seen[f.Path] = true
+			paths = append(paths, f.Path)
+		}
+	}
+	sort.Strings(paths)
+	return paths, nil
+}
+
+// parseOptions loads compose content for inspection only: no interpolation, no schema validation,
+// and no reading of env_file contents (Docker does that from the app directory at deploy time).
+func parseOptions(o *loader.Options) {
+	o.SkipInterpolation = true
+	o.SkipValidation = true
+	o.SkipResolveEnvironment = true
+}
+
 // ParseCompose parses and validates docker-compose YAML content using the official compose-go library.
 // This handles all Docker Compose formats (list vs map for environment, depends_on, build.args, etc.)
 func ParseCompose(content []byte) (*ComposeFile, error) {
@@ -294,15 +329,9 @@ func ParseCompose(content []byte) (*ComposeFile, error) {
 		Environment: composetypes.Mapping{},
 	}
 
-	// Load with skip interpolation (keep ${VAR} as-is) and skip validation
-	// (we do our own validation downstream). We keep normalization enabled
-	// so compose-go creates implicit default networks, resolves short syntax, etc.
-	opts := func(o *loader.Options) {
-		o.SkipInterpolation = true
-		o.SkipValidation = true
-	}
-
-	project, err := loader.LoadWithContext(context.Background(), config, opts)
+	// Normalization stays on so compose-go creates implicit default networks, resolves short
+	// syntax, etc. Validation is done downstream by us.
+	project, err := loader.LoadWithContext(context.Background(), config, parseOptions)
 	if err != nil {
 		return nil, enhanceComposeGoError(err, content)
 	}

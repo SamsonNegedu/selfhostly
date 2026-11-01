@@ -52,6 +52,10 @@ of the Docker socket, `/`, `/etc`, `/root`, `/proc`, `/sys`, `/dev`, `/boot`, `/
 and similar, anything that resolves through a symlink out of the apps directory, or a relative path
 that climbs out of the app folder.
 
+Not a security block, but checked at the same moment: a required `env_file` that is missing from the app
+folder stops the start, update or restart with an error naming the file and folder. Saving the compose file
+is never blocked by it, so you can save first and add the file after. `required: false` makes a file optional.
+
 Blocked in enforce mode, logged in warn mode: bind mounts outside the app folder and
 `ALLOWED_VOLUME_PATHS`, interpolated (`${VAR}`) or `~` bind sources that cannot be verified, and
 joining another container's namespaces (`network_mode: container:...`).

@@ -39,18 +39,43 @@ func (m *Manager) AppsDir() string {
 }
 
 func (m *Manager) checkGuard(name string) error {
-	if m.guard == nil {
-		return nil
-	}
-	content, err := os.ReadFile(filepath.Join(m.appsDir, name, ComposeFileName))
+	appPath := filepath.Join(m.appsDir, name)
+	content, err := os.ReadFile(filepath.Join(appPath, ComposeFileName))
 	if err != nil {
 		return nil // a missing file is reported by the caller's own existence check
 	}
-	if err := m.guard(name, content); err != nil {
-		slog.Error("compose file rejected by security policy", "app", name, "error", err)
-		return fmt.Errorf("compose file for %q rejected by security policy: %w", name, err)
+	if m.guard != nil {
+		if err := m.guard(name, content); err != nil {
+			slog.Error("compose file rejected by security policy", "app", name, "error", err)
+			return fmt.Errorf("compose file for %q rejected by security policy: %w", name, err)
+		}
 	}
-	return nil
+	return checkEnvFiles(name, appPath, content)
+}
+
+// checkEnvFiles fails before docker compose runs when a required env_file is not in the app
+// folder, so the error names the file and the folder instead of surfacing from Docker.
+func checkEnvFiles(name, appPath string, content []byte) error {
+	paths, err := RequiredEnvFiles(content)
+	if err != nil {
+		return nil // syntax problems are reported by validation and Docker
+	}
+	var missing []string
+	for _, p := range paths {
+		full := p
+		if !filepath.IsAbs(full) {
+			full = filepath.Join(appPath, p)
+		}
+		if _, err := os.Stat(full); os.IsNotExist(err) {
+			missing = append(missing, p)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	slog.Error("required env_file is missing", "app", name, "missing", missing, "appPath", appPath)
+	return fmt.Errorf("app %q needs %s in %s but it does not exist: create the file, or mark it optional with 'env_file: [{path: %s, required: false}]'",
+		name, strings.Join(missing, ", "), appPath, missing[0])
 }
 
 // NewManager creates a new Docker manager with default command executor
