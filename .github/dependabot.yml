@@ -1,26 +1,44 @@
 # Keeps dependencies, base images and pinned CI actions current. Each ecosystem opens grouped,
 # reviewable PRs instead of letting versions drift (or float on :latest).
+#
+# Every PR runs the full CI, including Docker builds, so volume matters: monthly runs, a cap on
+# open PRs per ecosystem, and no automatic rebases (a rebase re-runs CI). Comment
+# `@dependabot rebase` on a PR when you actually want one.
 version: 2
 updates:
   - package-ecosystem: gomod
     directory: /
-    schedule: { interval: weekly }
+    schedule: { interval: monthly }
+    open-pull-requests-limit: 2
+    rebase-strategy: disabled
     groups:
       go-minor-and-patch:
         update-types: [minor, patch]
+      go-major:
+        update-types: [major]
   - package-ecosystem: npm
     directory: /web
-    schedule: { interval: weekly }
+    schedule: { interval: monthly }
+    open-pull-requests-limit: 2
+    rebase-strategy: disabled
     groups:
       web-minor-and-patch:
         update-types: [minor, patch]
+      web-major:
+        update-types: [major]
   - package-ecosystem: docker
     directory: /
-    schedule: { interval: weekly }
+    schedule: { interval: monthly }
+    open-pull-requests-limit: 2
+    rebase-strategy: disabled
   - package-ecosystem: docker
     directory: /web
-    schedule: { interval: weekly }
+    schedule: { interval: monthly }
+    open-pull-requests-limit: 2
+    rebase-strategy: disabled
   # Also rewrites `uses: owner/action@<sha>` pins when a new release is published
   - package-ecosystem: github-actions
     directory: /
-    schedule: { interval: weekly }
+    schedule: { interval: monthly }
+    open-pull-requests-limit: 2
+    rebase-strategy: disabled
