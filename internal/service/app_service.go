@@ -120,9 +120,8 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 		return nil, err
 	}
 
-	// Parse compose to extract networks
-	compose, err := docker.ParseCompose([]byte(req.ComposeContent))
-	if err != nil {
+	// Parse compose to confirm it is well formed before any tunnel is created
+	if _, err := docker.ParseCompose([]byte(req.ComposeContent)); err != nil {
 		s.logger.WarnContext(ctx, "invalid compose file", "app", req.Name, "error", err)
 		return nil, domain.WrapComposeInvalid(err)
 	}
@@ -150,24 +149,14 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 			return nil, fmt.Errorf("failed to create Quick Tunnel config: %w", err)
 		}
 
-		networks := docker.ExtractNetworks(compose)
-		network := ""
-		if len(networks) > 0 {
-			network = networks[0]
-		}
 		s.logger.InfoContext(ctx, "injecting Quick Tunnel container into compose", "app", req.Name, "service", req.QuickTunnelService, "port", req.QuickTunnelPort)
-		injected, err := docker.InjectTunnelContainer(compose, req.Name, containerConfig, network)
+		updated, injected, err := docker.InjectTunnelIntoCompose(req.ComposeContent, req.Name, containerConfig)
 		if err != nil {
 			s.logger.ErrorContext(ctx, "failed to inject Quick Tunnel container", "app", req.Name, "error", err)
 			return nil, fmt.Errorf("failed to inject Quick Tunnel container: %w", err)
 		}
 		if injected {
-			composeBytes, err := docker.MarshalComposeFile(compose)
-			if err != nil {
-				s.logger.ErrorContext(ctx, "failed to marshal compose file", "app", req.Name, "error", err)
-				return nil, fmt.Errorf("failed to marshal compose file: %w", err)
-			}
-			req.ComposeContent = string(composeBytes)
+			req.ComposeContent = updated
 			s.logger.InfoContext(ctx, "Quick Tunnel container injected successfully", "app", req.Name)
 		}
 	} else if req.TunnelMode == constants.TunnelModeCustom && providerConfigErr == nil && providerConfig != nil {
@@ -201,24 +190,14 @@ func (s *appService) CreateApp(ctx context.Context, req domain.CreateAppRequest)
 		if containerProvider, ok := provider.(tunnel.ContainerProvider); ok {
 			containerConfig := containerProvider.GetContainerConfig(tunnelToken, req.Name)
 			if containerConfig != nil {
-				networks := docker.ExtractNetworks(compose)
-				network := ""
-				if len(networks) > 0 {
-					network = networks[0]
-				}
 				s.logger.InfoContext(ctx, "injecting tunnel container into compose", "provider", providerName, "app", req.Name)
-				injected, err := docker.InjectTunnelContainer(compose, req.Name, containerConfig, network)
+				updated, injected, err := docker.InjectTunnelIntoCompose(req.ComposeContent, req.Name, containerConfig)
 				if err != nil {
 					s.logger.ErrorContext(ctx, "failed to inject tunnel container", "app", req.Name, "error", err)
 					return nil, fmt.Errorf("failed to inject tunnel container: %w", err)
 				}
 				if injected {
-					composeBytes, err := docker.MarshalComposeFile(compose)
-					if err != nil {
-						s.logger.ErrorContext(ctx, "failed to marshal compose file", "app", req.Name, "error", err)
-						return nil, fmt.Errorf("failed to marshal compose file: %w", err)
-					}
-					req.ComposeContent = string(composeBytes)
+					req.ComposeContent = updated
 					s.logger.InfoContext(ctx, "tunnel container injected successfully", "provider", providerName)
 				}
 			}
@@ -457,27 +436,16 @@ func (s *appService) UpdateApp(ctx context.Context, appID string, nodeID string,
 
 	if app.TunnelMode == constants.TunnelModeQuick && req.ComposeContent != "" {
 		if targetService, targetPort, ok := docker.ExtractQuickTunnelTargetFromCompose(app.ComposeContent); ok {
-			compose, err := docker.ParseCompose([]byte(composeContent))
+			metricsPort := constants.QuickTunnelMetricsPort
+			if p, ok := docker.ExtractQuickTunnelMetricsHostPort(app.ComposeContent); ok {
+				metricsPort = p
+			}
+			containerConfig, err := s.tunnelService.CreateQuickTunnelConfig(targetService, targetPort, metricsPort)
 			if err == nil {
-				metricsPort := constants.QuickTunnelMetricsPort
-				if p, ok := docker.ExtractQuickTunnelMetricsHostPort(app.ComposeContent); ok {
-					metricsPort = p
-				}
-				containerConfig, err := s.tunnelService.CreateQuickTunnelConfig(targetService, targetPort, metricsPort)
-				if err == nil {
-					networks := docker.ExtractNetworks(compose)
-					network := ""
-					if len(networks) > 0 {
-						network = networks[0]
-					}
-					injected, err := docker.InjectTunnelContainer(compose, app.Name, containerConfig, network)
-					if err == nil && injected {
-						composeBytes, err := docker.MarshalComposeFile(compose)
-						if err == nil {
-							composeContent = string(composeBytes)
-							s.logger.InfoContext(ctx, "re-injected Quick Tunnel container into updated compose", "appID", appID, "target", targetService+":"+fmt.Sprint(targetPort))
-						}
-					}
+				updated, injected, err := docker.InjectTunnelIntoCompose(composeContent, app.Name, containerConfig)
+				if err == nil && injected {
+					composeContent = updated
+					s.logger.InfoContext(ctx, "re-injected Quick Tunnel container into updated compose", "appID", appID, "target", targetService+":"+fmt.Sprint(targetPort))
 				}
 			}
 		}
@@ -490,30 +458,19 @@ func (s *appService) UpdateApp(ctx context.Context, appID string, nodeID string,
 			provider, err := s.providerRegistry.GetProvider(providerName, providerConfig)
 			if err == nil {
 				if containerProvider, ok := provider.(tunnel.ContainerProvider); ok {
-					compose, err := docker.ParseCompose([]byte(composeContent))
-					if err != nil {
+					if _, err := docker.ParseCompose([]byte(composeContent)); err != nil {
 						s.logger.WarnContext(ctx, "invalid compose file", "appID", appID, "error", err)
 						return nil, domain.WrapComposeInvalid(err)
 					}
 					containerConfig := containerProvider.GetContainerConfig(app.TunnelToken, app.Name)
 					if containerConfig != nil {
-						networks := docker.ExtractNetworks(compose)
-						network := ""
-						if len(networks) > 0 {
-							network = networks[0]
-						}
-						injected, err := docker.InjectTunnelContainer(compose, app.Name, containerConfig, network)
+						updated, injected, err := docker.InjectTunnelIntoCompose(composeContent, app.Name, containerConfig)
 						if err != nil {
 							s.logger.ErrorContext(ctx, "failed to inject tunnel container", "appID", appID, "error", err)
 							return nil, fmt.Errorf("failed to inject tunnel container: %w", err)
 						}
 						if injected {
-							composeBytes, err := docker.MarshalComposeFile(compose)
-							if err != nil {
-								s.logger.ErrorContext(ctx, "failed to marshal compose file", "appID", appID, "error", err)
-								return nil, fmt.Errorf("failed to marshal compose file: %w", err)
-							}
-							composeContent = string(composeBytes)
+							composeContent = updated
 						}
 					}
 				}
@@ -771,25 +728,15 @@ func (s *appService) createTunnelForAppLocal(ctx context.Context, appID string, 
 		return app, nil
 	}
 
-	compose, err := docker.ParseCompose([]byte(app.ComposeContent))
-	if err != nil {
+	if _, err := docker.ParseCompose([]byte(app.ComposeContent)); err != nil {
 		return nil, domain.WrapComposeInvalid(err)
 	}
-	networks := docker.ExtractNetworks(compose)
-	network := ""
-	if len(networks) > 0 {
-		network = networks[0]
-	}
-	injected, err := docker.InjectTunnelContainer(compose, app.Name, containerConfig, network)
+	updated, injected, err := docker.InjectTunnelIntoCompose(app.ComposeContent, app.Name, containerConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to inject tunnel container: %w", err)
 	}
 	if injected {
-		composeBytes, err := docker.MarshalComposeFile(compose)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal compose: %w", err)
-		}
-		app.ComposeContent = string(composeBytes)
+		app.ComposeContent = updated
 	}
 	app.UpdatedAt = time.Now()
 	if err := s.database.UpdateApp(app); err != nil {
@@ -851,11 +798,11 @@ func (s *appService) CreateQuickTunnelForApp(ctx context.Context, appID string, 
 		s.logger.InfoContext(ctx, "recreating existing Quick Tunnel", "appID", appID)
 	}
 
-	compose, err := docker.ParseCompose([]byte(app.ComposeContent))
-	if err != nil {
+	if _, err := docker.ParseCompose([]byte(app.ComposeContent)); err != nil {
 		s.logger.WarnContext(ctx, "invalid compose file", "appID", appID, "error", err)
 		return nil, domain.WrapComposeInvalid(err)
 	}
+	composeContent := app.ComposeContent
 
 	// If recreating, try to reuse the existing metrics port, otherwise allocate a new one
 	var metricsPort int
@@ -880,7 +827,12 @@ func (s *appService) CreateQuickTunnelForApp(ctx context.Context, appID string, 
 
 	// Remove existing tunnel service if recreating
 	if isRecreating {
-		if removed := docker.RemoveTunnelService(compose); removed {
+		withoutTunnel, removed, err := docker.RemoveTunnelFromCompose(composeContent)
+		if err != nil {
+			return nil, fmt.Errorf("failed to remove existing Quick Tunnel container: %w", err)
+		}
+		if removed {
+			composeContent = withoutTunnel
 			s.logger.InfoContext(ctx, "removed existing tunnel service before recreating", "app", app.Name)
 		}
 	}
@@ -889,13 +841,8 @@ func (s *appService) CreateQuickTunnelForApp(ctx context.Context, appID string, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Quick Tunnel config: %w", err)
 	}
-	networks := docker.ExtractNetworks(compose)
-	network := ""
-	if len(networks) > 0 {
-		network = networks[0]
-	}
 	s.logger.InfoContext(ctx, "injecting Quick Tunnel container into compose", "app", app.Name, "service", service, "port", port, "metricsPort", metricsPort, "isRecreating", isRecreating)
-	injected, err := docker.InjectTunnelContainer(compose, app.Name, containerConfig, network)
+	updated, injected, err := docker.InjectTunnelIntoCompose(composeContent, app.Name, containerConfig)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to inject Quick Tunnel container", "app", app.Name, "error", err)
 		return nil, fmt.Errorf("failed to inject Quick Tunnel container: %w", err)
@@ -903,12 +850,7 @@ func (s *appService) CreateQuickTunnelForApp(ctx context.Context, appID string, 
 	if !injected {
 		return nil, fmt.Errorf("Quick Tunnel container was not injected")
 	}
-	composeBytes, err := docker.MarshalComposeFile(compose)
-	if err != nil {
-		s.logger.ErrorContext(ctx, "failed to marshal compose file", "app", app.Name, "error", err)
-		return nil, fmt.Errorf("failed to marshal compose file: %w", err)
-	}
-	app.ComposeContent = string(composeBytes)
+	app.ComposeContent = updated
 	app.TunnelMode = constants.TunnelModeQuick
 	app.TunnelID = ""
 	app.TunnelToken = ""

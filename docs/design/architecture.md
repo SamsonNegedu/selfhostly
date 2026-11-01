@@ -77,6 +77,10 @@ tunnel if one is wanted and adds the `cloudflared` service, writes the app folde
 version, and hands the slow part (pull and start) to the background worker as a job. The UI follows the job's log lines while
 it runs. Each app is its own compose project, so restarting the platform never restarts apps.
 
+Adding or removing the `cloudflared` service edits the compose YAML in place (`internal/docker/compose_edit.go`). It does
+not parse the file into a typed model and write that back, because the model drops fields and rewrites others (a bind
+mount `./data:/data` would become the named volume `data`). Anything that changes a stored compose file must do the same.
+
 **Compose versions.** Every change to an app's compose file creates a numbered version with the reason and who changed it. A
 rollback creates a new version whose content is the old one, so history is never rewritten
 ([details](compose-versioning.md)).
