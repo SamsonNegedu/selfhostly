@@ -64,10 +64,10 @@ func (h *QuickTunnelHandler) Handle(ctx context.Context, job *db.Job, progress *
 
 	progress.Update(20, "Parsing compose configuration...")
 
-	compose, err := docker.ParseCompose([]byte(app.ComposeContent))
-	if err != nil {
+	if _, err := docker.ParseCompose([]byte(app.ComposeContent)); err != nil {
 		return fmt.Errorf("invalid compose file: %w", err)
 	}
+	composeContent := app.ComposeContent
 
 	progress.Update(30, "Allocating metrics port...")
 
@@ -91,7 +91,11 @@ func (h *QuickTunnelHandler) Handle(ctx context.Context, job *db.Job, progress *
 
 	// Remove existing tunnel service if recreating
 	if isRecreating {
-		docker.RemoveTunnelService(compose)
+		withoutTunnel, _, err := docker.RemoveTunnelFromCompose(composeContent)
+		if err != nil {
+			return fmt.Errorf("failed to remove existing Quick Tunnel container: %w", err)
+		}
+		composeContent = withoutTunnel
 	}
 
 	// Create tunnel container config
@@ -101,12 +105,7 @@ func (h *QuickTunnelHandler) Handle(ctx context.Context, job *db.Job, progress *
 	}
 
 	// Inject tunnel container
-	networks := docker.ExtractNetworks(compose)
-	network := ""
-	if len(networks) > 0 {
-		network = networks[0]
-	}
-	injected, err := docker.InjectTunnelContainer(compose, app.Name, containerConfig, network)
+	updated, injected, err := docker.InjectTunnelIntoCompose(composeContent, app.Name, containerConfig)
 	if err != nil {
 		return fmt.Errorf("failed to inject Quick Tunnel container: %w", err)
 	}
@@ -116,12 +115,7 @@ func (h *QuickTunnelHandler) Handle(ctx context.Context, job *db.Job, progress *
 
 	progress.Update(50, "Updating compose file...")
 
-	// Marshal and save compose content
-	composeBytes, err := docker.MarshalComposeFile(compose)
-	if err != nil {
-		return fmt.Errorf("failed to marshal compose file: %w", err)
-	}
-	app.ComposeContent = string(composeBytes)
+	app.ComposeContent = updated
 	app.TunnelMode = constants.TunnelModeQuick
 	app.TunnelID = ""
 	app.TunnelToken = ""

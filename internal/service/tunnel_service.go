@@ -479,24 +479,15 @@ func (s *tunnelService) cleanupTunnelFromCompose(ctx context.Context, appID stri
 	}
 
 	// Remove tunnel service from compose
-	compose, parseErr := docker.ParseCompose([]byte(app.ComposeContent))
-	if parseErr != nil {
-		s.logger.WarnContext(ctx, "failed to parse compose for cleanup", "app_id", appID, "error", parseErr)
+	newContent, removed, removeErr := docker.RemoveTunnelFromCompose(app.ComposeContent)
+	if removeErr != nil {
+		s.logger.WarnContext(ctx, "failed to remove tunnel from compose", "app_id", appID, "error", removeErr)
 		return
 	}
-
-	if !docker.RemoveTunnelService(compose) {
+	if !removed {
 		s.logger.InfoContext(ctx, "no tunnel service found in compose file (already removed)", "app_id", appID)
 		return
 	}
-
-	composeBytes, marshalErr := docker.MarshalComposeFile(compose)
-	if marshalErr != nil {
-		s.logger.WarnContext(ctx, "failed to marshal compose after tunnel removal", "app_id", appID, "error", marshalErr)
-		return
-	}
-
-	newContent := string(composeBytes)
 	app.ComposeContent = newContent
 	app.UpdatedAt = time.Now()
 	if updateErr := s.database.UpdateApp(app); updateErr != nil {
