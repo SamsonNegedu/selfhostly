@@ -401,8 +401,8 @@ func TestGetAppStatus(t *testing.T) {
 	appPath := filepath.Join(appsDir, appName)
 
 	// Mock successful command execution with output
-	mockExecutor.SetMockOutput("docker", []string{"compose", "-f", "docker-compose.yml", "ps"},
-		[]byte("NAME      COMMAND   SERVICE   STATUS   PORTS\napp_1    nginx    nginx     running   0.0.0.0:80->80/tcp"))
+	mockExecutor.SetMockOutput("docker", []string{"compose", "-f", "docker-compose.yml", "ps", "-q", "--status", "running"},
+		[]byte("3f2a9c1b7d\n"))
 
 	status, err := manager.GetAppStatus(appName)
 	if err != nil {
@@ -414,7 +414,7 @@ func TestGetAppStatus(t *testing.T) {
 	}
 
 	// Verify command was executed correctly
-	if !mockExecutor.AssertCommandExecuted("docker", []string{"compose", "-f", "docker-compose.yml", "ps"}) {
+	if !mockExecutor.AssertCommandExecuted("docker", []string{"compose", "-f", "docker-compose.yml", "ps", "-q", "--status", "running"}) {
 		t.Error("Expected docker compose ps command to be executed")
 	}
 
@@ -437,8 +437,8 @@ func TestGetAppStatusEmpty(t *testing.T) {
 
 	appName := "test-app"
 
-	// Mock successful command execution with empty output
-	mockExecutor.SetMockOutput("docker", []string{"compose", "-f", "docker-compose.yml", "ps"}, []byte(""))
+	// No running containers: compose ps prints nothing with -q (a plain ps still prints a header)
+	mockExecutor.SetMockOutput("docker", []string{"compose", "-f", "docker-compose.yml", "ps", "-q", "--status", "running"}, []byte("\n"))
 
 	status, err := manager.GetAppStatus(appName)
 	if err != nil {

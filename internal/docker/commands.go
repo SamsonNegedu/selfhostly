@@ -33,6 +33,8 @@ const (
 	ComposeFlagForceRecreate   = "--force-recreate"
 	ComposeFlagIgnoreBuildable = "--ignore-buildable"
 	ComposeFlagTail            = "--tail"
+	ComposeFlagStatus          = "--status"
+	ComposeStatusRunning       = "running"
 )
 
 // Docker Compose service names
@@ -125,6 +127,16 @@ func ComposePullCommand() []string {
 // ComposePsCommand returns command for "docker compose -f docker-compose.yml ps"
 func ComposePsCommand() []string {
 	return NewComposeCommand(ComposeSubcommandPs).Build()
+}
+
+// ComposePsRunningCommand returns command for "docker compose -f docker-compose.yml ps -q --status running".
+// It prints one container ID per running container and nothing when none are running.
+func ComposePsRunningCommand() []string {
+	return NewComposeCommand(ComposeSubcommandPs).
+		WithFlag("-q").
+		WithFlag(ComposeFlagStatus).
+		WithFlag(ComposeStatusRunning).
+		Build()
 }
 
 // ComposePsQuietCommand returns command for "docker compose -f docker-compose.yml ps -q"

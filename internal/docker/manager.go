@@ -452,16 +452,15 @@ func (m *Manager) GetAppStatus(name string) (string, error) {
 
 	slog.Debug("getting app status", "app", name, "appPath", appPath)
 
-	cmd := ComposePsCommand()
+	cmd := ComposePsRunningCommand()
 	output, err := m.commandExecutor.ExecuteCommandInDir(appPath, cmd[0], cmd[1:]...)
 	if err != nil {
 		slog.Error("failed to get app status", "app", name, "error", err, "output", string(output))
 		return "unknown", fmt.Errorf("failed to get status: %w\nOutput: %s", err, string(output))
 	}
 
-	// Simple status detection (in production, parse the output properly)
-	statusStr := string(output)
-	if len(statusStr) > 0 {
+	// Only running containers are listed, so any ID means the app is up.
+	if strings.TrimSpace(string(output)) != "" {
 		slog.Debug("app status retrieved", "app", name, "status", constants.AppStatusRunning)
 		return constants.AppStatusRunning, nil
 	}
